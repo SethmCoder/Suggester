@@ -6,9 +6,9 @@ import { DemoBanner } from "@/components/demo/DemoBanner";
 import { FirstRunTour } from "@/components/tutorial/FirstRunTour";
 import { Button } from "@/components/ui/Button";
 import { IconArrowRight, IconPlane, IconSearch } from "@/components/ui/Icons";
+import { LocalHeroBackground } from "@/components/home/LocalHero";
 import {
   countryFromDestination,
-  dashboardHeroImage,
   destinationImageUrl,
 } from "@/lib/destination-image";
 import { formatTripDate } from "@/lib/format-date";
@@ -52,10 +52,7 @@ export default function DashboardPage() {
 
       {/* Hero */}
       <section className="relative overflow-hidden rounded-[16px] bg-[#10194A] shadow-[0_8px_28px_rgba(8,11,58,0.15)]">
-        <div
-          className="absolute inset-0 bg-cover bg-center opacity-45"
-          style={{ backgroundImage: `url(${dashboardHeroImage()})` }}
-        />
+        <LocalHeroBackground opacityClass="opacity-45" showCaption />
         <div className="absolute inset-0 bg-gradient-to-r from-[#080B3A]/95 via-[#10194A]/80 to-[#10194A]/40" />
         <div className="relative px-6 py-10 sm:px-10 sm:py-12">
           <p className="text-sm font-medium text-[#C5CAE5]">Dashboard</p>

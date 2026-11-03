@@ -1,15 +1,12 @@
 import Link from "next/link";
 import { TryDemoButton } from "@/components/demo/TryDemoButton";
-import { dashboardHeroImage } from "@/lib/destination-image";
+import { LocalHeroBackground } from "@/components/home/LocalHero";
 
 export default function Home() {
   return (
     <main className="min-h-screen bg-[#080B3A] text-white">
       <div className="relative overflow-hidden">
-        <div
-          className="absolute inset-0 bg-cover bg-center opacity-35"
-          style={{ backgroundImage: `url(${dashboardHeroImage()})` }}
-        />
+        <LocalHeroBackground opacityClass="opacity-40" showCaption />
         <div className="absolute inset-0 bg-gradient-to-b from-[#080B3A]/70 via-[#080B3A]/85 to-[#080B3A]" />
         <div className="relative mx-auto flex max-w-4xl flex-col items-start px-6 py-20 sm:py-28">
           <div className="mb-6 flex items-center gap-2">
