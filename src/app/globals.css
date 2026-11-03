@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+:root {
+  --wp-primary: #1616c9;
+  --wp-primary-hover: #1010a3;
+  --wp-highlight: #eeeeff;
+  --wp-page: #f7f8fc;
+  --wp-surface: #ffffff;
+  --wp-text: #1f2937;
+  --wp-text-secondary: #6b7280;
+  --wp-border: #e5e7eb;
+  --wp-input-border: #d1d5db;
+  --wp-focus: #818cf8;
+  --wp-success: #15803d;
+  --wp-warning: #b45309;
+  --wp-error: #dc2626;
+}
+
+@theme inline {
+  --color-background: var(--wp-page);
+  --color-foreground: var(--wp-text);
+  --font-sans: var(--font-inter);
+}
+
+body {
+  background: var(--wp-page);
+  color: var(--wp-text);
+  font-family: var(--font-inter), system-ui, sans-serif;
+}
