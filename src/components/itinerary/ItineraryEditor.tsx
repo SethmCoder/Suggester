@@ -22,7 +22,13 @@ import {
   countryFromDestination,
   destinationImageUrl,
 } from "@/lib/destination-image";
+import {
+  DEMO_CONTENT_VERSION,
+  getDemoTripPayload,
+  isDemoTripId,
+} from "@/lib/demo/data";
 import { saveOfflineDayGroups, loadOfflineTrip } from "@/lib/offline/trips";
+import type { DayCityAssignment } from "@/lib/trips/legs";
 import { PopularityBadge } from "./PopularityBadge";
 import { TripMap } from "./TripMap";
 import { AssistantPanel } from "./AssistantPanel";
@@ -42,6 +48,7 @@ export function ItineraryEditor({
   isDemo = false,
   startDate,
   endDate,
+  dayCities,
 }: {
   tripId: string;
   destination: string;
@@ -50,6 +57,7 @@ export function ItineraryEditor({
   isDemo?: boolean;
   startDate?: string;
   endDate?: string;
+  dayCities?: DayCityAssignment[];
 }) {
   const [days, setDays] = useState<DayGroup[]>(() =>
     initialDays
@@ -71,25 +79,33 @@ export function ItineraryEditor({
   );
   const [offlineSaved, setOfflineSaved] = useState(false);
 
-  // Prefer locally saved edits (works offline / after reload)
+  // Prefer locally saved edits (works offline / after reload).
+  // Demo trips ignore stale snapshots (e.g. old Paris data under demo-dubai).
   useEffect(() => {
     if (hydratedOffline) return;
     try {
       const snap = loadOfflineTrip(tripId);
       if (snap?.days?.length) {
-        setDays(
-          snap.days
-            .slice()
-            .sort((a, b) => a.day_index - b.day_index)
-            .map((d) => ({
-              dayId: d.id,
-              dayIndex: d.day_index,
-              activities: snap.activities
-                .filter((a) => a.day_id === d.id)
-                .sort((a, b) => a.sort_order - b.sort_order),
-            })),
-        );
-        setOfflineSaved(true);
+        const demoOk =
+          !isDemoTripId(tripId) ||
+          (snap.contentVersion === DEMO_CONTENT_VERSION &&
+            snap.trip.destination ===
+              getDemoTripPayload(tripId).trip.destination);
+        if (demoOk) {
+          setDays(
+            snap.days
+              .slice()
+              .sort((a, b) => a.day_index - b.day_index)
+              .map((d) => ({
+                dayId: d.id,
+                dayIndex: d.day_index,
+                activities: snap.activities
+                  .filter((a) => a.day_id === d.id)
+                  .sort((a, b) => a.sort_order - b.sort_order),
+              })),
+          );
+          setOfflineSaved(true);
+        }
       }
     } catch {
       /* ignore */
@@ -397,7 +413,7 @@ export function ItineraryEditor({
   const heroImg = destinationImageUrl(destName);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-tour="tour-itinerary">
       <section className="relative overflow-hidden rounded-[16px] bg-[#10194A]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -477,6 +493,14 @@ export function ItineraryEditor({
                 >
                   <span className="text-[14px] font-semibold text-[#080B3A]">
                     Day {day.dayIndex + 1}
+                    {dayCities?.[day.dayIndex] ? (
+                      <span className="ml-2 font-normal text-[#0400FF]">
+                        · {dayCities[day.dayIndex].city}
+                        {dayCities[day.dayIndex].isArrivalTransitDay
+                          ? ` (from ${dayCities[day.dayIndex].previousCity})`
+                          : ""}
+                      </span>
+                    ) : null}
                     <span className="ml-2 font-normal text-[#6B7280]">
                       · {day.activities.length} stops
                     </span>

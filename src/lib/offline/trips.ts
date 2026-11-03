@@ -16,6 +16,8 @@ export type OfflineTripSnapshot = {
   activities: ActivityRow[];
   updatedAt: string;
   offlineOnly?: boolean;
+  /** Demo payload version — ignore stale local copies when bumped. */
+  contentVersion?: number;
 };
 
 function readIndex(): string[] {
@@ -105,6 +107,7 @@ export function saveOfflineDayGroups(
     activities,
     updatedAt: new Date().toISOString(),
     offlineOnly: existing?.offlineOnly,
+    contentVersion: existing?.contentVersion,
   });
 }
 

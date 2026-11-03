@@ -36,6 +36,7 @@ export default async function TripItineraryPage({
           isDemo
           startDate={data.trip.start_date}
           endDate={data.trip.end_date}
+          dayCities={data.dayCities}
         />
       </>
     );

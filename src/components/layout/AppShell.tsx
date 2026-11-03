@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { AvatarMenu } from "./AvatarMenu";
+import { FirstRunTour } from "@/components/tutorial/FirstRunTour";
 import { Button } from "@/components/ui/Button";
 import {
   IconBell,
@@ -72,11 +73,20 @@ export function AppShell({
         {NAV.map((item) => {
           const active = isActive(item.href, item.label);
           const Icon = item.icon;
+          const tourId =
+            item.label === "Home"
+              ? "tour-nav-home"
+              : item.label === "Saved Places"
+                ? "tour-nav-saved"
+                : item.label === "Help & Support"
+                  ? "tour-nav-help"
+                  : undefined;
           return (
             <Link
               key={item.label}
               href={item.href}
               onClick={() => setMobileOpen(false)}
+              data-tour={tourId}
               className={`flex items-center gap-3 rounded-[12px] px-3 py-2.5 text-sm font-medium transition-colors ${
                 active
                   ? "bg-[#0400FF] text-white shadow-lg shadow-[#0400FF]/25"
@@ -90,7 +100,10 @@ export function AppShell({
         })}
       </nav>
 
-      <div className="m-4 rounded-[14px] border border-[#292F68] bg-[#11165A] p-4">
+      <div
+        className="m-4 rounded-[14px] border border-[#292F68] bg-[#11165A] p-4"
+        data-tour="tour-create-trip"
+      >
         <p className="text-sm font-semibold text-white">
           Plan your next adventure with AI
         </p>
@@ -173,6 +186,7 @@ export function AppShell({
 
         <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
       </div>
+      <FirstRunTour />
     </div>
   );
 }

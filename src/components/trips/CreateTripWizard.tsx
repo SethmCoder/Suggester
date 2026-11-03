@@ -307,7 +307,7 @@ export function CreateTripWizard() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-2xl" data-tour="tour-create-wizard">
       <div className="mb-2">
         <h1 className="text-[28px] font-bold tracking-tight text-[#080B3A]">
           Create a trip

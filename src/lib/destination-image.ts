@@ -50,6 +50,8 @@ const LIBRARY: Record<string, string> = {
     "https://images.unsplash.com/photo-1617581629397-a72507c3de9e?auto=format&fit=crop&w=1600&q=80",
   dubai:
     "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?auto=format&fit=crop&w=1800&q=80",
+  "abu dhabi":
+    "https://images.unsplash.com/photo-1518684079-3c830dcef090?auto=format&fit=crop&w=1800&q=80",
 };
 
 /**
@@ -179,6 +181,8 @@ export function countryFromDestination(destination: string): string {
   const key = destination.toLowerCase();
   if (key.includes("paris")) return "France";
   if (key.includes("tokyo") || key.includes("japan")) return "Japan";
+  if (key.includes("dubai") || key.includes("abu dhabi") || key.includes("uae"))
+    return "United Arab Emirates";
   if (
     key.includes("new york") ||
     key.includes("seattle") ||

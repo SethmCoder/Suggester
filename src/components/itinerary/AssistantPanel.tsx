@@ -1,15 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { IconX } from "@/components/ui/Icons";
 import type { AssistantPatch } from "@/lib/ai/patch";
 
 const QUICK_PROMPTS = [
   "My flight is delayed by 2 hours on day 1",
-  "Change the Louvre to Musée d'Orsay",
+  "Best places to eat near our stops",
   "Make day 2 less busy",
-  "Replace an optional stop with a quieter museum from the candidate list",
+  "Change the Louvre to Musée d'Orsay",
 ];
 
 export function AssistantPanel({
@@ -22,6 +22,27 @@ export function AssistantPanel({
   onDemoApply?: (patch: AssistantPatch) => void;
 }) {
   const [open, setOpen] = useState(false);
+
+  // Open during the guided tour assistant step
+  useEffect(() => {
+    function syncTour() {
+      try {
+        if (localStorage.getItem("waypoint:tour-dismissed-v2") === "1") return;
+        const step = Number(localStorage.getItem("waypoint:tour-step-v2") ?? "-1");
+        // Step index 4 is the assistant stop in FirstRunTour
+        if (step === 4) setOpen(true);
+      } catch {
+        /* ignore */
+      }
+    }
+    syncTour();
+    window.addEventListener("waypoint:tour-step", syncTour);
+    window.addEventListener("storage", syncTour);
+    return () => {
+      window.removeEventListener("waypoint:tour-step", syncTour);
+      window.removeEventListener("storage", syncTour);
+    };
+  }, []);
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState<AssistantPatch | null>(null);
   const [loading, setLoading] = useState(false);
@@ -73,7 +94,10 @@ export function AssistantPanel({
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 w-[min(100%-1.5rem,22rem)]">
+    <div
+      className="fixed bottom-4 right-4 z-40 w-[min(100%-1.5rem,22rem)]"
+      data-tour="tour-assistant"
+    >
       {open ? (
         <div className="overflow-hidden rounded-[16px] border border-[#E1E5F0] bg-white shadow-[0_16px_48px_rgba(8,11,58,0.18)]">
           <div className="flex items-center justify-between bg-[#080B3A] px-4 py-3 text-white">

@@ -127,21 +127,32 @@ describe("Waypoint — 10 local test cases", () => {
   });
 
   // TC7
-  it("TC7: demo payloads (Paris + Dubai) have 4 days and labeled demo activities", () => {
+  it("TC7: demo payloads — Paris single-city, Dubai multi-city UAE", () => {
     expect(listDemoTrips().map((t) => t.id)).toEqual([
       DEMO_TRIP_ID,
       DEMO_DUBAI_ID,
     ]);
-    for (const id of [DEMO_TRIP_ID, DEMO_DUBAI_ID]) {
-      const payload = getDemoTripPayload(id);
-      expect(payload.isDemo).toBe(true);
-      expect(payload.days).toHaveLength(4);
-      expect(payload.activities.length).toBeGreaterThanOrEqual(8);
-      expect(payload.activities.every((a) => a.source === "demo")).toBe(true);
-    }
-    expect(getDemoTripPayload(DEMO_DUBAI_ID).trip.destination).toMatch(
-      /Dubai/i,
-    );
+    const paris = getDemoTripPayload(DEMO_TRIP_ID);
+    expect(paris.isDemo).toBe(true);
+    expect(paris.days).toHaveLength(4);
+    expect(paris.activities.every((a) => a.source === "demo")).toBe(true);
+
+    const dubai = getDemoTripPayload(DEMO_DUBAI_ID);
+    expect(dubai.trip.destination).toMatch(/Dubai/i);
+    expect(dubai.trip.destination).toMatch(/Abu Dhabi/i);
+    expect(dubai.days).toHaveLength(5);
+    expect(dubai.legs?.map((l) => l.city)).toEqual(["Dubai", "Abu Dhabi"]);
+    expect(dubai.dayCities?.some((d) => d.city === "Abu Dhabi")).toBe(true);
+    expect(
+      dubai.dayCities?.some((d) => d.isArrivalTransitDay && d.city === "Abu Dhabi"),
+    ).toBe(true);
+    // UAE latitudes only — never Paris (~48.8)
+    expect(
+      dubai.activities.every(
+        (a) => a.lat == null || (a.lat >= 23 && a.lat <= 27),
+      ),
+    ).toBe(true);
+    expect(dubai.activities.every((a) => a.source === "demo")).toBe(true);
   });
 
   // TC8

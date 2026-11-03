@@ -1,106 +1,347 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import {
+  useEffect,
+  useLayoutEffect,
+  useState,
+  type CSSProperties,
+} from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 
-const STORAGE_KEY = "waypoint:tour-dismissed-v1";
+const DISMISSED_KEY = "waypoint:tour-dismissed-v2";
+const STEP_KEY = "waypoint:tour-step-v2";
 
-const STEPS = [
+type TourStep = {
+  title: string;
+  body: string;
+  /** Route to visit for this step */
+  href: string;
+  /** data-tour attribute value to spotlight */
+  target?: string;
+  placement?: "bottom" | "top" | "left" | "right";
+};
+
+const STEPS: TourStep[] = [
   {
-    title: "Plan trips your way",
-    body: "Create a trip with destination, dates, and interests. Waypoint builds a day-by-day itinerary you can edit.",
+    title: "Your home base",
+    body: "This is your dashboard — recent trips, a local hero, and a quick jump into planning. Use the sidebar anytime to move around Waypoint.",
+    href: "/dashboard",
+    target: "tour-nav-home",
+    placement: "right",
   },
   {
-    title: "Places from OpenStreetMap",
-    body: "Candidates come from OpenStreetMap (free, no account). Map data © OpenStreetMap contributors (ODbL).",
+    title: "Your trips live here",
+    body: "Open a saved or demo itinerary from My trips. Paris and Dubai demos work offline so you can explore without signing in.",
+    href: "/dashboard",
+    target: "tour-trips-list",
+    placement: "top",
   },
   {
-    title: "Online interest signals",
-    body: "When a place has a verified Wikipedia article, recent pageview changes may show as “Online interest increasing” — a weak signal, not proof of foot traffic or social virality.",
+    title: "Create a trip",
+    body: "Walk through cities, dates, interests, and hotels here. Waypoint builds a day-by-day plan from free map data you can edit afterward. You can also start from Create a Trip in the sidebar.",
+    href: "/trips/new",
+    target: "tour-create-wizard",
+    placement: "bottom",
+  },
+  {
+    title: "Day-by-day itinerary",
+    body: "Each trip shows a schedule and map for the selected day. Drag stops, retimes, and save — including offline on this device.",
+    href: "/trips/demo-paris",
+    target: "tour-itinerary",
+    placement: "bottom",
   },
   {
     title: "Ask the itinerary maker",
-    body: "Delayed flight? Swap a stop? Open any trip and use the assistant to reshuffle activities, then approve changes.",
+    body: "Delayed flight? Best places to eat near your stops? Open the assistant, get a suggested patch, then approve to update the plan and map.",
+    href: "/trips/demo-paris",
+    target: "tour-assistant",
+    placement: "left",
+  },
+  {
+    title: "Saved places & help",
+    body: "Pin favorites under Saved Places, tweak maps in Settings, and open Help anytime. You’re ready to explore the rest of the app.",
+    href: "/saved-places",
+    target: "tour-nav-saved",
+    placement: "right",
   },
 ];
 
+function pathMatches(pathname: string, href: string) {
+  if (href === "/dashboard") return pathname === "/dashboard";
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function readStep(): number {
+  try {
+    const n = Number(localStorage.getItem(STEP_KEY) ?? "0");
+    if (Number.isFinite(n) && n >= 0 && n < STEPS.length) return n;
+  } catch {
+    /* ignore */
+  }
+  return 0;
+}
+
+function writeStep(n: number) {
+  try {
+    localStorage.setItem(STEP_KEY, String(n));
+  } catch {
+    /* ignore */
+  }
+}
+
 export function FirstRunTour() {
+  const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);
+  const [spot, setSpot] = useState<DOMRect | null>(null);
 
   useEffect(() => {
     try {
-      if (localStorage.getItem(STORAGE_KEY) === "1") return;
+      if (localStorage.getItem(DISMISSED_KEY) === "1") return;
+      const s = readStep();
+      setStep(s);
       setOpen(true);
     } catch {
       /* ignore */
     }
   }, []);
 
+  // Keep the user on the route for the active step
+  useEffect(() => {
+    if (!open) return;
+    const href = STEPS[step]?.href;
+    if (!href) return;
+    if (!pathMatches(pathname, href)) {
+      router.push(href);
+    }
+  }, [open, step, pathname, router]);
+
+  // Measure spotlight target after navigation / step change
+  useLayoutEffect(() => {
+    if (!open) {
+      setSpot(null);
+      return;
+    }
+    const target = STEPS[step]?.target;
+    if (!target) {
+      setSpot(null);
+      return;
+    }
+
+    let tries = 0;
+    let raf = 0;
+    const measure = () => {
+      let el = document.querySelector(
+        `[data-tour="${target}"]`,
+      ) as HTMLElement | null;
+      // Sidebar targets are hidden on mobile until the drawer opens
+      if (
+        !el &&
+        (target.startsWith("tour-nav") || target === "tour-create-trip")
+      ) {
+        const menu = document.querySelector(
+          '[aria-label="Open menu"]',
+        ) as HTMLButtonElement | null;
+        menu?.click();
+      }
+      el = document.querySelector(
+        `[data-tour="${target}"]`,
+      ) as HTMLElement | null;
+      if (el) {
+        el.scrollIntoView({ block: "nearest", inline: "nearest" });
+        setSpot(el.getBoundingClientRect());
+        return;
+      }
+      setSpot(null);
+      if (tries++ < 12) {
+        raf = window.setTimeout(measure, 80);
+      }
+    };
+    measure();
+    const onResize = () => measure();
+    window.addEventListener("resize", onResize);
+    window.addEventListener("scroll", onResize, true);
+    return () => {
+      window.clearTimeout(raf);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onResize, true);
+    };
+  }, [open, step, pathname]);
+
   function dismiss() {
     try {
-      localStorage.setItem(STORAGE_KEY, "1");
+      localStorage.setItem(DISMISSED_KEY, "1");
+      localStorage.removeItem(STEP_KEY);
     } catch {
       /* ignore */
     }
     setOpen(false);
   }
 
+  function go(next: number) {
+    const clamped = Math.max(0, Math.min(STEPS.length - 1, next));
+    writeStep(clamped);
+    setStep(clamped);
+    try {
+      window.dispatchEvent(
+        new CustomEvent("waypoint:tour-step", {
+          detail: { step: clamped, target: STEPS[clamped].target },
+        }),
+      );
+    } catch {
+      /* ignore */
+    }
+    const href = STEPS[clamped].href;
+    if (!pathMatches(pathname, href)) {
+      router.push(href);
+    }
+  }
+
   if (!open) return null;
 
   const current = STEPS[step];
+  const pad = 8;
+  const cardStyle = positionCard(spot, current.placement ?? "bottom");
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-[#080B3A]/50 p-4 sm:items-center"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="tour-title"
-    >
-      <div className="w-full max-w-md rounded-[16px] border border-[#E1E5F0] bg-white p-6 shadow-[0_16px_48px_rgba(8,11,58,0.2)]">
+    <div className="pointer-events-none fixed inset-0 z-[60]" aria-live="polite">
+      {/* Dim + spotlight cutout */}
+      <div className="pointer-events-auto absolute inset-0" aria-hidden>
+        {spot ? (
+          <svg className="h-full w-full">
+            <defs>
+              <mask id="tour-mask">
+                <rect width="100%" height="100%" fill="white" />
+                <rect
+                  x={spot.left - pad}
+                  y={spot.top - pad}
+                  width={spot.width + pad * 2}
+                  height={spot.height + pad * 2}
+                  rx="14"
+                  fill="black"
+                />
+              </mask>
+            </defs>
+            <rect
+              width="100%"
+              height="100%"
+              fill="rgba(8,11,58,0.55)"
+              mask="url(#tour-mask)"
+            />
+            <rect
+              x={spot.left - pad}
+              y={spot.top - pad}
+              width={spot.width + pad * 2}
+              height={spot.height + pad * 2}
+              rx="14"
+              fill="none"
+              stroke="#0400FF"
+              strokeWidth="2"
+            />
+          </svg>
+        ) : (
+          <div className="h-full w-full bg-[#080B3A]/45" />
+        )}
+      </div>
+
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="tour-title"
+        className="pointer-events-auto absolute z-[61] w-[min(100%-1.5rem,22rem)] rounded-[16px] border border-[#E1E5F0] bg-white p-5 shadow-[0_16px_48px_rgba(8,11,58,0.25)]"
+        style={cardStyle}
+      >
         <p className="text-xs font-semibold uppercase tracking-wide text-[#0400FF]">
-          Waypoint tutorial · {step + 1}/{STEPS.length}
+          Waypoint tour · {step + 1}/{STEPS.length}
         </p>
         <h2
           id="tour-title"
-          className="mt-2 text-[20px] font-semibold text-[#080B3A]"
+          className="mt-1.5 text-[18px] font-semibold text-[#080B3A]"
         >
           {current.title}
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-[#6B7280]">
           {current.body}
         </p>
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
           <button
             type="button"
             className="text-sm text-[#6B7280] hover:text-[#080B3A]"
             onClick={dismiss}
           >
-            Skip
+            Skip tour
           </button>
           <div className="flex gap-2">
+            {step > 0 ? (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => go(step - 1)}
+              >
+                Back
+              </Button>
+            ) : null}
             {step < STEPS.length - 1 ? (
-              <Button type="button" onClick={() => setStep((s) => s + 1)}>
+              <Button type="button" onClick={() => go(step + 1)}>
                 Next
               </Button>
             ) : (
-              <>
-                <Link
-                  href="/help"
-                  className="inline-flex items-center rounded-[12px] border border-[#E1E5F0] px-4 py-2 text-sm font-medium text-[#080B3A] hover:bg-[#F5F7FF]"
-                  onClick={dismiss}
-                >
-                  Full guide
-                </Link>
-                <Button type="button" onClick={dismiss}>
-                  Got it
-                </Button>
-              </>
+              <Button type="button" onClick={dismiss}>
+                Finish
+              </Button>
             )}
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+function positionCard(
+  spot: DOMRect | null,
+  placement: "bottom" | "top" | "left" | "right",
+): CSSProperties {
+  const margin = 16;
+  const width = Math.min(
+    352,
+    typeof window !== "undefined" ? window.innerWidth - 24 : 352,
+  );
+
+  if (!spot || typeof window === "undefined") {
+    return { left: margin, bottom: margin };
+  }
+
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  if (placement === "right") {
+    const left = Math.min(spot.right + 14, vw - width - margin);
+    const top = Math.min(
+      Math.max(margin, spot.top),
+      vh - 220,
+    );
+    return { left, top, width };
+  }
+  if (placement === "left") {
+    const left = Math.max(margin, spot.left - width - 14);
+    const top = Math.min(Math.max(margin, spot.top - 20), vh - 220);
+    return { left, top, width };
+  }
+  if (placement === "top") {
+    const left = Math.min(
+      Math.max(margin, spot.left + spot.width / 2 - width / 2),
+      vw - width - margin,
+    );
+    const top = Math.max(margin, spot.top - 200);
+    return { left, top, width };
+  }
+  // bottom
+  const left = Math.min(
+    Math.max(margin, spot.left + spot.width / 2 - width / 2),
+    vw - width - margin,
+  );
+  const top = Math.min(spot.bottom + 14, vh - 220);
+  return { left, top, width };
 }

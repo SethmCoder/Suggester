@@ -3,8 +3,13 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ItineraryEditor } from "@/components/itinerary/ItineraryEditor";
-import { getDemoTripPayload, isDemoTripId } from "@/lib/demo/data";
-import { loadOfflineTrip } from "@/lib/offline/trips";
+import {
+  DEMO_CONTENT_VERSION,
+  getDemoTripPayload,
+  isDemoTripId,
+} from "@/lib/demo/data";
+import { loadOfflineTrip, saveOfflineTrip } from "@/lib/offline/trips";
+import type { DayCityAssignment } from "@/lib/trips/legs";
 
 export function OfflineTripLoader({ tripId }: { tripId: string }) {
   const [state, setState] = useState<
@@ -18,6 +23,7 @@ export function OfflineTripLoader({ tripId }: { tripId: string }) {
         startDate?: string;
         endDate?: string;
         isDemo: boolean;
+        dayCities?: DayCityAssignment[];
       }
   >({ status: "loading" });
 
@@ -25,14 +31,28 @@ export function OfflineTripLoader({ tripId }: { tripId: string }) {
     if (isDemoTripId(tripId)) {
       const data = getDemoTripPayload(tripId);
       const offline = loadOfflineTrip(tripId);
+      const offlineFresh =
+        offline &&
+        offline.contentVersion === DEMO_CONTENT_VERSION &&
+        offline.trip.destination === data.trip.destination;
+      // Always refresh canonical demo into local storage so stale Paris
+      // copies under demo-dubai cannot linger.
+      saveOfflineTrip({
+        trip: { ...data.trip, day_count: data.days.length },
+        days: data.days,
+        activities: offlineFresh ? offline.activities : data.activities,
+        updatedAt: new Date().toISOString(),
+        contentVersion: DEMO_CONTENT_VERSION,
+      });
       setState({
         status: "ready",
         destination: `${data.trip.destination} (Demo)`,
-        days: offline?.days ?? data.days,
-        activities: offline?.activities ?? data.activities,
+        days: data.days,
+        activities: offlineFresh ? offline.activities : data.activities,
         startDate: data.trip.start_date,
         endDate: data.trip.end_date,
         isDemo: true,
+        dayCities: data.dayCities,
       });
       return;
     }
@@ -88,6 +108,7 @@ export function OfflineTripLoader({ tripId }: { tripId: string }) {
       isDemo={state.isDemo}
       startDate={state.startDate}
       endDate={state.endDate}
+      dayCities={state.dayCities}
     />
   );
 }

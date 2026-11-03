@@ -3,7 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { getDemoTripPayload, listDemoTrips } from "@/lib/demo/data";
+import {
+  DEMO_CONTENT_VERSION,
+  getDemoTripPayload,
+  listDemoTrips,
+} from "@/lib/demo/data";
 import { saveOfflineTrip } from "@/lib/offline/trips";
 
 function seedDemoOffline() {
@@ -14,6 +18,7 @@ function seedDemoOffline() {
       days: payload.days,
       activities: payload.activities,
       updatedAt: new Date().toISOString(),
+      contentVersion: DEMO_CONTENT_VERSION,
     });
   }
 }

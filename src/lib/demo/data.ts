@@ -1,8 +1,11 @@
-import type { ActivityRow } from "@/lib/types/trip";
+import type { ActivityRow, TripLeg } from "@/lib/types/trip";
+import { expandLegsToDays, type DayCityAssignment } from "@/lib/trips/legs";
 
 /** Clearly labeled sample itineraries — not live Google/Groq data. */
 export const DEMO_TRIP_ID = "demo-paris";
 export const DEMO_DUBAI_ID = "demo-dubai";
+/** Bump when demo payloads change so stale localStorage copies are ignored. */
+export const DEMO_CONTENT_VERSION = 3;
 
 export const DEMO_BANNER =
   "Demo mode — sample data only. Place facts here are illustrative, not live-verified.";
@@ -18,15 +21,35 @@ export const demoTrip = {
   day_count: 4,
 };
 
+/** Multi-city sample: Dubai stay, then Abu Dhabi — shows how legs become day cities. */
+export const demoDubaiLegs: TripLeg[] = [
+  {
+    city: "Dubai",
+    days: 3,
+    hotel: "Marina area (demo hotel)",
+    lat: 25.0805,
+    lng: 55.1403,
+    countryCode: "AE",
+  },
+  {
+    city: "Abu Dhabi",
+    days: 2,
+    hotel: "Corniche area (demo hotel)",
+    lat: 24.4764,
+    lng: 54.3705,
+    countryCode: "AE",
+  },
+];
+
 export const demoDubaiTrip = {
   id: DEMO_DUBAI_ID,
-  destination: "Dubai, United Arab Emirates",
+  destination: "Dubai → Abu Dhabi, UAE",
   start_date: "2026-11-10",
-  end_date: "2026-11-13",
+  end_date: "2026-11-14",
   cover_image_url: null as string | null,
   created_at: new Date().toISOString(),
   status: "ready",
-  day_count: 4,
+  day_count: 5,
 };
 
 export const demoDays = [
@@ -211,9 +234,14 @@ export const demoDubaiDays = [
   { id: "demo-dxb-day-1", day_index: 1 },
   { id: "demo-dxb-day-2", day_index: 2 },
   { id: "demo-dxb-day-3", day_index: 3 },
+  { id: "demo-dxb-day-4", day_index: 4 },
 ];
 
+export const demoDubaiDayCities: DayCityAssignment[] =
+  expandLegsToDays(demoDubaiLegs);
+
 export const demoDubaiActivities: ActivityRow[] = [
+  // —— Dubai days 1–3 ——
   act({
     id: "demo-dxb-a1",
     day_id: "demo-dxb-day-0",
@@ -225,7 +253,7 @@ export const demoDubaiActivities: ActivityRow[] = [
     duration_minutes: 90,
     sort_order: 0,
     priority: "must_see",
-    planning_note: "Arrival-day stroll — cooler late afternoon.",
+    planning_note: "city=Dubai · Arrival-day stroll — cooler late afternoon.",
   }),
   act({
     id: "demo-dxb-a2",
@@ -239,6 +267,7 @@ export const demoDubaiActivities: ActivityRow[] = [
     travel_minutes_from_prev: 15,
     sort_order: 1,
     priority: "preferred",
+    planning_note: "city=Dubai",
   }),
   act({
     id: "demo-dxb-a3",
@@ -256,7 +285,8 @@ export const demoDubaiActivities: ActivityRow[] = [
     popularity_attribution_urls: [
       "https://en.wikipedia.org/wiki/Burj_Khalifa",
     ],
-    planning_note: "Sample must-see — book observation deck tickets in a real trip.",
+    planning_note:
+      "city=Dubai · Sample must-see — book observation deck tickets in a real trip.",
   }),
   act({
     id: "demo-dxb-a4",
@@ -270,6 +300,7 @@ export const demoDubaiActivities: ActivityRow[] = [
     travel_minutes_from_prev: 10,
     sort_order: 1,
     priority: "preferred",
+    planning_note: "city=Dubai",
   }),
   act({
     id: "demo-dxb-a5",
@@ -283,6 +314,7 @@ export const demoDubaiActivities: ActivityRow[] = [
     travel_minutes_from_prev: 8,
     sort_order: 2,
     priority: "optional",
+    planning_note: "city=Dubai",
   }),
   act({
     id: "demo-dxb-a6",
@@ -295,6 +327,7 @@ export const demoDubaiActivities: ActivityRow[] = [
     duration_minutes: 120,
     sort_order: 0,
     priority: "must_see",
+    planning_note: "city=Dubai",
   }),
   act({
     id: "demo-dxb-a7",
@@ -308,6 +341,7 @@ export const demoDubaiActivities: ActivityRow[] = [
     travel_minutes_from_prev: 12,
     sort_order: 1,
     priority: "preferred",
+    planning_note: "city=Dubai",
   }),
   act({
     id: "demo-dxb-a8",
@@ -321,32 +355,86 @@ export const demoDubaiActivities: ActivityRow[] = [
     travel_minutes_from_prev: 15,
     sort_order: 2,
     priority: "optional",
+    planning_note: "city=Dubai · Last Dubai day before the Abu Dhabi leg.",
   }),
+  // —— Transit + Abu Dhabi days 4–5 ——
   act({
     id: "demo-dxb-a9",
     day_id: "demo-dxb-day-3",
-    name: "Museum of the Future exterior (demo)",
-    address: "Sheikh Zayed Road, Dubai",
-    lat: 25.2194,
-    lng: 55.2819,
-    start_time: "10:00:00",
-    duration_minutes: 75,
+    name: "Intercity transfer Dubai → Abu Dhabi (demo)",
+    address: "E11 / coach corridor toward Abu Dhabi",
+    lat: 24.85,
+    lng: 54.7,
+    start_time: "09:00:00",
+    duration_minutes: 120,
     sort_order: 0,
-    priority: "preferred",
+    priority: "must_see",
+    planning_note:
+      "city=Abu Dhabi · Multi-city transit day — ~1.5–2h by road. Real trips leave buffer before first stop.",
+    schedule_warnings: [
+      "Demo transit block — not a live timetable",
+    ],
   }),
   act({
     id: "demo-dxb-a10",
     day_id: "demo-dxb-day-3",
-    name: "Departure buffer / café (demo)",
-    address: "Near Dubai International area",
-    lat: 25.2532,
-    lng: 55.3657,
+    name: "Sheikh Zayed Grand Mosque exterior (demo)",
+    address: "Sheikh Zayed Grand Mosque, Abu Dhabi",
+    lat: 24.4128,
+    lng: 54.475,
+    start_time: "13:00:00",
+    duration_minutes: 120,
+    travel_minutes_from_prev: 40,
+    sort_order: 1,
+    priority: "must_see",
+    planning_note:
+      "city=Abu Dhabi · First stop after the city change — dress code applies in a real visit.",
+  }),
+  act({
+    id: "demo-dxb-a11",
+    day_id: "demo-dxb-day-3",
+    name: "Corniche waterfront stroll (demo)",
+    address: "Abu Dhabi Corniche",
+    lat: 24.4764,
+    lng: 54.3205,
+    start_time: "16:30:00",
+    duration_minutes: 75,
+    travel_minutes_from_prev: 25,
+    sort_order: 2,
+    priority: "preferred",
+    planning_note: "city=Abu Dhabi",
+  }),
+  act({
+    id: "demo-dxb-a12",
+    day_id: "demo-dxb-day-4",
+    name: "Louvre Abu Dhabi area (demo)",
+    address: "Saadiyat Island, Abu Dhabi",
+    lat: 24.5337,
+    lng: 54.398,
+    start_time: "10:00:00",
+    duration_minutes: 120,
+    sort_order: 0,
+    priority: "must_see",
+    popularity_label: "Online interest increasing",
+    popularity_sources: ["wikimedia_pageviews"],
+    popularity_attribution_urls: [
+      "https://en.wikipedia.org/wiki/Louvre_Abu_Dhabi",
+    ],
+    planning_note: "city=Abu Dhabi · Final city day on this multi-city sample.",
+  }),
+  act({
+    id: "demo-dxb-a13",
+    day_id: "demo-dxb-day-4",
+    name: "Qasr Al Watan exterior / departure buffer (demo)",
+    address: "Qasr Al Watan, Abu Dhabi",
+    lat: 24.4647,
+    lng: 54.3258,
     start_time: "14:00:00",
-    duration_minutes: 60,
-    travel_minutes_from_prev: 35,
+    duration_minutes: 75,
+    travel_minutes_from_prev: 30,
     sort_order: 1,
     priority: "optional",
-    planning_note: "Light departure-day block toward DXB.",
+    planning_note: "city=Abu Dhabi · Light end-of-trip block.",
   }),
 ];
 
@@ -361,22 +449,47 @@ export function listDemoTrips() {
 export function getDemoTripPayload(id: string = DEMO_TRIP_ID) {
   if (id === DEMO_DUBAI_ID) {
     return {
-      trip: demoDubaiTrip,
+      trip: { ...demoDubaiTrip, day_count: demoDubaiDays.length },
       days: demoDubaiDays,
       activities: demoDubaiActivities,
+      legs: demoDubaiLegs,
+      dayCities: demoDubaiDayCities,
+      contentVersion: DEMO_CONTENT_VERSION,
       preferences: {
         interests: ["architecture", "culture", "shopping"],
         intensity: "balanced",
         transport: "transit",
         prefersHiddenGems: false,
+        legs: demoDubaiLegs,
       },
       isDemo: true as const,
     };
   }
   return {
-    trip: demoTrip,
+    trip: { ...demoTrip, day_count: demoDays.length },
     days: demoDays,
     activities: demoActivities,
+    legs: [
+      {
+        city: "Paris",
+        days: 4,
+        hotel: "Demo hotel",
+        lat: 48.86,
+        lng: 2.35,
+        countryCode: "FR",
+      },
+    ] satisfies TripLeg[],
+    dayCities: expandLegsToDays([
+      {
+        city: "Paris",
+        days: 4,
+        hotel: "Demo hotel",
+        lat: 48.86,
+        lng: 2.35,
+        countryCode: "FR",
+      },
+    ]),
+    contentVersion: DEMO_CONTENT_VERSION,
     preferences: {
       interests: ["architecture", "museums", "food"],
       intensity: "balanced",

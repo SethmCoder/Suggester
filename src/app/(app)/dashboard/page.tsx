@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { DemoBanner } from "@/components/demo/DemoBanner";
-import { FirstRunTour } from "@/components/tutorial/FirstRunTour";
 import { Button } from "@/components/ui/Button";
 import { IconArrowRight, IconPlane, IconSearch } from "@/components/ui/Icons";
 import { LocalHeroBackground } from "@/components/home/LocalHero";
@@ -12,7 +11,11 @@ import {
   destinationImageUrl,
 } from "@/lib/destination-image";
 import { formatTripDate } from "@/lib/format-date";
-import { getDemoTripPayload, listDemoTrips } from "@/lib/demo/data";
+import {
+  DEMO_CONTENT_VERSION,
+  getDemoTripPayload,
+  listDemoTrips,
+} from "@/lib/demo/data";
 import {
   listOfflineTrips,
   saveOfflineTrip,
@@ -41,6 +44,7 @@ function seedDemoOffline() {
       days: payload.days,
       activities: payload.activities,
       updatedAt: new Date().toISOString(),
+      contentVersion: DEMO_CONTENT_VERSION,
     });
   }
 }
@@ -110,7 +114,6 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <FirstRunTour />
       {isDemo ? <DemoBanner /> : null}
 
       {/* Hero */}
@@ -136,7 +139,10 @@ export default function DashboardPage() {
       </section>
 
       {/* Search + section */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div
+        className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"
+        data-tour="tour-trips-list"
+      >
         <div>
           <h2 className="text-[20px] font-semibold text-[#1F2937]">My trips</h2>
           <p className="text-sm text-[#6B7280]">
@@ -215,9 +221,9 @@ function TripCard({ trip }: { trip: TripListItem }) {
           className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-[#080B3A]/50 to-transparent" />
-        {trip.id === "demo-paris" ? (
+        {trip.id.startsWith("demo-") ? (
           <span className="absolute right-3 top-3 rounded-md bg-[#0400FF] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-            Demo
+            {trip.id === "demo-dubai" ? "Multi-city demo" : "Demo"}
           </span>
         ) : null}
       </div>
@@ -226,7 +232,9 @@ function TripCard({ trip }: { trip: TripListItem }) {
           {trip.destination.split(",")[0]}
         </h3>
         <p className="text-sm text-[#6B7280]">
-          {countryFromDestination(trip.destination)}
+          {trip.id === "demo-dubai"
+            ? "UAE · sample multi-city legs"
+            : countryFromDestination(trip.destination)}
         </p>
         <p className="text-sm text-[#6B7280]">
           {formatTripDate(trip.start_date, "short")} –{" "}
