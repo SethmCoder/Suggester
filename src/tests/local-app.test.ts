@@ -6,8 +6,10 @@ import { describe, expect, it } from "vitest";
 import { checkVisitAgainstHours } from "@/lib/ai/hours";
 import { addMinutes, orderByNearestNeighbor } from "@/lib/ai/scheduler";
 import {
+  DEMO_DUBAI_ID,
   DEMO_TRIP_ID,
   getDemoTripPayload,
+  listDemoTrips,
 } from "@/lib/demo/data";
 import {
   combinePersonalizationRank,
@@ -76,7 +78,7 @@ describe("Waypoint — 10 local test cases", () => {
   });
 
   // TC4
-  it("TC4: demo session lists the sample Paris trip", async () => {
+  it("TC4: demo session lists Paris and Dubai sample trips", async () => {
     const start = await post("/api/demo/start");
     const cookie = cookieFrom(start);
     expect(cookie).toBeTruthy();
@@ -90,9 +92,12 @@ describe("Waypoint — 10 local test cases", () => {
       trips: { id: string; destination: string }[];
     };
     expect(data.isDemo).toBe(true);
-    expect(data.trips.length).toBeGreaterThan(0);
-    expect(data.trips[0].id).toBe(DEMO_TRIP_ID);
-    expect(data.trips[0].destination).toMatch(/Paris/i);
+    expect(data.trips.length).toBeGreaterThanOrEqual(2);
+    const ids = data.trips.map((t) => t.id);
+    expect(ids).toContain(DEMO_TRIP_ID);
+    expect(ids).toContain(DEMO_DUBAI_ID);
+    expect(data.trips.some((t) => /Paris/i.test(t.destination))).toBe(true);
+    expect(data.trips.some((t) => /Dubai/i.test(t.destination))).toBe(true);
   });
 
   // TC5
@@ -122,12 +127,21 @@ describe("Waypoint — 10 local test cases", () => {
   });
 
   // TC7
-  it("TC7: demo payload has 4 days and labeled demo activities", () => {
-    const payload = getDemoTripPayload();
-    expect(payload.isDemo).toBe(true);
-    expect(payload.days).toHaveLength(4);
-    expect(payload.activities.length).toBeGreaterThanOrEqual(8);
-    expect(payload.activities.every((a) => a.source === "demo")).toBe(true);
+  it("TC7: demo payloads (Paris + Dubai) have 4 days and labeled demo activities", () => {
+    expect(listDemoTrips().map((t) => t.id)).toEqual([
+      DEMO_TRIP_ID,
+      DEMO_DUBAI_ID,
+    ]);
+    for (const id of [DEMO_TRIP_ID, DEMO_DUBAI_ID]) {
+      const payload = getDemoTripPayload(id);
+      expect(payload.isDemo).toBe(true);
+      expect(payload.days).toHaveLength(4);
+      expect(payload.activities.length).toBeGreaterThanOrEqual(8);
+      expect(payload.activities.every((a) => a.source === "demo")).toBe(true);
+    }
+    expect(getDemoTripPayload(DEMO_DUBAI_ID).trip.destination).toMatch(
+      /Dubai/i,
+    );
   });
 
   // TC8

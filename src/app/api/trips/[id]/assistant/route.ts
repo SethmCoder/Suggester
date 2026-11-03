@@ -11,7 +11,7 @@ import {
   assistantUserPrompt,
 } from "@/lib/ai/assistant-prompt";
 import { assistantPatchSchema } from "@/lib/ai/patch";
-import { DEMO_TRIP_ID, getDemoTripPayload } from "@/lib/demo/data";
+import { getDemoTripPayload, isDemoTripId } from "@/lib/demo/data";
 import { DEMO_COOKIE, isDemoCookie } from "@/lib/demo/session";
 import { fetchTripFull } from "@/lib/db/trips";
 import {
@@ -32,14 +32,15 @@ export async function POST(
   const cookieStore = await cookies();
   const demo = isDemoCookie(cookieStore.get(DEMO_COOKIE)?.value);
 
-  if (demo && tripId === DEMO_TRIP_ID) {
-    const payload = getDemoTripPayload();
+  if (demo && isDemoTripId(tripId)) {
+    const payload = getDemoTripPayload(tripId);
     const patch = await buildLocalAssistantPatchAsync({
       message,
       days: payload.days,
       activities: payload.activities,
       dayEnd: "21:00",
-      transport: "walking",
+      transport: payload.preferences.transport ?? "walking",
+      destination: payload.trip.destination,
     });
     return NextResponse.json({ patch, mode: "demo" });
   }
@@ -64,9 +65,24 @@ export async function POST(
   }
 
   const apiKey = process.env.GROQ_API_KEY;
-  let patch;
+  const prefs = trip.preferences as
+    | { dayEnd?: string; transport?: string }
+    | undefined;
+  const localArgs = {
+    message,
+    days: trip.days,
+    activities: trip.activities,
+    dayEnd: prefs?.dayEnd,
+    transport: prefs?.transport,
+    destination: trip.trip.destination as string | undefined,
+  };
 
-  if (apiKey) {
+  // Food near stops needs OSM coords — always use the local recommender.
+  const { isFoodRecommendQuery } = await import("@/lib/ai/recommend-food");
+  let patch;
+  if (isFoodRecommendQuery(message)) {
+    patch = await buildLocalAssistantPatchAsync(localArgs);
+  } else if (apiKey) {
     try {
       const client = new Groq({ apiKey });
       const model = process.env.GROQ_MODEL ?? "openai/gpt-oss-120b";
@@ -120,6 +136,15 @@ export async function POST(
                       travelMinutesFromPrev: { type: "integer" },
                       endTime: { type: "string" },
                       sortOrder: { type: "integer" },
+                      lat: { type: "number" },
+                      lng: { type: "number" },
+                      address: { type: "string" },
+                      recommended: { type: "boolean" },
+                      popularityLabel: { type: "string" },
+                      popularitySources: {
+                        type: "array",
+                        items: { type: "string" },
+                      },
                       fields: {
                         type: "object",
                         additionalProperties: false,
@@ -155,28 +180,10 @@ export async function POST(
       if (!raw) throw new Error("Empty AI response");
       patch = assistantPatchSchema.parse(JSON.parse(raw));
     } catch {
-      const prefs = trip.preferences as
-        | { dayEnd?: string; transport?: string }
-        | undefined;
-      patch = await buildLocalAssistantPatchAsync({
-        message,
-        days: trip.days,
-        activities: trip.activities,
-        dayEnd: prefs?.dayEnd,
-        transport: prefs?.transport,
-      });
+      patch = await buildLocalAssistantPatchAsync(localArgs);
     }
   } else {
-    const prefs = trip.preferences as
-      | { dayEnd?: string; transport?: string }
-      | undefined;
-    patch = await buildLocalAssistantPatchAsync({
-      message,
-      days: trip.days,
-      activities: trip.activities,
-      dayEnd: prefs?.dayEnd,
-      transport: prefs?.transport,
-    });
+    patch = await buildLocalAssistantPatchAsync(localArgs);
   }
 
   const svc = createServiceClient();

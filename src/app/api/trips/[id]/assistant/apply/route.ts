@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { shiftActivityStartTime } from "@/lib/ai/scheduler";
 import { assistantPatchSchema } from "@/lib/ai/patch";
-import { DEMO_TRIP_ID } from "@/lib/demo/data";
+import { isDemoTripId } from "@/lib/demo/data";
 import { DEMO_COOKIE, isDemoCookie } from "@/lib/demo/session";
 import { getPlaceDetails } from "@/lib/google/places";
 import {
@@ -19,8 +19,8 @@ export async function POST(
   const cookieStore = await cookies();
   const demo = isDemoCookie(cookieStore.get(DEMO_COOKIE)?.value);
 
-  if (demo && tripId === DEMO_TRIP_ID) {
-    // Client applies demo patches to sessionStorage; acknowledge approval.
+  if (demo && isDemoTripId(tripId)) {
+    // Client applies demo patches to local offline store; acknowledge approval.
     return NextResponse.json({ ok: true, mode: "demo", patch });
   }
 
@@ -93,19 +93,20 @@ export async function POST(
       const targetDay = days?.find((d) => d.day_index === op.toDayIndex);
       if (!targetDay) continue;
       let name = op.name ?? "Suggested stop";
-      let address: string | null = null;
-      let lat: number | null = null;
-      let lng: number | null = null;
+      let address: string | null = op.address ?? null;
+      let lat: number | null = op.lat ?? null;
+      let lng: number | null = op.lng ?? null;
       let hoursVerified = false;
       let website: string | null = null;
       let maps: string | null = null;
-      if (op.placeId) {
+      const isOsm = op.placeId?.startsWith("osm:");
+      if (op.placeId && !isOsm) {
         const details = await getPlaceDetails(op.placeId);
         if (details) {
           name = details.displayName;
-          address = details.formattedAddress ?? null;
-          lat = details.lat;
-          lng = details.lng;
+          address = details.formattedAddress ?? address;
+          lat = details.lat ?? lat;
+          lng = details.lng ?? lng;
           hoursVerified = details.hoursVerified;
           website = details.websiteUri ?? null;
           maps = details.googleMapsUri ?? null;
@@ -129,8 +130,10 @@ export async function POST(
         hours_verified: hoursVerified,
         website_uri: website,
         google_maps_uri: maps,
+        popularity_label: op.popularityLabel ?? null,
+        popularity_sources: op.popularitySources ?? null,
         sort_order: 999,
-        source: "ai",
+        source: op.recommended ? "food_recommend" : "ai",
         user_locked: false,
       });
     } else if (op.op === "shift_day") {

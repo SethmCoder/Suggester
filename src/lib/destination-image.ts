@@ -1,9 +1,9 @@
-/** Curated Unsplash CDN URLs (no API key; not stored in DB). */
+/** Curated Unsplash CDN URLs keyed by metro hub (no API key; not stored in DB). */
 const LIBRARY: Record<string, string> = {
   seattle:
     "https://images.unsplash.com/photo-1502175353174-a7a70e73b362?auto=format&fit=crop&w=1800&q=80",
   portland:
-    "https://images.unsplash.com/photo-1555617980-0d4c8f1b3f3a?auto=format&fit=crop&w=1600&q=80",
+    "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=1600&q=80",
   "san francisco":
     "https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=1600&q=80",
   "los angeles":
@@ -46,6 +46,63 @@ const LIBRARY: Record<string, string> = {
     "https://images.unsplash.com/photo-1560969184-10fe8719e047?auto=format&fit=crop&w=1600&q=80",
   amsterdam:
     "https://images.unsplash.com/photo-1534351590666-13e3e96b5017?auto=format&fit=crop&w=1600&q=80",
+  washington:
+    "https://images.unsplash.com/photo-1617581629397-a72507c3de9e?auto=format&fit=crop&w=1600&q=80",
+  dubai:
+    "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?auto=format&fit=crop&w=1800&q=80",
+};
+
+/**
+ * Map suburbs / nearby cities → metro hub used for hero photos.
+ * Keys are lowercase substrings matched against the resolved place name.
+ */
+const METRO_ALIASES: Record<string, string> = {
+  // Greater Seattle
+  bellevue: "seattle",
+  redmond: "seattle",
+  kirkland: "seattle",
+  renton: "seattle",
+  tacoma: "seattle",
+  everett: "seattle",
+  bothell: "seattle",
+  lynnwood: "seattle",
+  "federal way": "seattle",
+  kent: "seattle",
+  sammamish: "seattle",
+  issaquah: "seattle",
+  mercer: "seattle",
+  "shoreline": "seattle",
+  tukwila: "seattle",
+  auburn: "seattle",
+  "sea-tac": "seattle",
+  seatac: "seattle",
+  // Bay Area
+  oakland: "san francisco",
+  berkeley: "san francisco",
+  "san jose": "san francisco",
+  "palo alto": "san francisco",
+  sunnyvale: "san francisco",
+  // LA basin
+  "santa monica": "los angeles",
+  pasadena: "los angeles",
+  "long beach": "los angeles",
+  // NYC metro
+  brooklyn: "new york",
+  queens: "new york",
+  manhattan: "new york",
+  jersey: "new york",
+  newark: "new york",
+  // Vancouver BC area
+  burnaby: "vancouver",
+  surrey: "vancouver",
+  richmond: "vancouver",
+  // DC
+  arlington: "washington",
+  alexandria: "washington",
+  // Tokyo metro
+  yokohama: "tokyo",
+  shibuya: "tokyo",
+  shinjuku: "tokyo",
 };
 
 const FALLBACK =
@@ -54,22 +111,66 @@ const FALLBACK =
 const HERO =
   "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=1800&q=80";
 
-export function destinationImageUrl(destination: string): string {
-  const key = destination.toLowerCase();
-  // Prefer longer keys first (e.g. "new york" before "york")
-  const entries = Object.entries(LIBRARY).sort(
-    (a, b) => b[0].length - a[0].length,
-  );
-  for (const [city, url] of entries) {
-    if (key.includes(city)) return url;
-  }
-  return FALLBACK;
+function titleCase(s: string) {
+  return s.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/** True when we have a curated photo for this place name. */
+/** Resolve a detected place to a metro hub with a curated photo. */
+export function resolveHeroMetro(destination: string): {
+  metro: string | null;
+  imageUrl: string;
+  caption: string | null;
+  matched: boolean;
+} {
+  const key = destination.toLowerCase().trim();
+  if (!key) {
+    return { metro: null, imageUrl: HERO, caption: null, matched: false };
+  }
+
+  // Direct library hit
+  const libEntries = Object.keys(LIBRARY).sort((a, b) => b.length - a.length);
+  for (const city of libEntries) {
+    if (key === city || key.includes(city)) {
+      return {
+        metro: city,
+        imageUrl: LIBRARY[city],
+        caption: titleCase(city),
+        matched: true,
+      };
+    }
+  }
+
+  // Suburb → metro
+  const aliasEntries = Object.entries(METRO_ALIASES).sort(
+    (a, b) => b[0].length - a[0].length,
+  );
+  for (const [alias, metro] of aliasEntries) {
+    if (key === alias || key.includes(alias)) {
+      const url = LIBRARY[metro] ?? FALLBACK;
+      return {
+        metro,
+        imageUrl: url,
+        caption: `${titleCase(metro)} area`,
+        matched: Boolean(LIBRARY[metro]),
+      };
+    }
+  }
+
+  return {
+    metro: null,
+    imageUrl: FALLBACK,
+    caption: titleCase(destination),
+    matched: false,
+  };
+}
+
+export function destinationImageUrl(destination: string): string {
+  return resolveHeroMetro(destination).imageUrl;
+}
+
+/** True when we have a curated photo for this place (including metro aliases). */
 export function hasCuratedCityImage(destination: string): boolean {
-  const key = destination.toLowerCase();
-  return Object.keys(LIBRARY).some((city) => key.includes(city));
+  return resolveHeroMetro(destination).matched;
 }
 
 export function countryFromDestination(destination: string): string {
@@ -78,7 +179,12 @@ export function countryFromDestination(destination: string): string {
   const key = destination.toLowerCase();
   if (key.includes("paris")) return "France";
   if (key.includes("tokyo") || key.includes("japan")) return "Japan";
-  if (key.includes("new york") || key.includes("seattle")) return "United States";
+  if (
+    key.includes("new york") ||
+    key.includes("seattle") ||
+    key.includes("bellevue")
+  )
+    return "United States";
   if (key.includes("london")) return "United Kingdom";
   return "Destination";
 }

@@ -4,6 +4,11 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
+import {
+  createOfflineTripId,
+  saveOfflineTrip,
+} from "@/lib/offline/trips";
+import type { ActivityRow } from "@/lib/types/trip";
 
 const INTERESTS = [
   "architecture",
@@ -135,57 +140,166 @@ export function CreateTripWizard() {
     setLoading(true);
     setError(null);
     setProgress("Saving trip…");
+    const destination = legs.map((l) => l.city).filter(Boolean).join(" → ");
+    const body = {
+      destination,
+      departureCity: form.departureCity,
+      originAirport: form.originAirport || undefined,
+      destinationAirport: form.destinationAirport || undefined,
+      startDate: form.startDate,
+      endDate,
+      travelers: form.travelers,
+      budget: form.budget ? Number(form.budget) : undefined,
+      currency: form.currency,
+      interests: [
+        ...form.interests,
+        ...(form.customInterest ? [form.customInterest] : []),
+      ],
+      intensity: form.intensity,
+      transport: form.transport,
+      hotel: legs[0]?.hotel || undefined,
+      dietary: form.dietary,
+      accessibility: form.accessibility,
+      dayStart: form.dayStart,
+      dayEnd: form.dayEnd,
+      prefersHiddenGems: form.prefersHiddenGems,
+      mustSee: splitList(form.mustSee),
+      preferred: splitList(form.preferred),
+      optional: splitList(form.optional),
+      avoid: splitList(form.avoid),
+      idealTrip: form.idealTrip,
+      legs: legs
+        .filter((l) => l.city.trim())
+        .map((l) => ({
+          city: l.city.trim(),
+          days: Math.max(1, Number(l.days) || 1),
+          hotel: l.hotel.trim() || undefined,
+          geonameId: l.geonameId,
+          lat: l.lat,
+          lng: l.lng,
+          countryCode: l.countryCode,
+        })),
+    };
+
+    const saveOfflineFallback = () => {
+      setProgress("Saving on this device…");
+      const tripId = createOfflineTripId();
+      const totalDays = Math.max(
+        1,
+        body.legs.reduce((sum, l) => sum + l.days, 0) ||
+          Math.max(
+            1,
+            Math.round(
+              (new Date(endDate).getTime() -
+                new Date(form.startDate).getTime()) /
+                86400000,
+            ) + 1,
+          ),
+      );
+      const days = Array.from({ length: totalDays }, (_, i) => ({
+        id: `${tripId}-day-${i}`,
+        day_index: i,
+      }));
+      const activities: ActivityRow[] = days.map((d, i) => ({
+        id: `${tripId}-act-${i}`,
+        day_id: d.id,
+        name: i === 0 ? `Explore ${destination || "your destination"}` : `Day ${i + 1} free block`,
+        place_id: null,
+        address: null,
+        lat: body.legs[0]?.lat ?? null,
+        lng: body.legs[0]?.lng ?? null,
+        start_time: `${form.dayStart || "10:00"}:00`,
+        end_time: null,
+        duration_minutes: 120,
+        travel_minutes_from_prev: 0,
+        priority: "preferred",
+        planning_note:
+          "Saved offline — open while online to regenerate a full itinerary.",
+        hours_verified: false,
+        opening_hours: null,
+        website_uri: null,
+        google_maps_uri: null,
+        photo_name: null,
+        popularity_label: null,
+        popularity_sources: null,
+        popularity_attribution_urls: null,
+        schedule_warnings: ["Created offline — regenerate when connected"],
+        user_locked: false,
+        completed: false,
+        source: "offline",
+        sort_order: 0,
+      }));
+      saveOfflineTrip({
+        trip: {
+          id: tripId,
+          destination: destination || "Untitled trip",
+          start_date: form.startDate,
+          end_date: endDate,
+          cover_image_url: null,
+          created_at: new Date().toISOString(),
+          day_count: days.length,
+        },
+        days,
+        activities,
+        updatedAt: new Date().toISOString(),
+        offlineOnly: true,
+      });
+      router.push(`/trips/${tripId}`);
+      router.refresh();
+    };
+
     try {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        saveOfflineFallback();
+        return;
+      }
       const res = await fetch("/api/trips/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          destination: legs.map((l) => l.city).filter(Boolean).join(" → "),
-          departureCity: form.departureCity,
-          originAirport: form.originAirport || undefined,
-          destinationAirport: form.destinationAirport || undefined,
-          startDate: form.startDate,
-          endDate,
-          travelers: form.travelers,
-          budget: form.budget ? Number(form.budget) : undefined,
-          currency: form.currency,
-          interests: [
-            ...form.interests,
-            ...(form.customInterest ? [form.customInterest] : []),
-          ],
-          intensity: form.intensity,
-          transport: form.transport,
-          hotel: legs[0]?.hotel || undefined,
-          dietary: form.dietary,
-          accessibility: form.accessibility,
-          dayStart: form.dayStart,
-          dayEnd: form.dayEnd,
-          prefersHiddenGems: form.prefersHiddenGems,
-          mustSee: splitList(form.mustSee),
-          preferred: splitList(form.preferred),
-          optional: splitList(form.optional),
-          avoid: splitList(form.avoid),
-          idealTrip: form.idealTrip,
-          legs: legs
-            .filter((l) => l.city.trim())
-            .map((l) => ({
-              city: l.city.trim(),
-              days: Math.max(1, Number(l.days) || 1),
-              hotel: l.hotel.trim() || undefined,
-              geonameId: l.geonameId,
-              lat: l.lat,
-              lng: l.lng,
-              countryCode: l.countryCode,
-            })),
-        }),
+        body: JSON.stringify(body),
       });
       setProgress("Generating itinerary…");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
+      // Mirror server trip locally so later offline edits still work
+      try {
+        const tripId = data.tripId as string;
+        const detail = await fetch(`/api/trips/${tripId}`);
+        if (detail.ok) {
+          const full = await detail.json();
+          if (full?.trip && full?.days) {
+            saveOfflineTrip({
+              trip: {
+                id: tripId,
+                destination: full.trip.destination,
+                start_date: full.trip.start_date,
+                end_date: full.trip.end_date,
+                cover_image_url: full.trip.cover_image_url ?? null,
+                created_at: full.trip.created_at ?? new Date().toISOString(),
+                day_count: full.days.length,
+              },
+              days: full.days.map(
+                (d: { id: string; day_index: number }) => ({
+                  id: d.id,
+                  day_index: d.day_index,
+                }),
+              ),
+              activities: full.activities ?? [],
+              updatedAt: new Date().toISOString(),
+            });
+          }
+        }
+      } catch {
+        /* optional mirror */
+      }
       router.push(`/trips/${data.tripId}`);
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed");
+      try {
+        saveOfflineFallback();
+      } catch {
+        setError(e instanceof Error ? e.message : "Failed");
+      }
     } finally {
       setLoading(false);
       setProgress("");

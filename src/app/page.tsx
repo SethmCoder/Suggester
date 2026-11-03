@@ -6,8 +6,8 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#080B3A] text-white">
       <div className="relative overflow-hidden">
-        <LocalHeroBackground opacityClass="opacity-40" showCaption />
-        <div className="absolute inset-0 bg-gradient-to-b from-[#080B3A]/70 via-[#080B3A]/85 to-[#080B3A]" />
+        <LocalHeroBackground opacityClass="opacity-55" showCaption />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#080B3A]/55 via-[#080B3A]/75 to-[#080B3A]" />
         <div className="relative mx-auto flex max-w-4xl flex-col items-start px-6 py-20 sm:py-28">
           <div className="mb-6 flex items-center gap-2">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0400FF] text-sm font-bold">

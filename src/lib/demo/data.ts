@@ -1,7 +1,8 @@
 import type { ActivityRow } from "@/lib/types/trip";
 
-/** Clearly labeled sample itinerary — not live Google/Groq data. */
+/** Clearly labeled sample itineraries — not live Google/Groq data. */
 export const DEMO_TRIP_ID = "demo-paris";
+export const DEMO_DUBAI_ID = "demo-dubai";
 
 export const DEMO_BANNER =
   "Demo mode — sample data only. Place facts here are illustrative, not live-verified.";
@@ -11,6 +12,17 @@ export const demoTrip = {
   destination: "Paris, France",
   start_date: "2026-06-01",
   end_date: "2026-06-04",
+  cover_image_url: null as string | null,
+  created_at: new Date().toISOString(),
+  status: "ready",
+  day_count: 4,
+};
+
+export const demoDubaiTrip = {
+  id: DEMO_DUBAI_ID,
+  destination: "Dubai, United Arab Emirates",
+  start_date: "2026-11-10",
+  end_date: "2026-11-13",
   cover_image_url: null as string | null,
   created_at: new Date().toISOString(),
   status: "ready",
@@ -194,7 +206,173 @@ export const demoActivities: ActivityRow[] = [
   }),
 ];
 
-export function getDemoTripPayload() {
+export const demoDubaiDays = [
+  { id: "demo-dxb-day-0", day_index: 0 },
+  { id: "demo-dxb-day-1", day_index: 1 },
+  { id: "demo-dxb-day-2", day_index: 2 },
+  { id: "demo-dxb-day-3", day_index: 3 },
+];
+
+export const demoDubaiActivities: ActivityRow[] = [
+  act({
+    id: "demo-dxb-a1",
+    day_id: "demo-dxb-day-0",
+    name: "Dubai Marina waterfront walk (demo)",
+    address: "Dubai Marina, Dubai",
+    lat: 25.0805,
+    lng: 55.1403,
+    start_time: "16:00:00",
+    duration_minutes: 90,
+    sort_order: 0,
+    priority: "must_see",
+    planning_note: "Arrival-day stroll — cooler late afternoon.",
+  }),
+  act({
+    id: "demo-dxb-a2",
+    day_id: "demo-dxb-day-0",
+    name: "JBR beach sunset (demo)",
+    address: "Jumeirah Beach Residence, Dubai",
+    lat: 25.0772,
+    lng: 55.1335,
+    start_time: "18:00:00",
+    duration_minutes: 75,
+    travel_minutes_from_prev: 15,
+    sort_order: 1,
+    priority: "preferred",
+  }),
+  act({
+    id: "demo-dxb-a3",
+    day_id: "demo-dxb-day-1",
+    name: "Burj Khalifa area & Downtown (demo)",
+    address: "Downtown Dubai",
+    lat: 25.1972,
+    lng: 55.2744,
+    start_time: "10:00:00",
+    duration_minutes: 120,
+    sort_order: 0,
+    priority: "must_see",
+    popularity_label: "Online interest increasing",
+    popularity_sources: ["wikimedia_pageviews"],
+    popularity_attribution_urls: [
+      "https://en.wikipedia.org/wiki/Burj_Khalifa",
+    ],
+    planning_note: "Sample must-see — book observation deck tickets in a real trip.",
+  }),
+  act({
+    id: "demo-dxb-a4",
+    day_id: "demo-dxb-day-1",
+    name: "Dubai Fountain boardwalk (demo)",
+    address: "The Dubai Fountain, Dubai",
+    lat: 25.1952,
+    lng: 55.274,
+    start_time: "13:00:00",
+    duration_minutes: 45,
+    travel_minutes_from_prev: 10,
+    sort_order: 1,
+    priority: "preferred",
+  }),
+  act({
+    id: "demo-dxb-a5",
+    day_id: "demo-dxb-day-1",
+    name: "Dubai Mall exterior / Souk Al Bahar (demo)",
+    address: "Downtown Dubai",
+    lat: 25.1985,
+    lng: 55.2796,
+    start_time: "15:00:00",
+    duration_minutes: 90,
+    travel_minutes_from_prev: 8,
+    sort_order: 2,
+    priority: "optional",
+  }),
+  act({
+    id: "demo-dxb-a6",
+    day_id: "demo-dxb-day-2",
+    name: "Old Dubai — Al Fahidi / Creek (demo)",
+    address: "Al Fahidi Historical Neighbourhood, Dubai",
+    lat: 25.2631,
+    lng: 55.2972,
+    start_time: "09:30:00",
+    duration_minutes: 120,
+    sort_order: 0,
+    priority: "must_see",
+  }),
+  act({
+    id: "demo-dxb-a7",
+    day_id: "demo-dxb-day-2",
+    name: "Abra crossing & spice souk stroll (demo)",
+    address: "Dubai Creek, Dubai",
+    lat: 25.265,
+    lng: 55.296,
+    start_time: "12:00:00",
+    duration_minutes: 90,
+    travel_minutes_from_prev: 12,
+    sort_order: 1,
+    priority: "preferred",
+  }),
+  act({
+    id: "demo-dxb-a8",
+    day_id: "demo-dxb-day-2",
+    name: "Gold Souk browse (demo)",
+    address: "Deira Gold Souk, Dubai",
+    lat: 25.2697,
+    lng: 55.298,
+    start_time: "14:30:00",
+    duration_minutes: 60,
+    travel_minutes_from_prev: 15,
+    sort_order: 2,
+    priority: "optional",
+  }),
+  act({
+    id: "demo-dxb-a9",
+    day_id: "demo-dxb-day-3",
+    name: "Museum of the Future exterior (demo)",
+    address: "Sheikh Zayed Road, Dubai",
+    lat: 25.2194,
+    lng: 55.2819,
+    start_time: "10:00:00",
+    duration_minutes: 75,
+    sort_order: 0,
+    priority: "preferred",
+  }),
+  act({
+    id: "demo-dxb-a10",
+    day_id: "demo-dxb-day-3",
+    name: "Departure buffer / café (demo)",
+    address: "Near Dubai International area",
+    lat: 25.2532,
+    lng: 55.3657,
+    start_time: "14:00:00",
+    duration_minutes: 60,
+    travel_minutes_from_prev: 35,
+    sort_order: 1,
+    priority: "optional",
+    planning_note: "Light departure-day block toward DXB.",
+  }),
+];
+
+export function isDemoTripId(id: string): boolean {
+  return id === DEMO_TRIP_ID || id === DEMO_DUBAI_ID;
+}
+
+export function listDemoTrips() {
+  return [demoTrip, demoDubaiTrip];
+}
+
+export function getDemoTripPayload(id: string = DEMO_TRIP_ID) {
+  if (id === DEMO_DUBAI_ID) {
+    return {
+      trip: demoDubaiTrip,
+      days: demoDubaiDays,
+      activities: demoDubaiActivities,
+      preferences: {
+        interests: ["architecture", "culture", "shopping"],
+        intensity: "balanced",
+        transport: "transit",
+        prefersHiddenGems: false,
+      },
+      isDemo: true as const,
+    };
+  }
   return {
     trip: demoTrip,
     days: demoDays,

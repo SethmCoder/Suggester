@@ -32,6 +32,13 @@ export const patchOpSchema = z.discriminatedUnion("op", [
     durationMinutes: z.number(),
     priority: z.enum(["must_see", "preferred", "optional"]),
     planningNote: z.string().optional(),
+    lat: z.number().optional(),
+    lng: z.number().optional(),
+    address: z.string().nullable().optional(),
+    /** Star this stop on the map (e.g. best restaurant for the day). */
+    recommended: z.boolean().optional(),
+    popularityLabel: z.string().nullable().optional(),
+    popularitySources: z.array(z.string()).optional(),
   }),
   /** Push/pull every activity on a day by minutes (e.g. flight delay). */
   z.object({

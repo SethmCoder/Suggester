@@ -16,6 +16,8 @@ interface Pin {
   lng: number;
   label: string;
   order: number;
+  /** Day's starred restaurant / top recommendation */
+  starred?: boolean;
 }
 
 export function TripMap({
@@ -74,14 +76,22 @@ export function TripMap({
 
       const bounds = L.latLngBounds([]);
       pins.forEach((p) => {
+        const star = p.starred
+          ? `<span style="position:absolute;top:-8px;right:-6px;font-size:14px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35))">★</span>`
+          : "";
+        const bg = p.starred ? "#C45F00" : "#1616C9";
         const icon = L.divIcon({
           className: "waypoint-pin",
-          html: `<div style="background:#1616C9;color:#fff;border-radius:999px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.25)">${p.order}</div>`,
+          html: `<div style="position:relative;background:${bg};color:#fff;border-radius:999px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.25)">${p.order}${star}</div>`,
           iconSize: [28, 28],
           iconAnchor: [14, 14],
         });
         const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
-        marker.bindPopup(`<strong>${p.order}. ${p.label}</strong>`);
+        marker.bindPopup(
+          `<strong>${p.starred ? "★ " : ""}${p.order}. ${p.label}</strong>${
+            p.starred ? "<br/><em>Recommended for this day</em>" : ""
+          }`,
+        );
         bounds.extend([p.lat, p.lng]);
       });
       if (pins.length > 1) {
@@ -109,8 +119,8 @@ export function TripMap({
           new window.google.maps.Marker({
             map,
             position: { lat: p.lat, lng: p.lng },
-            label: String(p.order),
-            title: p.label,
+            label: p.starred ? "★" : String(p.order),
+            title: p.starred ? `★ ${p.label} (recommended)` : p.label,
           });
         });
         map.fitBounds(bounds);

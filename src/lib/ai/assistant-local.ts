@@ -144,27 +144,40 @@ export function buildLocalAssistantPatch(input: {
 
   return {
     summary:
-      "I can adjust this itinerary for you. Try a specific request — for example a flight delay, swapping a place, or moving an activity.",
+      "I can adjust this itinerary for you. Try a specific request — for example a flight delay, food near your stops, swapping a place, or moving an activity.",
     operations: [],
     suggestions: [
+      "Best places to eat near our stops",
       "My flight is delayed by 2 hours on day 1",
       "Change the Louvre to Musée d'Orsay",
       "Move the Eiffel Tower visit to day 3",
       "Make day 2 less busy",
-      "Remove the afternoon stop on day 1",
     ],
   };
 }
 
-/** Async variant that uses OSM routing for delay reshuffles. */
+/** Async variant that uses OSM routing for delay reshuffles and food discovery. */
 export async function buildLocalAssistantPatchAsync(input: {
   message: string;
   days: DayInfo[];
   activities: ActivityRow[];
   dayEnd?: string;
   transport?: string;
+  destination?: string;
 }): Promise<AssistantPatch> {
   const msg = input.message.toLowerCase();
+  const { isFoodRecommendQuery, buildFoodRecommendPatch } = await import(
+    "./recommend-food"
+  );
+  if (isFoodRecommendQuery(input.message)) {
+    return buildFoodRecommendPatch({
+      message: input.message,
+      days: input.days,
+      activities: input.activities,
+      destination: input.destination,
+    });
+  }
+
   const delayMatch =
     msg.match(
       /(?:flight|plane|arrival|arrive|landing)?\s*(?:is\s+)?(?:delayed|late)\s*(?:by\s*)?(\d+)\s*(hours?|hrs?|minutes?|mins?)/i,

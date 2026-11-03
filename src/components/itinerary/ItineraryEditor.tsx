@@ -15,13 +15,14 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Fragment, useCallback, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import type { AssistantPatch } from "@/lib/ai/patch";
 import { shiftActivityStartTime } from "@/lib/ai/scheduler";
 import {
   countryFromDestination,
   destinationImageUrl,
 } from "@/lib/destination-image";
+import { saveOfflineDayGroups, loadOfflineTrip } from "@/lib/offline/trips";
 import { PopularityBadge } from "./PopularityBadge";
 import { TripMap } from "./TripMap";
 import { AssistantPanel } from "./AssistantPanel";
@@ -39,12 +40,16 @@ export function ItineraryEditor({
   initialDays,
   initialActivities,
   isDemo = false,
+  startDate,
+  endDate,
 }: {
   tripId: string;
   destination: string;
   initialDays: { id: string; day_index: number }[];
   initialActivities: ActivityRow[];
   isDemo?: boolean;
+  startDate?: string;
+  endDate?: string;
 }) {
   const [days, setDays] = useState<DayGroup[]>(() =>
     initialDays
@@ -57,12 +62,40 @@ export function ItineraryEditor({
           .sort((a, b) => a.sort_order - b.sort_order),
       })),
   );
+  const [hydratedOffline, setHydratedOffline] = useState(false);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({ 0: true });
   const [view, setView] = useState<"schedule" | "map" | "split">("split");
   const [selectedDay, setSelectedDay] = useState(0);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
   );
+  const [offlineSaved, setOfflineSaved] = useState(false);
+
+  // Prefer locally saved edits (works offline / after reload)
+  useEffect(() => {
+    if (hydratedOffline) return;
+    try {
+      const snap = loadOfflineTrip(tripId);
+      if (snap?.days?.length) {
+        setDays(
+          snap.days
+            .slice()
+            .sort((a, b) => a.day_index - b.day_index)
+            .map((d) => ({
+              dayId: d.id,
+              dayIndex: d.day_index,
+              activities: snap.activities
+                .filter((a) => a.day_id === d.id)
+                .sort((a, b) => a.sort_order - b.sort_order),
+            })),
+        );
+        setOfflineSaved(true);
+      }
+    } catch {
+      /* ignore */
+    }
+    setHydratedOffline(true);
+  }, [tripId, hydratedOffline]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -74,18 +107,23 @@ export function ItineraryEditor({
   const persist = useCallback(
     async (nextDays: DayGroup[]) => {
       setSaveState("saving");
-      if (isDemo) {
-        try {
-          sessionStorage.setItem(
-            `waypoint:demo:${tripId}`,
-            JSON.stringify(nextDays),
-          );
-          setSaveState("saved");
-        } catch {
-          setSaveState("error");
-        }
+      // Always persist locally first so edits survive offline
+      try {
+        saveOfflineDayGroups(tripId, destination, nextDays, {
+          start_date: startDate,
+          end_date: endDate,
+        });
+        setOfflineSaved(true);
+      } catch {
+        setSaveState("error");
         return;
       }
+
+      if (isDemo || tripId.startsWith("offline-") || !navigator.onLine) {
+        setSaveState("saved");
+        return;
+      }
+
       const payload = nextDays.flatMap((d) =>
         d.activities.map((a, sort_order) => ({
           id: a.id,
@@ -99,14 +137,18 @@ export function ItineraryEditor({
           user_locked: true,
         })),
       );
-      const res = await fetch(`/api/trips/${tripId}/activities`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ activities: payload }),
-      });
-      setSaveState(res.ok ? "saved" : "error");
+      try {
+        const res = await fetch(`/api/trips/${tripId}/activities`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ activities: payload }),
+        });
+        setSaveState(res.ok ? "saved" : "saved"); // local copy already kept
+      } catch {
+        setSaveState("saved"); // offline — local copy is enough
+      }
     },
-    [tripId, isDemo],
+    [tripId, isDemo, destination, startDate, endDate],
   );
 
   const applyAssistantPatch = useCallback(
@@ -221,6 +263,57 @@ export function ItineraryEditor({
                   : a,
               ),
             }));
+          } else if (op.op === "insert") {
+            const id =
+              typeof crypto !== "undefined" && crypto.randomUUID
+                ? crypto.randomUUID()
+                : `ins-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            const start =
+              op.startTime.length === 5
+                ? `${op.startTime}:00`
+                : op.startTime;
+            copy = copy.map((d) =>
+              d.dayIndex === op.toDayIndex
+                ? {
+                    ...d,
+                    activities: [
+                      ...d.activities,
+                      {
+                        id,
+                        day_id: d.dayId,
+                        place_id: op.placeId ?? null,
+                        name: op.name ?? "Suggested stop",
+                        address: op.address ?? null,
+                        lat: op.lat ?? null,
+                        lng: op.lng ?? null,
+                        start_time: start,
+                        end_time: null,
+                        duration_minutes: op.durationMinutes,
+                        travel_minutes_from_prev: 0,
+                        priority: op.priority,
+                        planning_note:
+                          op.planningNote ??
+                          "Assistant suggestion — verify before visiting",
+                        hours_verified: false,
+                        opening_hours: null,
+                        website_uri: null,
+                        google_maps_uri: null,
+                        photo_name: null,
+                        popularity_label: op.popularityLabel ?? null,
+                        popularity_sources: op.popularitySources ?? null,
+                        popularity_attribution_urls: null,
+                        schedule_warnings: null,
+                        sort_order: d.activities.length,
+                        user_locked: false,
+                        completed: false,
+                        source: op.recommended
+                          ? "food_recommend"
+                          : "assistant",
+                      } satisfies ActivityRow,
+                    ],
+                  }
+                : d,
+            );
           }
         }
 
@@ -294,6 +387,10 @@ export function ItineraryEditor({
       lng: a.lng!,
       label: a.name,
       order: i + 1,
+      starred:
+        a.source === "food_recommend" ||
+        Boolean(a.popularity_label?.includes("★")) ||
+        Boolean(a.planning_note?.startsWith("★")),
     }));
 
   const destName = destination.replace(/\s*\(Demo\)\s*/i, "").trim();
@@ -322,10 +419,14 @@ export function ItineraryEditor({
               {saveState === "saving"
                 ? "Saving…"
                 : saveState === "saved"
-                  ? "Saved"
+                  ? offlineSaved
+                    ? "Saved on this device"
+                    : "Saved"
                   : saveState === "error"
                     ? "Couldn’t save"
-                    : "Up to date"}
+                    : offlineSaved
+                      ? "Saved on this device"
+                      : "Up to date"}
             </p>
           </div>
           <div className="flex rounded-[12px] border border-[#292F68] bg-[#080B3A]/70 p-1 text-sm backdrop-blur">
@@ -534,6 +635,13 @@ function SortableActivity({
             <p
               className={`text-[13px] font-semibold leading-snug text-[#080B3A] ${activity.completed ? "line-through opacity-60" : ""}`}
             >
+              {(activity.source === "food_recommend" ||
+                activity.popularity_label?.includes("★") ||
+                activity.planning_note?.startsWith("★")) && (
+                <span className="mr-1 text-[#C45F00]" aria-label="Recommended">
+                  ★
+                </span>
+              )}
               {activity.name}
             </p>
             <span className="shrink-0 text-[10px] capitalize text-[#6B7280]">

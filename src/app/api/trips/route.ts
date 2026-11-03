@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { demoTrip } from "@/lib/demo/data";
+import { listDemoTrips } from "@/lib/demo/data";
 import { DEMO_COOKIE, isDemoCookie } from "@/lib/demo/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -8,7 +8,7 @@ export async function GET() {
   const cookieStore = await cookies();
   if (isDemoCookie(cookieStore.get(DEMO_COOKIE)?.value)) {
     return NextResponse.json({
-      trips: [demoTrip],
+      trips: listDemoTrips(),
       isDemo: true,
     });
   }
@@ -30,6 +30,6 @@ export async function GET() {
 
     return NextResponse.json({ trips: trips ?? [], isDemo: false });
   } catch {
-    return NextResponse.json({ trips: [] });
+    return NextResponse.json({ trips: [], offlineHint: true });
   }
 }

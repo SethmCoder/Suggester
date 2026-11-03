@@ -12,7 +12,38 @@ import {
   destinationImageUrl,
 } from "@/lib/destination-image";
 import { formatTripDate } from "@/lib/format-date";
+import { getDemoTripPayload, listDemoTrips } from "@/lib/demo/data";
+import {
+  listOfflineTrips,
+  saveOfflineTrip,
+} from "@/lib/offline/trips";
 import type { TripListItem } from "@/lib/types/trip";
+
+function mergeTrips(
+  remote: TripListItem[],
+  offline: TripListItem[],
+): TripListItem[] {
+  const byId = new Map<string, TripListItem>();
+  for (const t of offline) byId.set(t.id, t);
+  for (const t of remote) {
+    if (!byId.has(t.id)) byId.set(t.id, t);
+  }
+  return [...byId.values()].sort((a, b) =>
+    (b.created_at || "").localeCompare(a.created_at || ""),
+  );
+}
+
+function seedDemoOffline() {
+  for (const trip of listDemoTrips()) {
+    const payload = getDemoTripPayload(trip.id);
+    saveOfflineTrip({
+      trip: { ...payload.trip, day_count: payload.days.length },
+      days: payload.days,
+      activities: payload.activities,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+}
 
 export default function DashboardPage() {
   const [trips, setTrips] = useState<TripListItem[]>([]);
@@ -28,14 +59,46 @@ export default function DashboardPage() {
     } catch {
       /* ignore */
     }
+
+    const offline = (() => {
+      try {
+        return listOfflineTrips();
+      } catch {
+        return [];
+      }
+    })();
+
     fetch("/api/trips")
       .then((r) => r.json())
       .then((d) => {
-        setTrips(d.trips ?? []);
+        const remote = (d.trips ?? []) as TripListItem[];
         setIsDemo(Boolean(d.isDemo));
-        if (d.isDemo) setName("Seth");
+        if (d.isDemo) {
+          setName("Seth");
+          try {
+            seedDemoOffline();
+          } catch {
+            /* ignore */
+          }
+          setTrips(mergeTrips(remote.length ? remote : listDemoTrips(), listOfflineTrips()));
+        } else {
+          setTrips(mergeTrips(remote, offline));
+        }
       })
-      .catch(() => setTrips([]))
+      .catch(() => {
+        // Fully offline — show local trips (and demos if any were seeded)
+        try {
+          const local = listOfflineTrips();
+          if (local.length) setTrips(local);
+          else {
+            seedDemoOffline();
+            setTrips(listDemoTrips());
+            setIsDemo(true);
+          }
+        } catch {
+          setTrips([]);
+        }
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -106,9 +169,12 @@ export default function DashboardPage() {
             Create your first itinerary and Waypoint will craft a day-by-day plan
             around your interests and schedule.
           </p>
-          <Link href={isDemo ? "/trips/demo-paris" : "/trips/new"} className="mt-6 inline-flex">
+          <Link
+            href={isDemo ? "/trips/demo-paris" : "/trips/new"}
+            className="mt-6 inline-flex"
+          >
             <Button>
-              {isDemo ? "Open demo itinerary" : "Create a Trip"}
+              {isDemo ? "Open Paris demo" : "Create a Trip"}
             </Button>
           </Link>
         </div>
