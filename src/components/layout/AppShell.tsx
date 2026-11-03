@@ -168,20 +168,6 @@ export function AppShell({
             <div className="sm:hidden">
               <AvatarMenu email={userEmail} displayName={displayName} />
             </div>
-
-            <Link
-              href="/dashboard"
-              className="ml-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border border-[#E1E5F0] bg-white shadow-sm transition hover:border-[#0400FF]/35 hover:shadow-md sm:ml-2 sm:h-12 sm:w-14"
-              aria-label="Waypoint home"
-              title="Back to start"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/waypoint-mark.png"
-                alt=""
-                className="h-9 w-auto object-contain object-center sm:h-10"
-              />
-            </Link>
           </div>
         </header>
 
