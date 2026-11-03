@@ -15,9 +15,9 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useCallback, useMemo, useState } from "react";
-import { shiftActivityStartTime } from "@/lib/ai/assistant-local";
+import { Fragment, useCallback, useMemo, useState } from "react";
 import type { AssistantPatch } from "@/lib/ai/patch";
+import { shiftActivityStartTime } from "@/lib/ai/scheduler";
 import {
   countryFromDestination,
   destinationImageUrl,
@@ -183,6 +183,22 @@ export function ItineraryEditor({
                   }
                 : d,
             );
+          } else if (op.op === "set_travel") {
+            copy = copy.map((d) => ({
+              ...d,
+              activities: d.activities.map((a) =>
+                a.id === op.activityId
+                  ? {
+                      ...a,
+                      travel_minutes_from_prev: op.travelMinutesFromPrev,
+                      end_time: op.endTime ?? a.end_time,
+                      sort_order:
+                        op.sortOrder != null ? op.sortOrder : a.sort_order,
+                      user_locked: true,
+                    }
+                  : a,
+              ),
+            }));
           } else if (op.op === "update") {
             copy = copy.map((d) => ({
               ...d,
@@ -372,18 +388,34 @@ export function ItineraryEditor({
                         strategy={verticalListSortingStrategy}
                       >
                         <ul className="space-y-3 pt-3">
-                          {day.activities.map((act) => (
-                            <SortableActivity
-                              key={act.id}
-                              activity={act}
-                              dayCount={days.length}
-                              dayIndex={dayIndex}
-                              onMoveDay={(to) => moveToDay(dayIndex, act.id, to)}
-                              onUpdate={(patch) =>
-                                updateActivity(dayIndex, act.id, patch)
-                              }
-                              onDelete={() => deleteActivity(dayIndex, act.id)}
-                            />
+                          {day.activities.map((act, actIndex) => (
+                            <Fragment key={act.id}>
+                              {actIndex > 0 ? (
+                                <li className="list-none">
+                                  <TransitBlock
+                                    minutes={
+                                      (act.travel_minutes_from_prev ?? 0) > 0
+                                        ? act.travel_minutes_from_prev
+                                        : null
+                                    }
+                                  />
+                                </li>
+                              ) : null}
+                              <SortableActivity
+                                activity={act}
+                                dayCount={days.length}
+                                dayIndex={dayIndex}
+                                onMoveDay={(to) =>
+                                  moveToDay(dayIndex, act.id, to)
+                                }
+                                onUpdate={(patch) =>
+                                  updateActivity(dayIndex, act.id, patch)
+                                }
+                                onDelete={() =>
+                                  deleteActivity(dayIndex, act.id)
+                                }
+                              />
+                            </Fragment>
                           ))}
                         </ul>
                       </SortableContext>
@@ -418,6 +450,44 @@ export function ItineraryEditor({
         isDemo={isDemo}
         onDemoApply={isDemo ? applyAssistantPatch : undefined}
       />
+    </div>
+  );
+}
+
+function TransitBlock({ minutes }: { minutes: number | null }) {
+  return (
+    <div
+      className="flex items-center gap-3 px-1"
+      aria-label={
+        minutes != null
+          ? `${minutes} minutes travel between stops`
+          : "Travel between stops"
+      }
+    >
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#DDE1FF] bg-white text-[#0400FF]">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          aria-hidden
+        >
+          <path d="M12 2v20M5 9l7-7 7 7" />
+          <circle cx="12" cy="19" r="1" fill="currentColor" stroke="none" />
+        </svg>
+      </div>
+      <div className="min-w-0 flex-1 rounded-[10px] border border-dashed border-[#C5CAE5] bg-[#F5F7FF] px-3 py-2">
+        <p className="text-xs font-medium text-[#080B3A]">
+          {minutes != null
+            ? `${minutes} min transit`
+            : "Transit between stops"}
+        </p>
+        <p className="text-[11px] text-[#6B7280]">
+          OSM / OSRM walking or driving estimate
+        </p>
+      </div>
     </div>
   );
 }
@@ -471,10 +541,11 @@ function SortableActivity({
             </span>
           </div>
           <p className="text-xs text-[#6B7280]">
-            {activity.start_time?.slice(0, 5)} · {activity.duration_minutes} min
-            {activity.travel_minutes_from_prev
-              ? ` · ${activity.travel_minutes_from_prev} min travel`
-              : ""}
+            {activity.start_time?.slice(0, 5)}
+            {activity.end_time
+              ? `–${activity.end_time.slice(0, 5)}`
+              : ""}{" "}
+            · {activity.duration_minutes} min
           </p>
           {activity.address ? (
             <p className="text-xs text-[#6B7280]">{activity.address}</p>

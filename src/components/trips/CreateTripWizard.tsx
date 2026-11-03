@@ -29,6 +29,8 @@ export function CreateTripWizard() {
   const [form, setForm] = useState({
     destination: "",
     departureCity: "",
+    originAirport: "",
+    destinationAirport: "",
     startDate: "",
     endDate: "",
     travelers: 2,
@@ -50,6 +52,7 @@ export function CreateTripWizard() {
     idealTrip: "",
     prefersHiddenGems: false,
   });
+  const [flightHint, setFlightHint] = useState<string | null>(null);
 
   function toggleInterest(i: string) {
     setForm((f) => ({
@@ -71,6 +74,8 @@ export function CreateTripWizard() {
         body: JSON.stringify({
           destination: form.destination,
           departureCity: form.departureCity,
+          originAirport: form.originAirport || undefined,
+          destinationAirport: form.destinationAirport || undefined,
           startDate: form.startDate,
           endDate: form.endDate,
           travelers: form.travelers,
@@ -161,8 +166,85 @@ export function CreateTripWizard() {
                   setForm({ ...form, departureCity: e.target.value })
                 }
                 className="mt-1"
+                placeholder="Seattle"
               />
             </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <Label>Start airport (IATA)</Label>
+                <Input
+                  value={form.originAirport}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      originAirport: e.target.value.toUpperCase(),
+                    })
+                  }
+                  onBlur={async () => {
+                    const from =
+                      form.originAirport || form.departureCity;
+                    const to =
+                      form.destinationAirport || form.destination;
+                    if (!from || !to) {
+                      setFlightHint(null);
+                      return;
+                    }
+                    try {
+                      const res = await fetch(
+                        `/api/flights/lookup?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+                      );
+                      const data = await res.json();
+                      if (!res.ok || !data.estimate) {
+                        setFlightHint(
+                          data.error ?? "Could not estimate this flight",
+                        );
+                        return;
+                      }
+                      const e = data.estimate;
+                      setForm((f) => ({
+                        ...f,
+                        originAirport: e.from.iata,
+                        destinationAirport: e.to.iata,
+                        dayStart: e.suggestedDayStart,
+                      }));
+                      setFlightHint(
+                        `${e.from.iata} → ${e.to.iata} · ~${Math.round(e.durationMinutes / 60)}h ${e.durationMinutes % 60}m · lands ~${e.estimatedArrivalLocal} local${e.arrivalDayOffset ? ` (+${e.arrivalDayOffset}d)` : ""} · sightseeing from ${e.suggestedDayStart}. ${e.note}`,
+                      );
+                    } catch {
+                      setFlightHint("Flight lookup unavailable right now");
+                    }
+                  }}
+                  className="mt-1"
+                  placeholder="SEA"
+                  maxLength={3}
+                />
+              </div>
+              <div>
+                <Label>Arrival airport (IATA)</Label>
+                <Input
+                  value={form.destinationAirport}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      destinationAirport: e.target.value.toUpperCase(),
+                    })
+                  }
+                  className="mt-1"
+                  placeholder="HND"
+                  maxLength={4}
+                />
+              </div>
+            </div>
+            {flightHint ? (
+              <p className="rounded-[12px] border border-[#DDE1FF] bg-[#F5F7FF] px-3 py-2 text-xs text-[#080B3A]">
+                {flightHint}
+              </p>
+            ) : (
+              <p className="text-xs text-[#6B7280]">
+                Set airports (e.g. SEA → HND) to estimate arrival from OpenFlights
+                data so day 1 does not schedule impossible morning stops.
+              </p>
+            )}
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <Label>Start date</Label>

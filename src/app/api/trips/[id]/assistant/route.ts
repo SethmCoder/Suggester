@@ -2,7 +2,10 @@ import Groq from "groq-sdk";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { buildLocalAssistantPatch } from "@/lib/ai/assistant-local";
+import {
+  buildLocalAssistantPatch,
+  buildLocalAssistantPatchAsync,
+} from "@/lib/ai/assistant-local";
 import {
   assistantSystemPrompt,
   assistantUserPrompt,
@@ -31,10 +34,12 @@ export async function POST(
 
   if (demo && tripId === DEMO_TRIP_ID) {
     const payload = getDemoTripPayload();
-    const patch = buildLocalAssistantPatch({
+    const patch = await buildLocalAssistantPatchAsync({
       message,
       days: payload.days,
       activities: payload.activities,
+      dayEnd: "21:00",
+      transport: "walking",
     });
     return NextResponse.json({ patch, mode: "demo" });
   }
@@ -96,6 +101,7 @@ export async function POST(
                           "insert",
                           "shift_day",
                           "replace",
+                          "set_travel",
                         ],
                       },
                       activityId: { type: "string" },
@@ -111,6 +117,9 @@ export async function POST(
                       shiftMinutes: { type: "integer" },
                       reason: { type: "string" },
                       planningNote: { type: "string" },
+                      travelMinutesFromPrev: { type: "integer" },
+                      endTime: { type: "string" },
+                      sortOrder: { type: "integer" },
                       fields: {
                         type: "object",
                         additionalProperties: false,
@@ -146,17 +155,27 @@ export async function POST(
       if (!raw) throw new Error("Empty AI response");
       patch = assistantPatchSchema.parse(JSON.parse(raw));
     } catch {
-      patch = buildLocalAssistantPatch({
+      const prefs = trip.preferences as
+        | { dayEnd?: string; transport?: string }
+        | undefined;
+      patch = await buildLocalAssistantPatchAsync({
         message,
         days: trip.days,
         activities: trip.activities,
+        dayEnd: prefs?.dayEnd,
+        transport: prefs?.transport,
       });
     }
   } else {
-    patch = buildLocalAssistantPatch({
+    const prefs = trip.preferences as
+      | { dayEnd?: string; transport?: string }
+      | undefined;
+    patch = await buildLocalAssistantPatchAsync({
       message,
       days: trip.days,
       activities: trip.activities,
+      dayEnd: prefs?.dayEnd,
+      transport: prefs?.transport,
     });
   }
 

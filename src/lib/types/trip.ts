@@ -1,6 +1,27 @@
+export interface InboundFlightPrefs {
+  fromIata: string;
+  toIata: string;
+  fromName?: string;
+  toName?: string;
+  distanceKm?: number;
+  durationMinutes?: number;
+  assumedDepartureLocal?: string;
+  estimatedArrivalLocal?: string;
+  arrivalDayOffset?: number;
+  suggestedDayStart?: string;
+  routeKnown?: boolean;
+  note?: string;
+}
+
 export interface TripPreferencesPayload {
   destinations: { name: string; nights?: number }[];
   departureCity?: string;
+  /** Origin airport IATA (e.g. SEA). */
+  originAirport?: string;
+  /** Destination airport IATA (e.g. HND). */
+  destinationAirport?: string;
+  /** Estimated inbound flight from OpenFlights (no live schedule API). */
+  inboundFlight?: InboundFlightPrefs;
   travelers?: number;
   budget?: number;
   currency?: string;

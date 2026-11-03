@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { shiftActivityStartTime } from "@/lib/ai/assistant-local";
+import { shiftActivityStartTime } from "@/lib/ai/scheduler";
 import { assistantPatchSchema } from "@/lib/ai/patch";
 import { DEMO_TRIP_ID } from "@/lib/demo/data";
 import { DEMO_COOKIE, isDemoCookie } from "@/lib/demo/session";
@@ -59,10 +59,16 @@ export async function POST(
     if (op.op === "delete") {
       await svc.from("activities").delete().eq("id", op.activityId);
     } else if (op.op === "update") {
+      const start =
+        op.fields.startTime != null
+          ? op.fields.startTime.length === 5
+            ? `${op.fields.startTime}:00`
+            : op.fields.startTime
+          : undefined;
       await svc
         .from("activities")
         .update({
-          start_time: op.fields.startTime,
+          start_time: start,
           duration_minutes: op.fields.durationMinutes,
           priority: op.fields.priority,
           planning_note: op.fields.planningNote,
@@ -132,17 +138,22 @@ export async function POST(
       if (!targetDay) continue;
       const { data: acts } = await svc
         .from("activities")
-        .select("id, start_time")
+        .select("id, start_time, duration_minutes")
         .eq("day_id", targetDay.id);
       for (const act of acts ?? []) {
         const next = shiftActivityStartTime(
           act.start_time,
           op.shiftMinutes,
         );
+        const dur = act.duration_minutes ?? 60;
+        const [h, m] = next.slice(0, 5).split(":").map(Number);
+        const endTotal = h * 60 + m + dur;
+        const end = `${String(Math.floor(endTotal / 60) % 24).padStart(2, "0")}:${String(endTotal % 60).padStart(2, "0")}:00`;
         await svc
           .from("activities")
           .update({
             start_time: next,
+            end_time: end,
             planning_note: op.reason
               ? `Adjusted for: ${op.reason}`
               : "Schedule shifted",
@@ -150,6 +161,16 @@ export async function POST(
           })
           .eq("id", act.id);
       }
+    } else if (op.op === "set_travel") {
+      await svc
+        .from("activities")
+        .update({
+          travel_minutes_from_prev: op.travelMinutesFromPrev,
+          end_time: op.endTime,
+          sort_order: op.sortOrder,
+          user_locked: true,
+        })
+        .eq("id", op.activityId);
     } else if (op.op === "replace") {
       let extra: Record<string, unknown> = {
         name: op.newName,

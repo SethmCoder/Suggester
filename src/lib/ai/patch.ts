@@ -49,6 +49,14 @@ export const patchOpSchema = z.discriminatedUnion("op", [
     planningNote: z.string().optional(),
     durationMinutes: z.number().optional(),
   }),
+  /** Persist OSM travel leg / end time after a reshuffle. */
+  z.object({
+    op: z.literal("set_travel"),
+    activityId: z.string(),
+    travelMinutesFromPrev: z.number(),
+    endTime: z.string().optional(),
+    sortOrder: z.number().optional(),
+  }),
 ]);
 
 export const assistantPatchSchema = z.object({

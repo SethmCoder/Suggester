@@ -3,17 +3,20 @@ import { buildLocalAssistantPatch } from "@/lib/ai/assistant-local";
 import { demoActivities, demoDays } from "@/lib/demo/data";
 
 describe("local itinerary maker assistant", () => {
-  it("shifts day 1 for a flight delay", () => {
+  it("reshuffles day 1 for a flight delay instead of only shifting", () => {
     const patch = buildLocalAssistantPatch({
       message: "My flight is delayed by 2 hours on day 1",
       days: demoDays,
       activities: demoActivities,
+      dayEnd: "21:00",
     });
-    expect(patch.operations[0]?.op).toBe("shift_day");
-    if (patch.operations[0]?.op === "shift_day") {
-      expect(patch.operations[0].shiftMinutes).toBe(120);
-      expect(patch.operations[0].dayIndex).toBe(0);
-    }
+    const ops = patch.operations.map((o) => o.op);
+    expect(ops.includes("update") || ops.includes("set_travel") || ops.includes("delete")).toBe(
+      true,
+    );
+    // Should not be a lone blind shift_day
+    expect(ops.filter((o) => o === "shift_day").length).toBe(0);
+    expect(patch.summary.toLowerCase()).toMatch(/reshuffl|delay|retim/);
   });
 
   it("replaces a named place", () => {

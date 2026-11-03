@@ -2,12 +2,16 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { generateItinerary } from "@/lib/ai/generate-itinerary";
 import { createTripRecord, saveGeneratedItinerary } from "@/lib/db/trips";
+import { estimateFlight } from "@/lib/flights/openflights";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import type { InboundFlightPrefs } from "@/lib/types/trip";
 
 const bodySchema = z.object({
   destination: z.string().min(2),
   departureCity: z.string().optional(),
+  originAirport: z.string().optional(),
+  destinationAirport: z.string().optional(),
   startDate: z.string(),
   endDate: z.string(),
   travelers: z.number().optional(),
@@ -48,6 +52,38 @@ export async function POST(req: Request) {
       );
     }
 
+    let inboundFlight: InboundFlightPrefs | undefined;
+    let arrivalCoords: { lat: number; lng: number } | undefined;
+    const origin = body.originAirport || body.departureCity;
+    const destAirport = body.destinationAirport || body.destination;
+    if (origin && destAirport) {
+      try {
+        const est = await estimateFlight({ from: origin, to: destAirport });
+        if (est) {
+          arrivalCoords = { lat: est.to.lat, lng: est.to.lng };
+          inboundFlight = {
+            fromIata: est.from.iata,
+            toIata: est.to.iata,
+            fromName: `${est.from.name} (${est.from.city})`,
+            toName: `${est.to.name} (${est.to.city})`,
+            distanceKm: est.distanceKm,
+            durationMinutes: est.durationMinutes,
+            assumedDepartureLocal: est.assumedDepartureLocal,
+            estimatedArrivalLocal: est.estimatedArrivalLocal,
+            arrivalDayOffset: est.arrivalDayOffset,
+            suggestedDayStart: est.suggestedDayStart,
+            routeKnown: est.routeKnown,
+            note: est.note,
+          };
+        }
+      } catch {
+        /* OpenFlights optional — trip still creates */
+      }
+    }
+
+    const dayStart =
+      inboundFlight?.suggestedDayStart ?? body.dayStart ?? "09:00";
+
     const tripId = await createTripRecord({
       ownerId: user.id,
       destination: body.destination,
@@ -56,6 +92,9 @@ export async function POST(req: Request) {
       preferences: {
         destinations: [{ name: body.destination }],
         departureCity: body.departureCity,
+        originAirport: inboundFlight?.fromIata ?? body.originAirport,
+        destinationAirport: inboundFlight?.toIata ?? body.destinationAirport,
+        inboundFlight,
         travelers: body.travelers,
         budget: body.budget,
         currency: body.currency,
@@ -65,7 +104,7 @@ export async function POST(req: Request) {
         hotel: body.hotel,
         dietary: body.dietary,
         accessibility: body.accessibility,
-        dayStart: body.dayStart,
+        dayStart,
         dayEnd: body.dayEnd,
         prefersHiddenGems: body.prefersHiddenGems,
         idealTrip: body.idealTrip,
@@ -91,6 +130,11 @@ export async function POST(req: Request) {
       idealTrip: body.idealTrip,
       prefersHiddenGems: body.prefersHiddenGems,
       budget: body.budget,
+      dayStart,
+      dayEnd: body.dayEnd,
+      inboundFlight: inboundFlight
+        ? { ...inboundFlight, ...arrivalCoords }
+        : undefined,
     });
 
     await saveGeneratedItinerary({

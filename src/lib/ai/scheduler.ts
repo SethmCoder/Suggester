@@ -52,8 +52,19 @@ export function orderByNearestNeighbor<T extends { lat: number; lng: number }>(
 
 export function addMinutes(time: string, minutes: number): string {
   const [h, m] = time.split(":").map(Number);
-  const total = h * 60 + m + minutes;
-  const nh = Math.floor(total / 60) % 24;
+  let total = h * 60 + m + minutes;
+  total = ((total % (24 * 60)) + 24 * 60) % (24 * 60);
+  const nh = Math.floor(total / 60);
   const nm = total % 60;
   return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}`;
+}
+
+/** Apply a minute offset to a stored start_time (HH:MM or HH:MM:SS). */
+export function shiftActivityStartTime(
+  startTime: string | null,
+  shiftMinutes: number,
+): string {
+  if (!startTime) return `${addMinutes("09:00", shiftMinutes)}:00`;
+  const hhmm = startTime.slice(0, 5);
+  return `${addMinutes(hhmm, shiftMinutes)}:00`;
 }

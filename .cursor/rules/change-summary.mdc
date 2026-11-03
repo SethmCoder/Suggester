@@ -1,0 +1,12 @@
+---
+description: End every completed change with a ~25-word summary
+alwaysApply: true
+---
+
+# Change summary
+
+After finishing a set of code or config changes in a turn, end the reply with a roughly 25-word summary of what changed and why.
+
+- Keep it one short paragraph (about 20–30 words).
+- Cover the outcome, not a file laundry list.
+- Skip the summary only when no changes were made (e.g. pure Q&A).

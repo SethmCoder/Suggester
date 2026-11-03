@@ -29,6 +29,18 @@ export interface TripPreferencesInput {
   idealTrip: string;
   prefersHiddenGems?: boolean;
   budget?: number;
+  dayStart?: string;
+  dayEnd?: string;
+  inboundFlight?: {
+    fromIata: string;
+    toIata: string;
+    toName?: string;
+    estimatedArrivalLocal?: string;
+    suggestedDayStart?: string;
+    durationMinutes?: number;
+    lat?: number;
+    lng?: number;
+  };
 }
 
 export interface GeneratedActivity {
@@ -318,9 +330,41 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
     );
 
     const activities: GeneratedActivity[] = [];
-    let cursorTime = "09:00";
+    const defaultStart =
+      day.dayIndex === 0
+        ? (prefs.inboundFlight?.suggestedDayStart ??
+          prefs.dayStart ??
+          "09:00")
+        : (prefs.dayStart ?? "09:00");
+    let cursorTime = defaultStart.slice(0, 5);
     const dayDate = new Date(tripStart);
     dayDate.setDate(dayDate.getDate() + day.dayIndex);
+
+    // Arrival-day anchor: airport landing when inbound flight is known.
+    if (day.dayIndex === 0 && prefs.inboundFlight?.toIata) {
+      const arr =
+        prefs.inboundFlight.estimatedArrivalLocal?.slice(0, 5) ?? cursorTime;
+      const airportName =
+        prefs.inboundFlight.toName ??
+        `${prefs.inboundFlight.toIata} Airport`;
+      activities.push({
+        placeId: `flight:arrive:${prefs.inboundFlight.toIata}`,
+        name: `Arrive · ${airportName}`,
+        address: `${prefs.inboundFlight.fromIata} → ${prefs.inboundFlight.toIata}`,
+        lat: prefs.inboundFlight.lat ?? geo.lat,
+        lng: prefs.inboundFlight.lng ?? geo.lng,
+        startTime: arr,
+        durationMinutes: 60,
+        priority: "must_see",
+        planningNote: `Estimated landing ~${arr} local (${prefs.inboundFlight.durationMinutes ?? "?"} min block). OpenFlights estimate — not a live schedule. First sightseeing after baggage/customs (~${cursorTime}).`,
+        hoursVerified: false,
+        scheduleWarnings: [
+          "Flight times are OpenFlights estimates, not live airline schedules.",
+        ],
+        travelMinutesFromPrev: 0,
+      });
+      cursorTime = defaultStart.slice(0, 5);
+    }
 
     for (let i = 0; i < orderedIds.length; i++) {
       const act = orderedIds[i];
