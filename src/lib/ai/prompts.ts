@@ -9,6 +9,8 @@ Every activity must use an exact placeId from the candidate list (a real named p
 Online-interest / popularity scores are SECONDARY ranking hints only — traveler interests, geography, pace, and budget matter more.
 When a hotel anchor is provided for a day, prefer candidates close to that hotel.
 For multi-city trips, only schedule places that belong to that day's city (candidates are tagged with city=).
+The system inserts intercity transit blocks (flight, major train, ferry, coach, car) with departure windows — do not invent generic "transfer" stops.
+Major train means long-distance / high-speed rail that typically needs booking; regional rail is local/commuter.
 Respect must-see and avoid lists. Do not repeat the same attraction across days unless unavoidable.
 Return JSON matching the schema exactly.`;
 }
@@ -75,6 +77,6 @@ ${candidateLines.join("\n")}
 Rules:
 - Online-interest hints are SECONDARY. Prefer traveler interests, hotel proximity, and a realistic schedule.
 - Never invent social-media virality or vague "near hotel" fillers.
-- Intercity transit blocks may already be inserted by the system; do not invent train stations unless their placeId is listed.
+- Intercity transit blocks may already be inserted by the system (labeled Flight / Major train / Ferry / etc.); schedule sightseeing after the transit arrival window. Do not invent stations unless their placeId is listed.
 Popularity data present: ${input.popularityEnabled ? "yes" : "no"}.`;
 }

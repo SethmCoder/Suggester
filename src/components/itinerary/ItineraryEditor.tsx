@@ -29,10 +29,49 @@ import {
 } from "@/lib/demo/data";
 import { saveOfflineDayGroups, loadOfflineTrip } from "@/lib/offline/trips";
 import type { DayCityAssignment } from "@/lib/trips/legs";
+import {
+  formatIntercityModeLabel,
+  intercityModeFromPlaceId,
+  type IntercityMode,
+} from "@/lib/trips/intercity-transit";
 import { PopularityBadge } from "./PopularityBadge";
 import { TripMap } from "./TripMap";
 import { AssistantPanel } from "./AssistantPanel";
 import type { ActivityRow } from "@/lib/types/trip";
+
+function transitModeFromActivity(activity: ActivityRow): IntercityMode | "flight_arrive" | null {
+  if (activity.place_id?.startsWith("flight:arrive:")) return "flight_arrive";
+  const fromId = intercityModeFromPlaceId(activity.place_id);
+  if (fromId) return fromId;
+  const n = activity.name.toLowerCase();
+  if (n.startsWith("flight")) return "flight";
+  if (n.startsWith("major train")) return "major_train";
+  if (n.startsWith("regional rail")) return "regional_rail";
+  if (n.startsWith("coach") || n.startsWith("bus")) return "coach";
+  if (n.startsWith("ferry") || n.startsWith("boat")) return "ferry";
+  if (n.startsWith("car /") || n.startsWith("car ·")) return "car";
+  if (activity.place_id?.startsWith("transit:")) return "coach";
+  return null;
+}
+
+function TransitModeChip({ mode }: { mode: IntercityMode | "flight_arrive" }) {
+  const label =
+    mode === "flight_arrive"
+      ? "Arrival flight"
+      : formatIntercityModeLabel(mode);
+  const book =
+    mode === "flight" || mode === "major_train" || mode === "ferry";
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md bg-[#080B3A] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+      {label}
+      {book ? (
+        <span className="rounded bg-[#C45F00] px-1 py-px text-[9px] normal-case tracking-normal">
+          book
+        </span>
+      ) : null}
+    </span>
+  );
+}
 
 type DayGroup = {
   dayId: string;
@@ -656,18 +695,28 @@ function SortableActivity({
         </button>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <p
-              className={`text-[13px] font-semibold leading-snug text-[#080B3A] ${activity.completed ? "line-through opacity-60" : ""}`}
-            >
-              {(activity.source === "food_recommend" ||
-                activity.popularity_label?.includes("★") ||
-                activity.planning_note?.startsWith("★")) && (
-                <span className="mr-1 text-[#C45F00]" aria-label="Recommended">
-                  ★
-                </span>
-              )}
-              {activity.name}
-            </p>
+            <div className="min-w-0">
+              {(() => {
+                const transitMode = transitModeFromActivity(activity);
+                return transitMode ? (
+                  <div className="mb-1">
+                    <TransitModeChip mode={transitMode} />
+                  </div>
+                ) : null;
+              })()}
+              <p
+                className={`text-[13px] font-semibold leading-snug text-[#080B3A] ${activity.completed ? "line-through opacity-60" : ""}`}
+              >
+                {(activity.source === "food_recommend" ||
+                  activity.popularity_label?.includes("★") ||
+                  activity.planning_note?.startsWith("★")) && (
+                  <span className="mr-1 text-[#C45F00]" aria-label="Recommended">
+                    ★
+                  </span>
+                )}
+                {activity.name}
+              </p>
+            </div>
             <span className="shrink-0 text-[10px] capitalize text-[#6B7280]">
               {activity.priority?.replace("_", " ")}
             </span>

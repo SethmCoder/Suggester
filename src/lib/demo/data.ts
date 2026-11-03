@@ -5,7 +5,7 @@ import { expandLegsToDays, type DayCityAssignment } from "@/lib/trips/legs";
 export const DEMO_TRIP_ID = "demo-paris";
 export const DEMO_DUBAI_ID = "demo-dubai";
 /** Bump when demo payloads change so stale localStorage copies are ignored. */
-export const DEMO_CONTENT_VERSION = 3;
+export const DEMO_CONTENT_VERSION = 4;
 
 export const DEMO_BANNER =
   "Demo mode — sample data only. Place facts here are illustrative, not live-verified.";
@@ -361,18 +361,19 @@ export const demoDubaiActivities: ActivityRow[] = [
   act({
     id: "demo-dxb-a9",
     day_id: "demo-dxb-day-3",
-    name: "Intercity transfer Dubai → Abu Dhabi (demo)",
-    address: "E11 / coach corridor toward Abu Dhabi",
+    name: "Coach / bus · Dubai → Abu Dhabi (demo)",
+    address: "Coach / bus · ~140 km · ~2h 0m",
     lat: 24.85,
     lng: 54.7,
-    start_time: "09:00:00",
+    start_time: "08:45:00",
     duration_minutes: 120,
     sort_order: 0,
     priority: "must_see",
+    place_id: "transit:coach:Dubai:Abu Dhabi",
     planning_note:
-      "city=Abu Dhabi · Multi-city transit day — ~1.5–2h by road. Real trips leave buffer before first stop.",
+      "city=Abu Dhabi · Coach / bus for ~140 km. Depart ~08:45, arrive ~10:45 local (estimate). Usually no long-distance reservation required. Not a live timetable — verify schedules when booking.",
     schedule_warnings: [
-      "Demo transit block — not a live timetable",
+      "Transit times are planned windows, not live booked tickets.",
     ],
   }),
   act({

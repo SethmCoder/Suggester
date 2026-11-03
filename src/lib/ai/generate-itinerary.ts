@@ -35,11 +35,8 @@ import {
   orderByRoutedNeighbor,
 } from "./scheduler";
 import type { TripLeg } from "../types/trip";
-import {
-  estimateIntercityMinutes,
-  expandLegsToDays,
-  legsLabel,
-} from "../trips/legs";
+import { expandLegsToDays, legsLabel } from "../trips/legs";
+import { planIntercityTransit } from "../trips/intercity-transit";
 import {
   primaryDestinationLabel,
   resolveTripLegs,
@@ -653,35 +650,38 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       cursorTime = defaultStart.slice(0, 5);
     }
 
-    // Intercity transit block (estimate; not a live timetable)
+    // Intercity transit: flight / major train / ferry / coach / car with timed window
     if (assignment.isArrivalTransitDay && assignment.previousCity) {
       const prevLeg = legs[assignment.legIndex - 1];
-      const dist =
-        prevLeg?.lat != null &&
-        prevLeg?.lng != null &&
-        leg.lat != null &&
-        leg.lng != null
-          ? haversineKm(prevLeg.lat, prevLeg.lng, leg.lat, leg.lng)
-          : 400;
-      const mins = estimateIntercityMinutes(dist);
+      const transit = await planIntercityTransit({
+        fromCity: assignment.previousCity,
+        toCity: assignment.city,
+        fromLat: prevLeg?.lat,
+        fromLng: prevLeg?.lng,
+        toLat: leg.lat,
+        toLng: leg.lng,
+        preferredLocalTransport: prefs.transport,
+      });
       activities.push({
-        placeId: `transit:${assignment.previousCity}:${assignment.city}`,
-        name: `Transit · ${assignment.previousCity} → ${assignment.city}`,
-        address: `~${Math.round(dist)} km · ~${mins} min estimate`,
+        placeId: transit.placeId,
+        name: transit.name,
+        address: transit.address,
         lat: startPt.lat,
         lng: startPt.lng,
-        startTime: "09:00",
-        durationMinutes: Math.min(mins, 360),
+        startTime: transit.departLocal,
+        durationMinutes: Math.min(transit.durationMinutes, 16 * 60),
         priority: "must_see",
-        planningNote: `Intercity move for multi-city trip (${legsLabel(legs)}). Time is a rough train/car estimate — check live schedules. Then plan around ${leg.hotel ? `hotel “${leg.hotel}”` : `${assignment.city} center`}.`,
+        planningNote: `${transit.planningNote} Trip legs: ${legsLabel(legs)}. Then plan around ${leg.hotel ? `hotel “${leg.hotel}”` : `${assignment.city} center`}.`,
         hoursVerified: false,
-        scheduleWarnings: [
-          "Intercity times are estimates, not booked tickets.",
-        ],
+        scheduleWarnings: transit.scheduleWarnings,
         travelMinutesFromPrev: 0,
       });
-      cursorTime = addMinutes("09:00", Math.min(mins, 360));
-      if (cursorTime < "13:00") cursorTime = "13:00";
+      cursorTime = addMinutes(
+        transit.departLocal,
+        Math.min(transit.durationMinutes, 16 * 60),
+      );
+      // Leave a short buffer before sightseeing after arrival
+      cursorTime = addMinutes(cursorTime, 30);
     }
 
     for (let i = 0; i < orderedIds.length; i++) {
