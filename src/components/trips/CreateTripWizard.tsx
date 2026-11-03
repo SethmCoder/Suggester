@@ -8,7 +8,24 @@ import {
   createOfflineTripId,
   saveOfflineTrip,
 } from "@/lib/offline/trips";
-import type { ActivityRow } from "@/lib/types/trip";
+import type { ActivityRow, LegTransitMode } from "@/lib/types/trip";
+
+const INTERCITY_MODES: { value: LegTransitMode; label: string }[] = [
+  { value: "auto", label: "Auto (planner picks)" },
+  { value: "flight", label: "Flight" },
+  { value: "major_train", label: "Major train (book)" },
+  { value: "regional_rail", label: "Regional rail" },
+  { value: "coach", label: "Coach / bus" },
+  { value: "ferry", label: "Ferry / boat" },
+  { value: "car", label: "Car / road" },
+];
+
+const CITY_CARD_COLORS = [
+  { border: "border-[#0400FF]/35", bg: "bg-[#F5F7FF]", tag: "bg-[#0400FF]" },
+  { border: "border-[#0F766E]/35", bg: "bg-[#F0FDFA]", tag: "bg-[#0F766E]" },
+  { border: "border-[#B45309]/35", bg: "bg-[#FFF7ED]", tag: "bg-[#B45309]" },
+  { border: "border-[#6D28D9]/35", bg: "bg-[#F5F3FF]", tag: "bg-[#6D28D9]" },
+];
 
 const INTERESTS = [
   "architecture",
@@ -35,6 +52,8 @@ type LegDraft = {
   hotelLat?: number;
   hotelLng?: number;
   hotelPlaceId?: string;
+  /** How you travel from the previous city's hotel to this hotel */
+  transitFromPrevious: LegTransitMode;
 };
 
 type CitySuggestion = {
@@ -127,7 +146,7 @@ export function CreateTripWizard({
     prefersHiddenGems: false,
   });
   const [legs, setLegs] = useState<LegDraft[]>([
-    { city: "", days: 3, hotel: "" },
+    { city: "", days: 3, hotel: "", transitFromPrevious: "auto" },
   ]);
   const [citySuggestions, setCitySuggestions] = useState<
     Record<number, CitySuggestion[]>
@@ -432,7 +451,7 @@ export function CreateTripWizard({
       idealTrip: form.idealTrip,
       legs: legs
         .filter((l) => l.city.trim())
-        .map((l) => ({
+        .map((l, i) => ({
           city: l.city.trim(),
           days: Math.max(1, Number(l.days) || 1),
           hotel: l.hotel.trim() || undefined,
@@ -443,6 +462,8 @@ export function CreateTripWizard({
           hotelLat: l.hotelLat,
           hotelLng: l.hotelLng,
           hotelPlaceId: l.hotelPlaceId,
+          transitFromPrevious:
+            i === 0 ? undefined : l.transitFromPrevious || "auto",
         })),
     };
 
@@ -623,7 +644,12 @@ export function CreateTripWizard({
                   onClick={() =>
                     setLegs((prev) => [
                       ...prev,
-                      { city: "", days: 2, hotel: "" },
+                      {
+                        city: "",
+                        days: 2,
+                        hotel: "",
+                        transitFromPrevious: "auto",
+                      },
                     ])
                   }
                 >
@@ -631,150 +657,241 @@ export function CreateTripWizard({
                 </button>
               </div>
               <p className="text-xs text-[#6B7280]">
-                Example: Paris 2 days → Toulouse 3 days → Paris 2 days. Each
-                hotel anchors that stay’s sightseeing. Cities resolve via
-                GeoNames (no API key).
+                Each card is a different city stay with its own hotel. Between
+                cities, choose how you travel hotel → hotel (e.g. Dubai hotel →
+                Abu Dhabi hotel).
               </p>
-              {legs.map((leg, i) => (
-                <div
-                  key={i}
-                  className="relative space-y-2 rounded-[12px] border border-[#E1E5F0] bg-[#F5F7FF] p-3"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-[#080B3A]">
-                      Stay {i + 1}
-                      {i > 0 ? " · transit from previous" : ""}
-                    </span>
-                    {legs.length > 1 ? (
-                      <button
-                        type="button"
-                        className="text-xs text-[#DC2626]"
-                        onClick={() =>
-                          setLegs((prev) => prev.filter((_, j) => j !== i))
-                        }
-                      >
-                        Remove
-                      </button>
-                    ) : null}
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-[1fr_88px]">
-                    <div className="relative">
-                      <Label>City</Label>
-                      <Input
-                        required
-                        value={leg.city}
-                        onChange={(e) => {
-                          const city = e.target.value;
-                          setLegs((prev) =>
-                            prev.map((l, j) =>
-                              j === i
-                                ? {
-                                    ...l,
-                                    city,
-                                    geonameId: undefined,
-                                    lat: undefined,
-                                    lng: undefined,
-                                  }
-                                : l,
-                            ),
-                          );
-                          void searchCities(i, city);
-                        }}
-                        className="mt-1"
-                        placeholder="Paris"
-                        autoComplete="off"
-                      />
-                      {(citySuggestions[i]?.length ?? 0) > 0 ? (
-                        <ul className="absolute z-20 mt-1 max-h-40 w-full overflow-auto rounded-[10px] border border-[#E1E5F0] bg-white shadow-lg">
-                          {citySuggestions[i].map((c) => (
-                            <li key={c.id}>
-                              <button
-                                type="button"
-                                className="w-full px-3 py-2 text-left text-sm hover:bg-[#DDE1FF]"
-                                onClick={() => pickCity(i, c)}
-                              >
-                                {c.label}
-                              </button>
-                            </li>
+              {legs.map((leg, i) => {
+                const palette =
+                  CITY_CARD_COLORS[i % CITY_CARD_COLORS.length];
+                const prev = i > 0 ? legs[i - 1] : null;
+                const fromLabel =
+                  prev?.hotel?.trim() ||
+                  (prev?.city?.trim()
+                    ? `${prev.city.trim()} hotel`
+                    : "Previous hotel");
+                const toLabel =
+                  leg.hotel?.trim() ||
+                  (leg.city?.trim()
+                    ? `${leg.city.trim()} hotel`
+                    : "This hotel");
+                return (
+                  <div key={i} className="space-y-2">
+                    {i > 0 ? (
+                      <div className="relative mx-1 rounded-[12px] border border-dashed border-[#C5CAD8] bg-[#FAFBFF] px-3 py-3">
+                        <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
+                          <span
+                            className={`inline-block h-2 w-2 rounded-full ${CITY_CARD_COLORS[(i - 1) % CITY_CARD_COLORS.length].tag}`}
+                          />
+                          Place to place
+                          <span
+                            className={`inline-block h-2 w-2 rounded-full ${palette.tag}`}
+                          />
+                        </div>
+                        <p className="mb-2 text-sm font-medium text-[#080B3A]">
+                          {fromLabel}
+                          <span className="mx-2 text-[#0400FF]">→</span>
+                          {toLabel}
+                        </p>
+                        <p className="mb-2 text-[11px] text-[#6B7280]">
+                          {(prev?.city || "City A").trim() || "City A"}
+                          {" → "}
+                          {(leg.city || "City B").trim() || "City B"} · leave
+                          one city hotel, arrive at the next
+                        </p>
+                        <Label>Mode of transportation</Label>
+                        <select
+                          className="mt-1 w-full rounded-lg border border-[#D1D7E5] bg-white px-3 py-2 text-sm"
+                          value={leg.transitFromPrevious || "auto"}
+                          onChange={(e) =>
+                            setLegs((prevLegs) =>
+                              prevLegs.map((l, j) =>
+                                j === i
+                                  ? {
+                                      ...l,
+                                      transitFromPrevious: e.target
+                                        .value as LegTransitMode,
+                                    }
+                                  : l,
+                              ),
+                            )
+                          }
+                        >
+                          {INTERCITY_MODES.map((m) => (
+                            <option key={m.value} value={m.value}>
+                              {m.label}
+                            </option>
                           ))}
-                        </ul>
-                      ) : null}
-                    </div>
-                    <div>
-                      <Label>Days</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={30}
-                        value={leg.days}
-                        onChange={(e) =>
-                          setLegs((prev) =>
-                            prev.map((l, j) =>
-                              j === i
-                                ? {
-                                    ...l,
-                                    days: Math.max(1, Number(e.target.value) || 1),
-                                  }
-                                : l,
-                            ),
-                          )
-                        }
-                        className="mt-1"
-                      />
-                    </div>
-                  </div>
-                  <div className="relative">
-                    <Label>Hotel name or address</Label>
-                    <Input
-                      value={leg.hotel}
-                      onChange={(e) => {
-                        const hotel = e.target.value;
-                        setLegs((prev) =>
-                          prev.map((l, j) =>
-                            j === i
-                              ? {
-                                  ...l,
-                                  hotel,
-                                  hotelLat: undefined,
-                                  hotelLng: undefined,
-                                  hotelPlaceId: undefined,
-                                }
-                              : l,
-                          ),
-                        );
-                        void searchHotels(i, hotel);
-                      }}
-                      onFocus={() => {
-                        if (leg.lat != null && leg.lng != null) {
-                          void searchHotels(i, leg.hotel, true);
-                        }
-                      }}
-                      className="mt-1"
-                      placeholder={
-                        leg.lat != null
-                          ? "Search hotels near this city"
-                          : "Pick a city first"
-                      }
-                      autoComplete="off"
-                      disabled={leg.lat == null}
-                    />
-                    <SuggestionList
-                      items={(hotelSuggestions[i] ?? []).map((h) => ({
-                        key: h.placeId,
-                        label: h.label,
-                      }))}
-                      onPick={(idx) =>
-                        pickHotel(i, hotelSuggestions[i][idx])
-                      }
-                    />
-                    {leg.lat != null && !(hotelSuggestions[i]?.length) ? (
-                      <p className="mt-1 text-[11px] text-[#6B7280]">
-                        Focus or type to list nearby hotels from OpenStreetMap.
-                      </p>
+                        </select>
+                      </div>
                     ) : null}
+                    <div
+                      className={`relative space-y-3 rounded-[14px] border-2 ${palette.border} ${palette.bg} p-4`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-[11px] font-bold text-white ${palette.tag}`}
+                          >
+                            {i + 1}
+                          </span>
+                          <div>
+                            <p className="text-sm font-semibold text-[#080B3A]">
+                              City {i + 1}
+                              {leg.city.trim() ? ` · ${leg.city.trim()}` : ""}
+                            </p>
+                            <p className="text-[11px] text-[#6B7280]">
+                              Separate stay — set this city’s hotel below
+                            </p>
+                          </div>
+                        </div>
+                        {legs.length > 1 ? (
+                          <button
+                            type="button"
+                            className="text-xs text-[#DC2626]"
+                            onClick={() =>
+                              setLegs((prevLegs) =>
+                                prevLegs.filter((_, j) => j !== i),
+                              )
+                            }
+                          >
+                            Remove
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-[1fr_88px]">
+                        <div className="relative">
+                          <Label>City name</Label>
+                          <Input
+                            required
+                            value={leg.city}
+                            onChange={(e) => {
+                              const city = e.target.value;
+                              setLegs((prevLegs) =>
+                                prevLegs.map((l, j) =>
+                                  j === i
+                                    ? {
+                                        ...l,
+                                        city,
+                                        geonameId: undefined,
+                                        lat: undefined,
+                                        lng: undefined,
+                                      }
+                                    : l,
+                                ),
+                              );
+                              void searchCities(i, city);
+                            }}
+                            className="mt-1 bg-white"
+                            placeholder={
+                              i === 0
+                                ? "e.g. Dubai"
+                                : i === 1
+                                  ? "e.g. Abu Dhabi"
+                                  : "Next city"
+                            }
+                            autoComplete="off"
+                          />
+                          {(citySuggestions[i]?.length ?? 0) > 0 ? (
+                            <ul className="absolute z-20 mt-1 max-h-40 w-full overflow-auto rounded-[10px] border border-[#E1E5F0] bg-white shadow-lg">
+                              {citySuggestions[i].map((c) => (
+                                <li key={c.id}>
+                                  <button
+                                    type="button"
+                                    className="w-full px-3 py-2 text-left text-sm hover:bg-[#DDE1FF]"
+                                    onClick={() => pickCity(i, c)}
+                                  >
+                                    {c.label}
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </div>
+                        <div>
+                          <Label>Days</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={30}
+                            value={leg.days}
+                            onChange={(e) =>
+                              setLegs((prevLegs) =>
+                                prevLegs.map((l, j) =>
+                                  j === i
+                                    ? {
+                                        ...l,
+                                        days: Math.max(
+                                          1,
+                                          Number(e.target.value) || 1,
+                                        ),
+                                      }
+                                    : l,
+                                ),
+                              )
+                            }
+                            className="mt-1 bg-white"
+                          />
+                        </div>
+                      </div>
+                      <div className="relative rounded-[10px] border border-white/80 bg-white/90 p-3">
+                        <Label>
+                          Hotel in{" "}
+                          {leg.city.trim() || `city ${i + 1}`}
+                        </Label>
+                        <Input
+                          value={leg.hotel}
+                          onChange={(e) => {
+                            const hotel = e.target.value;
+                            setLegs((prevLegs) =>
+                              prevLegs.map((l, j) =>
+                                j === i
+                                  ? {
+                                      ...l,
+                                      hotel,
+                                      hotelLat: undefined,
+                                      hotelLng: undefined,
+                                      hotelPlaceId: undefined,
+                                    }
+                                  : l,
+                              ),
+                            );
+                            void searchHotels(i, hotel);
+                          }}
+                          onFocus={() => {
+                            if (leg.lat != null && leg.lng != null) {
+                              void searchHotels(i, leg.hotel, true);
+                            }
+                          }}
+                          className="mt-1"
+                          placeholder={
+                            leg.lat != null
+                              ? "Search hotels in this city"
+                              : "Pick a city first"
+                          }
+                          autoComplete="off"
+                          disabled={leg.lat == null}
+                        />
+                        <SuggestionList
+                          items={(hotelSuggestions[i] ?? []).map((h) => ({
+                            key: h.placeId,
+                            label: h.label,
+                          }))}
+                          onPick={(idx) =>
+                            pickHotel(i, hotelSuggestions[i][idx])
+                          }
+                        />
+                        {leg.lat != null && !(hotelSuggestions[i]?.length) ? (
+                          <p className="mt-1 text-[11px] text-[#6B7280]">
+                            Focus or type to list nearby hotels from
+                            OpenStreetMap.
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               <p className="text-xs text-[#6B7280]">
                 Total itinerary length: <strong>{totalDays}</strong> days
                 {endDate ? ` · ends ${endDate}` : ""}
@@ -1007,7 +1124,7 @@ export function CreateTripWizard({
               </select>
             </div>
             <div>
-              <Label>Transportation</Label>
+              <Label>Within-city transportation</Label>
               <select
                 className="mt-1 w-full rounded-lg border border-[#D1D7E5] px-3 py-2 text-sm"
                 value={form.transport}
@@ -1020,11 +1137,14 @@ export function CreateTripWizard({
                 <option value="driving">Driving</option>
                 <option value="cycling">Cycling</option>
               </select>
+              <p className="mt-1 text-[11px] text-[#6B7280]">
+                How you get around inside each city. City-to-city travel
+                (hotel → hotel) is set on step 1 between city cards.
+              </p>
             </div>
             <p className="rounded-[12px] border border-[#DDE1FF] bg-[#F5F7FF] px-3 py-2 text-xs text-[#6B7280]">
-              Hotels are set per city on step 1. Sightseeing is ranked around
-              each hotel pin — the planner will not invent “a cafe by your
-              hotel”; it only uses real mapped places.
+              Each city has its own hotel on step 1. Sightseeing is ranked
+              around that hotel pin — the planner only uses real mapped places.
             </p>
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -1094,13 +1214,37 @@ export function CreateTripWizard({
         {step === 3 && (
           <div className="space-y-3 text-sm">
             <h2 className="text-[20px] font-semibold text-[#080B3A]">Review</h2>
-            <p>
-              <span className="text-[#6B7280]">Route:</span>{" "}
-              {legs
-                .filter((l) => l.city.trim())
-                .map((l) => `${l.city} (${l.days}d${l.hotel ? `, ${l.hotel}` : ""})`)
-                .join(" → ")}
-            </p>
+            <div className="space-y-2">
+              <span className="text-[#6B7280]">Cities & place-to-place:</span>
+              <ul className="space-y-2">
+                {legs
+                  .filter((l) => l.city.trim())
+                  .map((l, i, arr) => {
+                    const modeLabel =
+                      INTERCITY_MODES.find(
+                        (m) => m.value === (l.transitFromPrevious || "auto"),
+                      )?.label ?? "Auto";
+                    const prev = i > 0 ? arr[i - 1] : null;
+                    return (
+                      <li key={i} className="rounded-[10px] border border-[#E1E5F0] bg-[#F5F7FF] px-3 py-2">
+                        {i > 0 && prev ? (
+                          <p className="mb-1 text-[11px] text-[#0400FF]">
+                            {(prev.hotel || `${prev.city} hotel`) +
+                              " → " +
+                              (l.hotel || `${l.city} hotel`)}
+                            {" · "}
+                            {modeLabel}
+                          </p>
+                        ) : null}
+                        <p className="font-medium text-[#080B3A]">
+                          City {i + 1}: {l.city} · {l.days}d
+                          {l.hotel ? ` · Hotel: ${l.hotel}` : " · (no hotel yet)"}
+                        </p>
+                      </li>
+                    );
+                  })}
+              </ul>
+            </div>
             <p>
               <span className="text-[#6B7280]">Dates:</span> {form.startDate} –{" "}
               {endDate}

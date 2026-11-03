@@ -656,11 +656,14 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       const transit = await planIntercityTransit({
         fromCity: assignment.previousCity,
         toCity: assignment.city,
-        fromLat: prevLeg?.lat,
-        fromLng: prevLeg?.lng,
-        toLat: leg.lat,
-        toLng: leg.lng,
+        fromLat: prevLeg?.hotelLat ?? prevLeg?.lat,
+        fromLng: prevLeg?.hotelLng ?? prevLeg?.lng,
+        toLat: leg.hotelLat ?? leg.lat,
+        toLng: leg.hotelLng ?? leg.lng,
+        fromHotel: prevLeg?.hotel,
+        toHotel: leg.hotel,
         preferredLocalTransport: prefs.transport,
+        preferredMode: leg.transitFromPrevious ?? "auto",
       });
       activities.push({
         placeId: transit.placeId,

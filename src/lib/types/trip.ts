@@ -13,6 +13,16 @@ export interface InboundFlightPrefs {
   note?: string;
 }
 
+/** How the traveler reaches this city from the previous city's hotel. */
+export type LegTransitMode =
+  | "auto"
+  | "flight"
+  | "major_train"
+  | "regional_rail"
+  | "coach"
+  | "ferry"
+  | "car";
+
 /** One stay segment in a (possibly multi-city) trip. */
 export interface TripLeg {
   city: string;
@@ -28,6 +38,11 @@ export interface TripLeg {
   hotelLng?: number;
   hotelPlaceId?: string;
   hotelAddress?: string;
+  /**
+   * Transport from the previous city's hotel → this city's hotel.
+   * Ignored on the first leg. "auto" lets the planner choose.
+   */
+  transitFromPrevious?: LegTransitMode;
 }
 
 export interface TripPreferencesPayload {

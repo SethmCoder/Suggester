@@ -296,7 +296,12 @@ export async function planIntercityTransit(input: {
   fromLng?: number | null;
   toLat?: number | null;
   toLng?: number | null;
+  /** Hotel names for clearer hotel→hotel labeling */
+  fromHotel?: string | null;
+  toHotel?: string | null;
   preferredLocalTransport?: string;
+  /** User-forced mode from create-trip (skips auto heuristics when set). */
+  preferredMode?: IntercityMode | "auto" | null;
 }): Promise<IntercityTransitPlan> {
   const distanceKm =
     input.fromLat != null &&
@@ -326,16 +331,25 @@ export async function planIntercityTransit(input: {
     preferredLocalTransport: input.preferredLocalTransport,
   });
 
-  const ai = await maybeAiRefine({
-    fromCity: input.fromCity,
-    toCity: input.toCity,
-    distanceKm,
-    heuristic,
-    hasFlightRoute,
-    flightNote: flight?.note,
-  });
+  const forced =
+    input.preferredMode &&
+    input.preferredMode !== "auto" &&
+    MODE_LABEL[input.preferredMode]
+      ? input.preferredMode
+      : null;
 
-  const mode = ai?.mode ?? heuristic;
+  const ai = forced
+    ? null
+    : await maybeAiRefine({
+        fromCity: input.fromCity,
+        toCity: input.toCity,
+        distanceKm,
+        heuristic,
+        hasFlightRoute,
+        flightNote: flight?.note,
+      });
+
+  const mode = forced ?? ai?.mode ?? heuristic;
   const durationMinutes = durationForMode(
     mode,
     distanceKm,
@@ -353,6 +367,8 @@ export async function planIntercityTransit(input: {
 
   const bookingRequired = bookingRequiredFor(mode);
   const modeTitle = MODE_LABEL[mode];
+  const fromAnchor = input.fromHotel?.trim() || input.fromCity;
+  const toAnchor = input.toHotel?.trim() || input.toCity;
   const name = `${modeTitle} · ${input.fromCity} → ${input.toCity}`;
 
   const scheduleWarnings = [
@@ -369,11 +385,13 @@ export async function planIntercityTransit(input: {
   }
 
   const planningBits = [
+    `Hotel-to-hotel: ${fromAnchor} (${input.fromCity}) → ${toAnchor} (${input.toCity}).`,
     `${modeTitle} for ~${Math.round(distanceKm)} km.`,
     `Depart ~${departLocal}, arrive ~${arriveLocal} local (estimate).`,
     bookingRequired
       ? "Booking recommended before travel day."
       : "Usually no long-distance reservation required.",
+    forced ? "Mode chosen by traveler in trip setup." : null,
     ai?.note ? `Planner note: ${ai.note}` : null,
     flight?.routeKnown && mode === "flight"
       ? `OpenFlights route ${flight.from.iata}→${flight.to.iata} (${flight.sampleAirlines.slice(0, 2).join(", ") || "airlines"}).`

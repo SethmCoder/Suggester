@@ -41,6 +41,20 @@ const bodySchema = z.object({
         lat: z.number().optional(),
         lng: z.number().optional(),
         countryCode: z.string().optional(),
+        hotelLat: z.number().optional(),
+        hotelLng: z.number().optional(),
+        hotelPlaceId: z.string().optional(),
+        transitFromPrevious: z
+          .enum([
+            "auto",
+            "flight",
+            "major_train",
+            "regional_rail",
+            "coach",
+            "ferry",
+            "car",
+          ])
+          .optional(),
       }),
     )
     .optional(),
