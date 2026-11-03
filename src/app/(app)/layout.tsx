@@ -36,7 +36,7 @@ export default async function AppLayout({
 
   if (demo && !email) {
     email = "demo@waypoint.local";
-    displayName = "Demo visitor";
+    displayName = "DEMO";
   }
 
   return (

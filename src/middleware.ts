@@ -12,6 +12,13 @@ const PROTECTED = [
 ];
 const PROTECTED_PREFIX = "/trips/";
 
+/** Sample itineraries available without an account (keep in sync with lib/demo/data). */
+const DEMO_TRIP_PATHS = new Set(["/trips/demo-paris", "/trips/demo-dubai"]);
+
+function isDemoTripPath(path: string) {
+  return DEMO_TRIP_PATHS.has(path);
+}
+
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const demo = isDemoCookie(request.cookies.get(DEMO_COOKIE)?.value);
@@ -22,15 +29,15 @@ export async function middleware(request: NextRequest) {
       !path.startsWith("/trips/preview") &&
       path !== "/trips/new");
 
-  // Demo cookie unlocks dashboard + demo trip without Supabase auth
+  // Demo cookie unlocks dashboard + demo trips without Supabase auth
   if (demo && isProtected) {
     if (path === "/trips/new") {
       return NextResponse.redirect(new URL("/dashboard?demo=create-locked", request.url));
     }
-    // Allow /settings and /profile in demo; only lock non-demo trip routes
+    // Allow all sample demos; lock other /trips/* routes to the Paris sample
     if (
       path.startsWith("/trips/") &&
-      !path.includes("demo-paris") &&
+      !isDemoTripPath(path) &&
       path !== "/trips/new"
     ) {
       return NextResponse.redirect(new URL("/trips/demo-paris", request.url));

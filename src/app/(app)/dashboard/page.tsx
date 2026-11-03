@@ -78,7 +78,7 @@ export default function DashboardPage() {
         const remote = (d.trips ?? []) as TripListItem[];
         setIsDemo(Boolean(d.isDemo));
         if (d.isDemo) {
-          setName("Seth");
+          setName("DEMO");
           try {
             seedDemoOffline();
           } catch {

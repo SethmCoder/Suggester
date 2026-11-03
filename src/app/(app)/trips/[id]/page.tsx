@@ -55,13 +55,21 @@ export default async function TripItineraryPage({
     } = await supabase.auth.getUser();
     userId = user?.id ?? null;
   } catch {
-    if (demo) redirect(`/trips/${DEMO_TRIP_ID}`);
+    if (demo) {
+      redirect(
+        isDemoTripId(id) ? `/trips/${id}` : `/trips/${DEMO_TRIP_ID}`,
+      );
+    }
     // Allow opening via offline cache when auth/network fails
     return <OfflineTripLoader tripId={id} />;
   }
 
   if (!userId) {
-    if (demo) redirect(`/trips/${DEMO_TRIP_ID}`);
+    if (demo) {
+      redirect(
+        isDemoTripId(id) ? `/trips/${id}` : `/trips/${DEMO_TRIP_ID}`,
+      );
+    }
     return <OfflineTripLoader tripId={id} />;
   }
 
