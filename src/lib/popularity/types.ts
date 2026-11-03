@@ -44,4 +44,6 @@ export interface RankedCandidate {
   lng: number;
   popularity: PopularitySignals | null;
   combinedRank: number;
+  /** Multi-city tag — which stay this candidate belongs to. */
+  city?: string;
 }

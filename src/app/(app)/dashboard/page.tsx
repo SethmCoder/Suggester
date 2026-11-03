@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { DemoBanner } from "@/components/demo/DemoBanner";
+import { FirstRunTour } from "@/components/tutorial/FirstRunTour";
 import { Button } from "@/components/ui/Button";
 import { IconArrowRight, IconPlane, IconSearch } from "@/components/ui/Icons";
 import {
@@ -46,6 +47,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      <FirstRunTour />
       {isDemo ? <DemoBanner /> : null}
 
       {/* Hero */}

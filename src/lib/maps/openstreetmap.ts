@@ -101,7 +101,73 @@ export async function osmPlaceDetails(
   placeId: string,
 ): Promise<PlaceDetails | null> {
   if (!placeId.startsWith("osm:")) return null;
-  const nominatimId = placeId.replace("osm:", "");
+
+  // Overpass-discovered ids: osm:node:123 / osm:way:456 / osm:relation:789
+  const typed = placeId.match(/^osm:(node|way|relation):(\d+)$/i);
+  if (typed) {
+    const osmType = typed[1].toLowerCase();
+    const osmId = typed[2];
+    try {
+      const q = `[out:json][timeout:15];${osmType}(${osmId});out center tags;`;
+      const res = await fetch(
+        `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(q)}`,
+        {
+          headers: { "User-Agent": UA, Accept: "application/json" },
+          signal: AbortSignal.timeout(18000),
+        },
+      );
+      if (res.ok) {
+        const data = (await res.json()) as {
+          elements?: {
+            lat?: number;
+            lon?: number;
+            center?: { lat: number; lon: number };
+            tags?: Record<string, string>;
+          }[];
+        };
+        const el = data.elements?.[0];
+        if (el) {
+          const tags = el.tags ?? {};
+          const lat = el.lat ?? el.center?.lat ?? 0;
+          const lng = el.lon ?? el.center?.lon ?? 0;
+          const name = tags.name ?? placeId;
+          const oh = tags.opening_hours;
+          return {
+            placeId,
+            displayName: name,
+            lat,
+            lng,
+            types: [
+              tags.tourism,
+              tags.amenity,
+              tags.historic,
+              tags.leisure,
+              "osm",
+            ].filter(Boolean) as string[],
+            formattedAddress: [
+              tags["addr:street"],
+              tags["addr:city"],
+            ]
+              .filter(Boolean)
+              .join(", "),
+            websiteUri: tags.website ?? tags["contact:website"],
+            googleMapsUri: `https://www.openstreetmap.org/${osmType}/${osmId}`,
+            hoursVerified: Boolean(oh),
+            regularOpeningHours: oh
+              ? { weekdayDescriptions: [oh], osmOpeningHours: oh }
+              : undefined,
+          };
+        }
+      }
+    } catch {
+      /* fall through to nominatim */
+    }
+  }
+
+  const nominatimId = placeId.replace(/^osm:(node|way|relation):/i, "").replace(
+    /^osm:/,
+    "",
+  );
 
   const lookup = await fetch(
     `https://nominatim.openstreetmap.org/lookup?osm_ids=N${nominatimId},W${nominatimId},R${nominatimId}&format=json&extratags=1`,

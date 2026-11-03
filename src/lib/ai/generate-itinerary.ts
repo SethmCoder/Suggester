@@ -1,21 +1,46 @@
 import Groq from "groq-sdk";
 import { getPopularityConfig } from "../config/popularity";
 import {
+  formatDestinationContextForPrompt,
+  fetchSortedDestinationContext,
+} from "../destination/sorted-travel";
+import { scorePlacesOnlineInterest } from "../interest/wikimedia-pageviews";
+import {
   computeDayRoute,
   geocodeDestination,
   getPlaceDetails,
   searchInterestPlaces,
   textSearchPlace,
 } from "../maps";
+import {
+  discoveredToPlaceHits,
+  discoverPlacesFromOsm,
+} from "../places/osm-discover";
+import {
+  combineDiscoveryRank,
+  placeQualityScore,
+} from "../places/rank";
+import type { OnlineInterestSignal } from "../places/types";
 import { getPopularityForDestination } from "../popularity/service";
 import { rankCandidatesWithPopularity } from "../popularity/rank-candidates";
-import type { RankedCandidate } from "../popularity/types";
+import type { PopularitySignals, RankedCandidate } from "../popularity/types";
 import { popularityLabelText } from "../popularity/score";
 import { buildItinerarySystemPrompt, buildItineraryUserPrompt } from "./prompts";
 import { itineraryGenerationSchema, type ItineraryGeneration } from "./schema";
 import { logger } from "../logger";
 import { checkVisitAgainstHours } from "./hours";
 import { addMinutes, orderByNearestNeighbor } from "./scheduler";
+import type { TripLeg } from "../types/trip";
+import {
+  estimateIntercityMinutes,
+  expandLegsToDays,
+  haversineKm,
+  legsLabel,
+} from "../trips/legs";
+import {
+  primaryDestinationLabel,
+  resolveTripLegs,
+} from "../trips/resolve-legs";
 
 export interface TripPreferencesInput {
   destination: string;
@@ -31,6 +56,8 @@ export interface TripPreferencesInput {
   budget?: number;
   dayStart?: string;
   dayEnd?: string;
+  hotel?: string;
+  legs?: TripLeg[];
   inboundFlight?: {
     fromIata: string;
     toIata: string;
@@ -112,6 +139,11 @@ async function resolveMustSees(
 async function callGroq(
   prefs: TripPreferencesInput,
   candidates: RankedCandidate[],
+  destinationContextBlock?: string,
+  extra?: {
+    dayPlan?: ReturnType<typeof expandLegsToDays>;
+    hotelNotes?: string;
+  },
 ): Promise<ItineraryGeneration | null> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return null;
@@ -187,6 +219,9 @@ async function callGroq(
           idealTrip: prefs.idealTrip,
           candidates,
           popularityEnabled: popConfig.enabled,
+          destinationContextBlock,
+          dayPlan: extra?.dayPlan,
+          hotelNotes: extra?.hotelNotes,
         }),
       },
     ],
@@ -209,22 +244,55 @@ function fallbackSchedule(
   prefs: TripPreferencesInput,
   candidates: RankedCandidate[],
 ): ItineraryGeneration {
-  const days = dayCount(prefs.startDate, prefs.endDate);
-  const perDay = prefs.intensity === "packed" ? 4 : prefs.intensity === "relaxed" ? 2 : 3;
+  return fallbackScheduleMultiCity(
+    prefs,
+    candidates,
+    expandLegsToDays([
+      {
+        city: prefs.destination,
+        days: dayCount(prefs.startDate, prefs.endDate),
+        hotel: prefs.hotel,
+      },
+    ]),
+  );
+}
+
+function fallbackScheduleMultiCity(
+  prefs: TripPreferencesInput,
+  candidates: RankedCandidate[],
+  dayPlan: ReturnType<typeof expandLegsToDays>,
+): ItineraryGeneration {
+  const perDay =
+    prefs.intensity === "packed" ? 4 : prefs.intensity === "relaxed" ? 2 : 3;
+  const used = new Set<string>();
   const result = [];
-  let idx = 0;
-  for (let d = 0; d < days; d++) {
-    const activities = [];
-    for (let a = 0; a < perDay && idx < candidates.length; a++, idx++) {
-      const c = candidates[idx];
+  for (const day of dayPlan) {
+    const pool = candidates.filter(
+      (c) =>
+        (!c.city || c.city === day.city) && !used.has(c.placeId),
+    );
+    const activities: {
+      placeId: string;
+      startTime: string;
+      durationMinutes: number;
+      priority: "preferred";
+      planningNote: string;
+    }[] = [];
+    // Leave morning free on transit arrival days
+    const startSlot = day.isArrivalTransitDay ? 1 : 0;
+    for (let a = startSlot; a < perDay && activities.length < perDay; a++) {
+      const pick = pool[activities.length];
+      if (!pick) break;
+      used.add(pick.placeId);
       activities.push({
-        placeId: c.placeId,
-        startTime: `${9 + a * 2}`.padStart(2, "0") + ":00",
+        placeId: pick.placeId,
+        startTime: `${String(10 + a * 2).padStart(2, "0")}:00`,
         durationMinutes: 90,
-        priority: "preferred" as const,
+        priority: "preferred",
+        planningNote: `Scheduled in ${day.city}${day.hotel ? ` near ${day.hotel}` : ""}`,
       });
     }
-    result.push({ dayIndex: d, activities });
+    result.push({ dayIndex: day.dayIndex, activities });
   }
   return { days: result };
 }
@@ -234,19 +302,49 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
   warnings: string[];
   popularityUsed: boolean;
 }> {
-  const geo = await geocodeDestination(prefs.destination);
-  if (!geo) {
-    throw new Error(
-      "Could not geocode destination. OpenStreetMap Nominatim may be rate-limited — try again, or configure Google Maps keys.",
-    );
+  // Resolve multi-city legs (GeoNames + hotel pins) or single destination
+  let legs: TripLeg[] =
+    prefs.legs && prefs.legs.length
+      ? prefs.legs
+      : [
+          {
+            city: prefs.destination,
+            days: dayCount(prefs.startDate, prefs.endDate),
+            hotel: prefs.hotel,
+          },
+        ];
+  legs = await resolveTripLegs(legs);
+  if (!legs.length) {
+    throw new Error("Could not resolve any trip cities.");
+  }
+
+  const dayPlan = expandLegsToDays(legs);
+  const tripLabel = primaryDestinationLabel(legs);
+  prefs = { ...prefs, destination: tripLabel };
+
+  const primary = legs[0];
+  const geo = {
+    lat: primary.hotelLat ?? primary.lat!,
+    lng: primary.hotelLng ?? primary.lng!,
+    formatted: tripLabel,
+  };
+  if (primary.lat == null || primary.lng == null) {
+    const fallback = await geocodeDestination(prefs.destination);
+    if (!fallback) {
+      throw new Error(
+        "Could not geocode destination. OpenStreetMap Nominatim may be rate-limited — try again.",
+      );
+    }
+    geo.lat = fallback.lat;
+    geo.lng = fallback.lng;
   }
 
   const popConfig = getPopularityConfig();
-  let popularityMap = new Map<string, import("../popularity/types").PopularitySignals>();
+  let popularityMap = new Map<string, PopularitySignals>();
   if (popConfig.enabled) {
     try {
       popularityMap = await getPopularityForDestination({
-        destination: prefs.destination,
+        destination: legs[0].city,
         destinationLat: geo.lat,
         destinationLng: geo.lng,
       });
@@ -257,18 +355,96 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
     }
   }
 
-  const [interestHits, mustHits] = await Promise.all([
-    searchInterestPlaces({
-      destination: prefs.destination,
-      centerLat: geo.lat,
-      centerLng: geo.lng,
-      interests: prefs.interests.length ? prefs.interests : ["tourist attraction"],
-    }),
-    resolveMustSees(prefs.mustSee, prefs.destination, geo.lat, geo.lng),
-  ]);
+  type Hit = {
+    placeId: string;
+    displayName: string;
+    lat: number;
+    lng: number;
+    types: string[];
+    formattedAddress?: string;
+    wikipediaTitle?: string | null;
+    city?: string;
+  };
 
-  const byId = new Map<string, (typeof interestHits)[0]>();
-  for (const h of [...interestHits, ...mustHits]) byId.set(h.placeId, h);
+  const byId = new Map<string, Hit>();
+  const wikiByPlace = new Map<string, string | null>();
+  let onlineInterest = new Map<string, OnlineInterestSignal>();
+  let destinationContextBlock = "";
+
+  // Discover candidates per unique city, anchored on hotel when available
+  const uniqueCities = [...new Set(legs.map((l) => l.city))];
+  for (const city of uniqueCities) {
+    const leg = legs.find((l) => l.city === city)!;
+    const centerLat = leg.hotelLat ?? leg.lat!;
+    const centerLng = leg.hotelLng ?? leg.lng!;
+    if (centerLat == null || centerLng == null) continue;
+
+    try {
+      const osmDiscovered = await discoverPlacesFromOsm({
+        destination: city,
+        lat: centerLat,
+        lng: centerLng,
+        radiusMeters: leg.hotel ? 4500 : 7000,
+        limit: 36,
+      });
+      for (const h of discoveredToPlaceHits(osmDiscovered)) {
+        byId.set(h.placeId, { ...h, city });
+        wikiByPlace.set(h.placeId, h.wikipediaTitle ?? null);
+      }
+      const interest = await scorePlacesOnlineInterest(
+        osmDiscovered.map((p) => ({
+          placeId: p.placeId,
+          wikipediaTitle: p.wikipediaTitle,
+        })),
+      );
+      for (const [k, v] of interest) onlineInterest.set(k, v);
+    } catch (err) {
+      logger.warn("osm_discover_skipped", {
+        city,
+        error: err instanceof Error ? err.message : "unknown",
+      });
+    }
+
+    try {
+      const interestHits = await searchInterestPlaces({
+        destination: city,
+        centerLat,
+        centerLng,
+        interests: prefs.interests.length
+          ? prefs.interests
+          : ["tourist attraction"],
+      });
+      for (const h of interestHits) {
+        byId.set(h.placeId, { ...h, city });
+      }
+    } catch {
+      /* soft */
+    }
+
+    try {
+      const mustHits = await resolveMustSees(
+        prefs.mustSee,
+        city,
+        centerLat,
+        centerLng,
+      );
+      for (const h of mustHits) {
+        byId.set(h.placeId, { ...h, city });
+      }
+    } catch {
+      /* soft */
+    }
+
+    try {
+      const sortedCtx = await fetchSortedDestinationContext(city);
+      const block = formatDestinationContextForPrompt(sortedCtx);
+      if (block) {
+        destinationContextBlock += `\n[${city}]\n${block}\n`;
+      }
+    } catch {
+      /* omit */
+    }
+  }
   for (const pid of popularityMap.keys()) {
     if (!byId.has(pid)) {
       const d = await getPlaceDetails(pid);
@@ -284,29 +460,113 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
     }
   }
 
-  const candidatesRaw = [...byId.values()].map((c) => ({
-    placeId: c.placeId,
-    displayName: c.displayName,
-    types: c.types,
-    lat: c.lat,
-    lng: c.lng,
-    interestMatch: interestMatch(c.types, prefs.interests),
-    geoFit: 1 - Math.min(1, Math.hypot(c.lat - geo.lat, c.lng - geo.lng) / 0.5),
-  }));
+  // Fold Wikimedia increasing interest into PopularitySignals for UI labels
+  for (const [pid, signal] of onlineInterest) {
+    if (signal.classification !== "increasing" || !signal.label) continue;
+    if (!popularityMap.has(pid)) {
+      popularityMap.set(pid, {
+        placeId: pid,
+        displayName: byId.get(pid)?.displayName ?? pid,
+        score: 70,
+        confidence: signal.confidence === "high" ? 0.85 : 0.6,
+        trend: "rising",
+        label: "gaining_attention",
+        sources: ["wikimedia_pageviews"],
+        attributionUrls: signal.wikipediaTitle
+          ? [
+              `https://en.wikipedia.org/wiki/${encodeURIComponent(signal.wikipediaTitle)}`,
+            ]
+          : [],
+        retrievedAt: new Date(signal.retrievedAt),
+      });
+    }
+  }
 
-  const ranked = rankCandidatesWithPopularity({
+  const candidatesRaw = [...byId.values()].map((c) => {
+    const leg =
+      legs.find((l) => l.city === c.city) ??
+      legs[0];
+    const anchorLat = leg.hotelLat ?? leg.lat ?? geo.lat;
+    const anchorLng = leg.hotelLng ?? leg.lng ?? geo.lng;
+    const rel = interestMatch(c.types, prefs.interests);
+    const geoFit =
+      1 -
+      Math.min(
+        1,
+        Math.hypot(c.lat - anchorLat, c.lng - anchorLng) / 0.35,
+      );
+    const wiki =
+      c.wikipediaTitle ?? wikiByPlace.get(c.placeId) ?? null;
+    const quality = placeQualityScore({
+      hasAddress: Boolean(c.formattedAddress),
+      hasWikipedia: Boolean(wiki),
+      tagCount: c.types.length,
+    });
+    const interest = onlineInterest.get(c.placeId) ?? null;
+    const discoveryRank = combineDiscoveryRank({
+      relevance: rel,
+      geography: geoFit,
+      quality,
+      interest,
+      prefersHiddenGems: Boolean(prefs.prefersHiddenGems),
+    });
+    return {
+      placeId: c.placeId,
+      displayName: c.displayName,
+      types: c.types,
+      lat: c.lat,
+      lng: c.lng,
+      city: c.city,
+      interestMatch: rel,
+      geoFit,
+      discoveryRank,
+    };
+  });
+
+  // Blend legacy popularity rank with discovery rank (discovery primary)
+  const legacyRanked = rankCandidatesWithPopularity({
     candidates: candidatesRaw,
     popularityByPlaceId: popularityMap,
     prefersHiddenGems: Boolean(prefs.prefersHiddenGems),
   });
+
+  const ranked: RankedCandidate[] = legacyRanked
+    .map((c) => {
+      const raw = candidatesRaw.find((r) => r.placeId === c.placeId);
+      const discovery = raw?.discoveryRank ?? c.combinedRank;
+      return {
+        ...c,
+        city: raw?.city ?? c.city,
+        combinedRank: 0.7 * discovery + 0.3 * c.combinedRank,
+      };
+    })
+    .sort((a, b) => b.combinedRank - a.combinedRank);
 
   const avoidLower = prefs.avoid.map((a) => a.toLowerCase());
   const filtered = ranked.filter(
     (c) => !avoidLower.some((a) => c.displayName.toLowerCase().includes(a)),
   );
 
-  let ai = await callGroq(prefs, filtered);
-  if (!ai) ai = fallbackSchedule(prefs, filtered);
+  const hotelNotes = legs
+    .map((l) => {
+      if (!l.hotel) return `• ${l.city}: no hotel set — using city center`;
+      const pinned =
+        l.hotelLat != null
+          ? `resolved near ${l.hotelAddress ?? "coordinates"}`
+          : "name provided (pin unresolved — still prefer named OSM places nearby)";
+      return `• ${l.city}: hotel "${l.hotel}" (${pinned})`;
+    })
+    .join("\n");
+
+  let ai = await callGroq(
+    prefs,
+    filtered,
+    destinationContextBlock || undefined,
+    { dayPlan, hotelNotes },
+  );
+  if (!ai) {
+    ai = fallbackScheduleMultiCity(prefs, filtered, dayPlan);
+  }
 
   const warnings = ai.warnings ?? [];
   const detailsCache = new Map<string, Awaited<ReturnType<typeof getPlaceDetails>>>();
@@ -320,28 +580,51 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
 
   const tripStart = new Date(prefs.startDate);
   const days: GeneratedDay[] = [];
-  for (const day of ai.days) {
-    const dayActs = day.activities.filter((a) => byId.has(a.placeId));
+  // Prefer AI days aligned to dayPlan length
+  const aiByIndex = new Map(ai.days.map((d) => [d.dayIndex, d]));
+
+  for (const assignment of dayPlan) {
+    const day =
+      aiByIndex.get(assignment.dayIndex) ??
+      ({ dayIndex: assignment.dayIndex, activities: [] } as (typeof ai.days)[0]);
+
+    const dayActs = day.activities.filter((a) => {
+      if (!byId.has(a.placeId)) return false;
+      const hit = byId.get(a.placeId)!;
+      // Keep activities in the day's city when tagged
+      if (hit.city && hit.city !== assignment.city) return false;
+      return true;
+    });
+
+    const leg = legs[assignment.legIndex] ?? legs[0];
+    const startPt = {
+      lat: leg.hotelLat ?? leg.lat ?? geo.lat,
+      lng: leg.hotelLng ?? leg.lng ?? geo.lng,
+    };
+
     const orderedIds = orderByNearestNeighbor(
       dayActs.map((a) => {
         const b = byId.get(a.placeId)!;
         return { ...a, lat: b.lat, lng: b.lng, placeId: a.placeId };
       }),
+      startPt,
     );
 
     const activities: GeneratedActivity[] = [];
     const defaultStart =
-      day.dayIndex === 0
+      assignment.dayIndex === 0
         ? (prefs.inboundFlight?.suggestedDayStart ??
           prefs.dayStart ??
           "09:00")
-        : (prefs.dayStart ?? "09:00");
+        : assignment.isArrivalTransitDay
+          ? "14:00"
+          : (prefs.dayStart ?? "09:00");
     let cursorTime = defaultStart.slice(0, 5);
     const dayDate = new Date(tripStart);
-    dayDate.setDate(dayDate.getDate() + day.dayIndex);
+    dayDate.setDate(dayDate.getDate() + assignment.dayIndex);
 
     // Arrival-day anchor: airport landing when inbound flight is known.
-    if (day.dayIndex === 0 && prefs.inboundFlight?.toIata) {
+    if (assignment.dayIndex === 0 && prefs.inboundFlight?.toIata) {
       const arr =
         prefs.inboundFlight.estimatedArrivalLocal?.slice(0, 5) ?? cursorTime;
       const airportName =
@@ -364,6 +647,37 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
         travelMinutesFromPrev: 0,
       });
       cursorTime = defaultStart.slice(0, 5);
+    }
+
+    // Intercity transit block (estimate; not a live timetable)
+    if (assignment.isArrivalTransitDay && assignment.previousCity) {
+      const prevLeg = legs[assignment.legIndex - 1];
+      const dist =
+        prevLeg?.lat != null &&
+        prevLeg?.lng != null &&
+        leg.lat != null &&
+        leg.lng != null
+          ? haversineKm(prevLeg.lat, prevLeg.lng, leg.lat, leg.lng)
+          : 400;
+      const mins = estimateIntercityMinutes(dist);
+      activities.push({
+        placeId: `transit:${assignment.previousCity}:${assignment.city}`,
+        name: `Transit · ${assignment.previousCity} → ${assignment.city}`,
+        address: `~${Math.round(dist)} km · ~${mins} min estimate`,
+        lat: startPt.lat,
+        lng: startPt.lng,
+        startTime: "09:00",
+        durationMinutes: Math.min(mins, 360),
+        priority: "must_see",
+        planningNote: `Intercity move for multi-city trip (${legsLabel(legs)}). Time is a rough train/car estimate — check live schedules. Then plan around ${leg.hotel ? `hotel “${leg.hotel}”` : `${assignment.city} center`}.`,
+        hoursVerified: false,
+        scheduleWarnings: [
+          "Intercity times are estimates, not booked tickets.",
+        ],
+        travelMinutesFromPrev: 0,
+      });
+      cursorTime = addMinutes("09:00", Math.min(mins, 360));
+      if (cursorTime < "13:00") cursorTime = "13:00";
     }
 
     for (let i = 0; i < orderedIds.length; i++) {
@@ -420,12 +734,21 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       cursorTime = addMinutes(cursorTime, act.durationMinutes + 15);
     }
 
-    const points = activities.map((a) => ({ lat: a.lat, lng: a.lng }));
-    const route = await computeDayRoute({ mode: routeMode, points });
-    if (route) {
-      for (let i = 1; i < activities.length; i++) {
-        const leg = route.legs[i - 1];
-        const travel = leg?.durationMinutes ?? 0;
+    // Route local sightseeing legs; keep intercity transit duration as estimated
+    const localStartIdx = activities.findIndex(
+      (a) => !a.placeId.startsWith("transit:") && !a.placeId.startsWith("flight:"),
+    );
+    const routePoints = activities
+      .slice(Math.max(0, localStartIdx))
+      .map((a) => ({ lat: a.lat, lng: a.lng }));
+    const route = await computeDayRoute({
+      mode: routeMode,
+      points: routePoints.length >= 2 ? routePoints : activities.map((a) => ({ lat: a.lat, lng: a.lng })),
+    });
+    if (route && localStartIdx >= 0) {
+      for (let i = localStartIdx + 1; i < activities.length; i++) {
+        const routeLeg = route.legs[i - localStartIdx - 1];
+        const travel = routeLeg?.durationMinutes ?? 0;
         activities[i].travelMinutesFromPrev = travel;
         if (travel > 45) {
           warnings.push(
@@ -440,7 +763,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
     }
 
     days.push({
-      dayIndex: day.dayIndex,
+      dayIndex: assignment.dayIndex,
       activities,
       totalTravelMinutes: route?.totalDurationMinutes,
       totalWalkMeters:

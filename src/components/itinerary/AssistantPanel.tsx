@@ -9,7 +9,7 @@ const QUICK_PROMPTS = [
   "My flight is delayed by 2 hours on day 1",
   "Change the Louvre to Musée d'Orsay",
   "Make day 2 less busy",
-  "Suggest a quieter alternative near our hotel",
+  "Replace an optional stop with a quieter museum from the candidate list",
 ];
 
 export function AssistantPanel({

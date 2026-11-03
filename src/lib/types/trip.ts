@@ -13,8 +13,27 @@ export interface InboundFlightPrefs {
   note?: string;
 }
 
+/** One stay segment in a (possibly multi-city) trip. */
+export interface TripLeg {
+  city: string;
+  /** Number of itinerary days based in this city. */
+  days: number;
+  /** Hotel name or address — activities are planned near this point when geocoded. */
+  hotel?: string;
+  geonameId?: number;
+  lat?: number;
+  lng?: number;
+  countryCode?: string;
+  hotelLat?: number;
+  hotelLng?: number;
+  hotelPlaceId?: string;
+  hotelAddress?: string;
+}
+
 export interface TripPreferencesPayload {
   destinations: { name: string; nights?: number }[];
+  /** Ordered multi-city stays (Paris → Toulouse → Paris). */
+  legs?: TripLeg[];
   departureCity?: string;
   /** Origin airport IATA (e.g. SEA). */
   originAirport?: string;

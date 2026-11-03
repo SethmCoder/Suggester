@@ -159,7 +159,7 @@ export function popularityLabelText(label: PopularityLabel): string | null {
     case "multiple_sources":
       return "Popular across multiple travel sources";
     case "gaining_attention":
-      return "Gaining attention recently";
+      return "Online interest increasing";
     default:
       return null;
   }

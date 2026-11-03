@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
@@ -19,6 +19,25 @@ const INTERESTS = [
   "culture",
 ];
 
+type LegDraft = {
+  city: string;
+  days: number;
+  hotel: string;
+  geonameId?: number;
+  lat?: number;
+  lng?: number;
+  countryCode?: string;
+};
+
+type CitySuggestion = {
+  id: number;
+  name: string;
+  countryCode: string;
+  lat: number;
+  lng: number;
+  label: string;
+};
+
 export function CreateTripWizard() {
   const router = useRouter();
   const [step, setStep] = useState(0);
@@ -27,12 +46,10 @@ export function CreateTripWizard() {
   const [progress, setProgress] = useState("");
 
   const [form, setForm] = useState({
-    destination: "",
     departureCity: "",
     originAirport: "",
     destinationAirport: "",
     startDate: "",
-    endDate: "",
     travelers: 2,
     budget: "",
     currency: "USD",
@@ -40,7 +57,6 @@ export function CreateTripWizard() {
     customInterest: "",
     intensity: "balanced" as "relaxed" | "balanced" | "packed",
     transport: "walking",
-    hotel: "",
     dietary: "",
     accessibility: "",
     dayStart: "09:00",
@@ -52,7 +68,59 @@ export function CreateTripWizard() {
     idealTrip: "",
     prefersHiddenGems: false,
   });
+  const [legs, setLegs] = useState<LegDraft[]>([
+    { city: "", days: 3, hotel: "" },
+  ]);
+  const [citySuggestions, setCitySuggestions] = useState<
+    Record<number, CitySuggestion[]>
+  >({});
   const [flightHint, setFlightHint] = useState<string | null>(null);
+
+  const totalDays = useMemo(
+    () => legs.reduce((s, l) => s + Math.max(1, l.days || 1), 0),
+    [legs],
+  );
+
+  const endDate = useMemo(() => {
+    if (!form.startDate || totalDays < 1) return "";
+    const d = new Date(`${form.startDate}T12:00:00`);
+    d.setDate(d.getDate() + totalDays - 1);
+    return d.toISOString().slice(0, 10);
+  }, [form.startDate, totalDays]);
+
+  async function searchCities(legIndex: number, q: string) {
+    if (q.trim().length < 2) {
+      setCitySuggestions((s) => ({ ...s, [legIndex]: [] }));
+      return;
+    }
+    try {
+      const res = await fetch(
+        `/api/cities/search?q=${encodeURIComponent(q.trim())}`,
+      );
+      const data = await res.json();
+      setCitySuggestions((s) => ({ ...s, [legIndex]: data.cities ?? [] }));
+    } catch {
+      setCitySuggestions((s) => ({ ...s, [legIndex]: [] }));
+    }
+  }
+
+  function pickCity(legIndex: number, c: CitySuggestion) {
+    setLegs((prev) =>
+      prev.map((l, i) =>
+        i === legIndex
+          ? {
+              ...l,
+              city: c.name,
+              geonameId: c.id,
+              lat: c.lat,
+              lng: c.lng,
+              countryCode: c.countryCode,
+            }
+          : l,
+      ),
+    );
+    setCitySuggestions((s) => ({ ...s, [legIndex]: [] }));
+  }
 
   function toggleInterest(i: string) {
     setForm((f) => ({
@@ -72,12 +140,12 @@ export function CreateTripWizard() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          destination: form.destination,
+          destination: legs.map((l) => l.city).filter(Boolean).join(" → "),
           departureCity: form.departureCity,
           originAirport: form.originAirport || undefined,
           destinationAirport: form.destinationAirport || undefined,
           startDate: form.startDate,
-          endDate: form.endDate,
+          endDate,
           travelers: form.travelers,
           budget: form.budget ? Number(form.budget) : undefined,
           currency: form.currency,
@@ -87,7 +155,7 @@ export function CreateTripWizard() {
           ],
           intensity: form.intensity,
           transport: form.transport,
-          hotel: form.hotel,
+          hotel: legs[0]?.hotel || undefined,
           dietary: form.dietary,
           accessibility: form.accessibility,
           dayStart: form.dayStart,
@@ -98,6 +166,17 @@ export function CreateTripWizard() {
           optional: splitList(form.optional),
           avoid: splitList(form.avoid),
           idealTrip: form.idealTrip,
+          legs: legs
+            .filter((l) => l.city.trim())
+            .map((l) => ({
+              city: l.city.trim(),
+              days: Math.max(1, Number(l.days) || 1),
+              hotel: l.hotel.trim() || undefined,
+              geonameId: l.geonameId,
+              lat: l.lat,
+              lng: l.lng,
+              countryCode: l.countryCode,
+            })),
         }),
       });
       setProgress("Generating itinerary…");
@@ -146,17 +225,136 @@ export function CreateTripWizard() {
             <h2 className="text-[20px] font-semibold text-[#080B3A]">
               Trip basics
             </h2>
-            <div>
-              <Label>Destination</Label>
-              <Input
-                required
-                value={form.destination}
-                onChange={(e) =>
-                  setForm({ ...form, destination: e.target.value })
-                }
-                className="mt-1"
-                placeholder="Paris, France"
-              />
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <Label>Cities & hotels</Label>
+                <button
+                  type="button"
+                  className="text-xs font-semibold text-[#0400FF]"
+                  onClick={() =>
+                    setLegs((prev) => [
+                      ...prev,
+                      { city: "", days: 2, hotel: "" },
+                    ])
+                  }
+                >
+                  + Add city
+                </button>
+              </div>
+              <p className="text-xs text-[#6B7280]">
+                Example: Paris 2 days → Toulouse 3 days → Paris 2 days. Each
+                hotel anchors that stay’s sightseeing. Cities resolve via
+                GeoNames (no API key).
+              </p>
+              {legs.map((leg, i) => (
+                <div
+                  key={i}
+                  className="relative space-y-2 rounded-[12px] border border-[#E1E5F0] bg-[#F5F7FF] p-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-[#080B3A]">
+                      Stay {i + 1}
+                      {i > 0 ? " · transit from previous" : ""}
+                    </span>
+                    {legs.length > 1 ? (
+                      <button
+                        type="button"
+                        className="text-xs text-[#DC2626]"
+                        onClick={() =>
+                          setLegs((prev) => prev.filter((_, j) => j !== i))
+                        }
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-[1fr_88px]">
+                    <div className="relative">
+                      <Label>City</Label>
+                      <Input
+                        required
+                        value={leg.city}
+                        onChange={(e) => {
+                          const city = e.target.value;
+                          setLegs((prev) =>
+                            prev.map((l, j) =>
+                              j === i
+                                ? {
+                                    ...l,
+                                    city,
+                                    geonameId: undefined,
+                                    lat: undefined,
+                                    lng: undefined,
+                                  }
+                                : l,
+                            ),
+                          );
+                          void searchCities(i, city);
+                        }}
+                        className="mt-1"
+                        placeholder="Paris"
+                        autoComplete="off"
+                      />
+                      {(citySuggestions[i]?.length ?? 0) > 0 ? (
+                        <ul className="absolute z-20 mt-1 max-h-40 w-full overflow-auto rounded-[10px] border border-[#E1E5F0] bg-white shadow-lg">
+                          {citySuggestions[i].map((c) => (
+                            <li key={c.id}>
+                              <button
+                                type="button"
+                                className="w-full px-3 py-2 text-left text-sm hover:bg-[#DDE1FF]"
+                                onClick={() => pickCity(i, c)}
+                              >
+                                {c.label}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                    <div>
+                      <Label>Days</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={30}
+                        value={leg.days}
+                        onChange={(e) =>
+                          setLegs((prev) =>
+                            prev.map((l, j) =>
+                              j === i
+                                ? {
+                                    ...l,
+                                    days: Math.max(1, Number(e.target.value) || 1),
+                                  }
+                                : l,
+                            ),
+                          )
+                        }
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label>Hotel name or address</Label>
+                    <Input
+                      value={leg.hotel}
+                      onChange={(e) =>
+                        setLegs((prev) =>
+                          prev.map((l, j) =>
+                            j === i ? { ...l, hotel: e.target.value } : l,
+                          ),
+                        )
+                      }
+                      className="mt-1"
+                      placeholder="Hotel name in this city"
+                    />
+                  </div>
+                </div>
+              ))}
+              <p className="text-xs text-[#6B7280]">
+                Total itinerary length: <strong>{totalDays}</strong> days
+                {endDate ? ` · ends ${endDate}` : ""}
+              </p>
             </div>
             <div>
               <Label>Departure city (optional)</Label>
@@ -184,7 +382,7 @@ export function CreateTripWizard() {
                     const from =
                       form.originAirport || form.departureCity;
                     const to =
-                      form.destinationAirport || form.destination;
+                      form.destinationAirport || legs[0]?.city;
                     if (!from || !to) {
                       setFlightHint(null);
                       return;
@@ -259,15 +457,13 @@ export function CreateTripWizard() {
                 />
               </div>
               <div>
-                <Label>End date</Label>
+                <Label>End date (from city days)</Label>
                 <Input
                   type="date"
                   required
-                  value={form.endDate}
-                  onChange={(e) =>
-                    setForm({ ...form, endDate: e.target.value })
-                  }
-                  className="mt-1"
+                  value={endDate}
+                  readOnly
+                  className="mt-1 bg-[#F5F7FF]"
                 />
               </div>
             </div>
@@ -368,14 +564,11 @@ export function CreateTripWizard() {
                 <option value="cycling">Cycling</option>
               </select>
             </div>
-            <div>
-              <Label>Hotel area (optional)</Label>
-              <Input
-                value={form.hotel}
-                onChange={(e) => setForm({ ...form, hotel: e.target.value })}
-                className="mt-1"
-              />
-            </div>
+            <p className="rounded-[12px] border border-[#DDE1FF] bg-[#F5F7FF] px-3 py-2 text-xs text-[#6B7280]">
+              Hotels are set per city on step 1. Sightseeing is ranked around
+              each hotel pin — the planner will not invent “a cafe by your
+              hotel”; it only uses real mapped places.
+            </p>
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -445,12 +638,15 @@ export function CreateTripWizard() {
           <div className="space-y-3 text-sm">
             <h2 className="text-[20px] font-semibold text-[#080B3A]">Review</h2>
             <p>
-              <span className="text-[#6B7280]">Destination:</span>{" "}
-              {form.destination}
+              <span className="text-[#6B7280]">Route:</span>{" "}
+              {legs
+                .filter((l) => l.city.trim())
+                .map((l) => `${l.city} (${l.days}d${l.hotel ? `, ${l.hotel}` : ""})`)
+                .join(" → ")}
             </p>
             <p>
               <span className="text-[#6B7280]">Dates:</span> {form.startDate} –{" "}
-              {form.endDate}
+              {endDate}
             </p>
             <p>
               <span className="text-[#6B7280]">Interests:</span>{" "}
@@ -476,7 +672,10 @@ export function CreateTripWizard() {
             <Button
               type="button"
               onClick={() => setStep((s) => s + 1)}
-              disabled={step === 0 && !form.destination}
+              disabled={
+                step === 0 &&
+                (!legs.some((l) => l.city.trim()) || !form.startDate)
+              }
             >
               Continue
             </Button>

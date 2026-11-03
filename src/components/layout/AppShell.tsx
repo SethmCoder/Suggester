@@ -48,15 +48,25 @@ export function AppShell({
 
   const sidebar = (
     <aside className="flex h-full w-[260px] flex-col bg-[#080B3A] text-white">
-      <div className="flex items-center gap-2.5 px-5 py-6">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#0400FF] text-sm font-bold">
-          W
+      <Link
+        href="/dashboard"
+        className="mx-4 mt-4 mb-2 flex items-center gap-2.5 rounded-[12px] border border-[#292F68] bg-white px-3 py-2.5 transition hover:border-[#0400FF]/50"
+        onClick={() => setMobileOpen(false)}
+        aria-label="Waypoint home"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/waypoint-mark.png"
+          alt=""
+          className="h-9 w-auto object-contain"
+        />
+        <div className="min-w-0">
+          <p className="text-sm font-bold tracking-tight text-[#080B3A]">
+            Waypoint
+          </p>
+          <p className="text-[10px] text-[#6B7280]">Back to start</p>
         </div>
-        <div>
-          <p className="text-base font-bold tracking-tight">Waypoint</p>
-          <p className="text-[11px] text-[#9299B5]">Travel intelligence</p>
-        </div>
-      </div>
+      </Link>
 
       <nav className="flex-1 space-y-1 px-3">
         {NAV.map((item) => {
@@ -158,6 +168,20 @@ export function AppShell({
             <div className="sm:hidden">
               <AvatarMenu email={userEmail} displayName={displayName} />
             </div>
+
+            <Link
+              href="/dashboard"
+              className="ml-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border border-[#E1E5F0] bg-white shadow-sm transition hover:border-[#0400FF]/35 hover:shadow-md sm:ml-2 sm:h-12 sm:w-14"
+              aria-label="Waypoint home"
+              title="Back to start"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/waypoint-mark.png"
+                alt=""
+                className="h-9 w-auto object-contain object-center sm:h-10"
+              />
+            </Link>
           </div>
         </header>
 

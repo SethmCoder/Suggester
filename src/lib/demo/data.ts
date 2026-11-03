@@ -134,8 +134,11 @@ export const demoActivities: ActivityRow[] = [
     duration_minutes: 90,
     sort_order: 0,
     priority: "must_see",
-    popularity_label: "Trending in recent travel posts",
-    popularity_sources: ["demo_sample"],
+    popularity_label: "Online interest increasing",
+    popularity_sources: ["wikimedia_pageviews"],
+    popularity_attribution_urls: [
+      "https://en.wikipedia.org/wiki/Eiffel_Tower",
+    ],
   }),
   act({
     id: "demo-a7",

@@ -31,6 +31,19 @@ const bodySchema = z.object({
   optional: z.array(z.string()).default([]),
   avoid: z.array(z.string()).default([]),
   idealTrip: z.string().default(""),
+  legs: z
+    .array(
+      z.object({
+        city: z.string().min(1),
+        days: z.number().int().min(1).max(30),
+        hotel: z.string().optional(),
+        geonameId: z.number().optional(),
+        lat: z.number().optional(),
+        lng: z.number().optional(),
+        countryCode: z.string().optional(),
+      }),
+    )
+    .optional(),
 });
 
 export async function POST(req: Request) {
@@ -84,13 +97,36 @@ export async function POST(req: Request) {
     const dayStart =
       inboundFlight?.suggestedDayStart ?? body.dayStart ?? "09:00";
 
+    const destinationLabel = body.legs?.length
+      ? body.legs.map((l) => l.city).join(" → ")
+      : body.destination;
+
     const tripId = await createTripRecord({
       ownerId: user.id,
-      destination: body.destination,
+      destination: destinationLabel,
       startDate: body.startDate,
       endDate: body.endDate,
       preferences: {
-        destinations: [{ name: body.destination }],
+        destinations: (body.legs?.length
+          ? body.legs
+          : [{ city: body.destination, days: 1 }]
+        ).map((l) => ({ name: l.city, nights: l.days })),
+        legs: body.legs?.length
+          ? body.legs
+          : [
+              {
+                city: body.destination,
+                days: Math.max(
+                  1,
+                  Math.ceil(
+                    (new Date(body.endDate).getTime() -
+                      new Date(body.startDate).getTime()) /
+                      86_400_000,
+                  ) + 1,
+                ),
+                hotel: body.hotel,
+              },
+            ],
         departureCity: body.departureCity,
         originAirport: inboundFlight?.fromIata ?? body.originAirport,
         destinationAirport: inboundFlight?.toIata ?? body.destinationAirport,
@@ -119,7 +155,7 @@ export async function POST(req: Request) {
     });
 
     const generated = await generateItinerary({
-      destination: body.destination,
+      destination: destinationLabel,
       startDate: body.startDate,
       endDate: body.endDate,
       interests: body.interests,
@@ -132,6 +168,23 @@ export async function POST(req: Request) {
       budget: body.budget,
       dayStart,
       dayEnd: body.dayEnd,
+      hotel: body.hotel,
+      legs: body.legs?.length
+        ? body.legs
+        : [
+            {
+              city: body.destination,
+              days: Math.max(
+                1,
+                Math.ceil(
+                  (new Date(body.endDate).getTime() -
+                    new Date(body.startDate).getTime()) /
+                    86_400_000,
+                ) + 1,
+              ),
+              hotel: body.hotel,
+            },
+          ],
       inboundFlight: inboundFlight
         ? { ...inboundFlight, ...arrivalCoords }
         : undefined,

@@ -309,15 +309,15 @@ export function ItineraryEditor({
           className="absolute inset-0 h-full w-full object-cover opacity-40"
         />
         <div className="absolute inset-0 bg-gradient-to-r from-[#080B3A]/95 via-[#10194A]/75 to-transparent" />
-        <div className="relative flex flex-col gap-4 px-5 py-7 sm:flex-row sm:items-end sm:justify-between sm:px-8">
+        <div className="relative flex flex-col gap-3 px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-7">
           <div>
-            <p className="text-sm text-[#C5CAE5]">
+            <p className="text-xs text-[#C5CAE5]">
               {countryFromDestination(destName)}
             </p>
-            <h1 className="mt-1 text-[28px] font-bold tracking-tight text-white sm:text-[32px]">
+            <h1 className="mt-0.5 text-[22px] font-bold tracking-tight text-white sm:text-[26px]">
               {destName}
             </h1>
-            <p className="mt-1 text-sm text-[#C5CAE5]">
+            <p className="mt-0.5 text-xs text-[#C5CAE5]">
               {days.length} days · {flatActivities.length} activities ·{" "}
               {saveState === "saving"
                 ? "Saving…"
@@ -348,14 +348,16 @@ export function ItineraryEditor({
       </section>
 
       <div
-        className={`grid gap-5 ${view === "split" ? "lg:grid-cols-2" : "grid-cols-1"}`}
+        className={`grid gap-4 ${view === "split" ? "lg:grid-cols-2 lg:items-start" : "grid-cols-1"}`}
       >
         {(view === "schedule" || view === "split") && (
-          <div className="space-y-4">
-            {days.map((day, dayIndex) => (
+          <div className="min-w-0 space-y-2">
+            {days.map((day, dayIndex) => {
+              const isOpen = Boolean(expanded[dayIndex]);
+              return (
               <section
                 key={day.dayId}
-                className={`overflow-hidden rounded-[14px] border bg-white shadow-[0_4px_20px_rgba(8,11,58,0.05)] ${
+                className={`overflow-hidden rounded-[12px] border bg-white shadow-[0_2px_12px_rgba(8,11,58,0.04)] ${
                   selectedDay === dayIndex
                     ? "border-[#0400FF]/40"
                     : "border-[#E1E5F0]"
@@ -363,21 +365,27 @@ export function ItineraryEditor({
               >
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between px-4 py-3.5 text-left"
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
                   onClick={() => {
-                    setExpanded((e) => ({ ...e, [dayIndex]: !e[dayIndex] }));
                     setSelectedDay(dayIndex);
+                    setExpanded((e) => ({
+                      // Accordion: only one day open at a time
+                      [dayIndex]: !e[dayIndex],
+                    }));
                   }}
                 >
-                  <span className="text-[16px] font-semibold text-[#080B3A]">
+                  <span className="text-[14px] font-semibold text-[#080B3A]">
                     Day {day.dayIndex + 1}
+                    <span className="ml-2 font-normal text-[#6B7280]">
+                      · {day.activities.length} stops
+                    </span>
                   </span>
-                  <span className="rounded-full bg-[#DDE1FF] px-2.5 py-0.5 text-xs font-medium text-[#0400FF]">
-                    {day.activities.length} activities
+                  <span className="text-xs text-[#9299B5]">
+                    {isOpen ? "Hide" : "Show"}
                   </span>
                 </button>
-                {expanded[dayIndex] !== false ? (
-                  <div className="border-t border-[#E1E5F0] px-4 pb-4">
+                {isOpen ? (
+                  <div className="border-t border-[#E1E5F0] px-2.5 pb-2.5">
                     <DndContext
                       sensors={sensors}
                       collisionDetection={closestCenter}
@@ -387,7 +395,7 @@ export function ItineraryEditor({
                         items={day.activities.map((a) => a.id)}
                         strategy={verticalListSortingStrategy}
                       >
-                        <ul className="space-y-3 pt-3">
+                        <ul className="space-y-1.5 pt-2">
                           {day.activities.map((act, actIndex) => (
                             <Fragment key={act.id}>
                               {actIndex > 0 ? (
@@ -426,7 +434,7 @@ export function ItineraryEditor({
                         dayIndex={day.dayIndex}
                       />
                     ) : (
-                      <p className="mt-4 border-t border-[#E1E5F0] pt-3 text-xs text-[#6B7280]">
+                      <p className="mt-2 border-t border-[#E1E5F0] pt-2 text-[11px] text-[#6B7280]">
                         Day regenerate is available after you sign up for a real
                         trip.
                       </p>
@@ -434,13 +442,22 @@ export function ItineraryEditor({
                   </div>
                 ) : null}
               </section>
-            ))}
+            );
+            })}
           </div>
         )}
 
         {(view === "map" || view === "split") && (
-          <div className="min-h-[320px] lg:min-h-[480px]">
-            <TripMap pins={dayPins ?? []} />
+          <div
+            className={
+              view === "split"
+                ? "lg:sticky lg:top-[4.5rem] lg:self-start lg:h-[calc(100vh-5.5rem)]"
+                : "min-h-[320px] lg:min-h-[480px]"
+            }
+          >
+            <div className="h-full min-h-[280px] overflow-hidden rounded-[14px] border border-[#E1E5F0] bg-white lg:min-h-0">
+              <TripMap pins={dayPins ?? []} />
+            </div>
           </div>
         )}
       </div>
@@ -457,37 +474,18 @@ export function ItineraryEditor({
 function TransitBlock({ minutes }: { minutes: number | null }) {
   return (
     <div
-      className="flex items-center gap-3 px-1"
+      className="flex items-center gap-2 px-1 py-0.5"
       aria-label={
         minutes != null
           ? `${minutes} minutes travel between stops`
           : "Travel between stops"
       }
     >
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#DDE1FF] bg-white text-[#0400FF]">
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          aria-hidden
-        >
-          <path d="M12 2v20M5 9l7-7 7 7" />
-          <circle cx="12" cy="19" r="1" fill="currentColor" stroke="none" />
-        </svg>
-      </div>
-      <div className="min-w-0 flex-1 rounded-[10px] border border-dashed border-[#C5CAE5] bg-[#F5F7FF] px-3 py-2">
-        <p className="text-xs font-medium text-[#080B3A]">
-          {minutes != null
-            ? `${minutes} min transit`
-            : "Transit between stops"}
-        </p>
-        <p className="text-[11px] text-[#6B7280]">
-          OSM / OSRM walking or driving estimate
-        </p>
-      </div>
+      <div className="h-px flex-1 border-t border-dashed border-[#C5CAE5]" />
+      <p className="shrink-0 text-[10px] font-medium text-[#6B7280]">
+        {minutes != null ? `${minutes} min · OSM` : "Transit · OSM"}
+      </p>
+      <div className="h-px flex-1 border-t border-dashed border-[#C5CAE5]" />
     </div>
   );
 }
@@ -519,12 +517,12 @@ function SortableActivity({
     <li
       ref={setNodeRef}
       style={style}
-      className="rounded-[12px] border border-[#E1E5F0] bg-[#F5F7FF] p-3.5"
+      className="rounded-[10px] border border-[#E1E5F0] bg-[#F5F7FF] px-2.5 py-2"
     >
-      <div className="flex gap-2">
+      <div className="flex gap-1.5">
         <button
           type="button"
-          className="cursor-grab text-[#6B7280]"
+          className="cursor-grab self-start pt-0.5 text-xs text-[#6B7280]"
           {...attributes}
           {...listeners}
           aria-label="Drag to reorder"
@@ -533,31 +531,25 @@ function SortableActivity({
         </button>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <p className={`font-medium ${activity.completed ? "line-through opacity-60" : ""}`}>
+            <p
+              className={`text-[13px] font-semibold leading-snug text-[#080B3A] ${activity.completed ? "line-through opacity-60" : ""}`}
+            >
               {activity.name}
             </p>
-            <span className="shrink-0 text-xs capitalize text-[#6B7280]">
+            <span className="shrink-0 text-[10px] capitalize text-[#6B7280]">
               {activity.priority?.replace("_", " ")}
             </span>
           </div>
-          <p className="text-xs text-[#6B7280]">
+          <p className="text-[11px] text-[#6B7280]">
             {activity.start_time?.slice(0, 5)}
             {activity.end_time
               ? `–${activity.end_time.slice(0, 5)}`
               : ""}{" "}
             · {activity.duration_minutes} min
+            {activity.address ? ` · ${activity.address}` : ""}
           </p>
-          {activity.address ? (
-            <p className="text-xs text-[#6B7280]">{activity.address}</p>
-          ) : null}
-          <p className="mt-1 text-xs">
-            Hours:{" "}
-            <span className={activity.hours_verified ? "text-[#15803D]" : "text-[#B45309]"}>
-              {activity.hours_verified ? "Verified" : "Unverified"}
-            </span>
-          </p>
-          {activity.schedule_warnings?.map((w) => (
-            <p key={w} className="text-xs text-[#B45309]">
+          {activity.schedule_warnings?.slice(0, 1).map((w) => (
+            <p key={w} className="text-[10px] text-[#B45309]">
               {w}
             </p>
           ))}
@@ -567,31 +559,21 @@ function SortableActivity({
             attributionUrls={activity.popularity_attribution_urls ?? undefined}
           />
           {activity.planning_note ? (
-            <p className="mt-2 text-sm text-[#6B7280]">{activity.planning_note}</p>
+            <p className="mt-1 line-clamp-2 text-[11px] text-[#6B7280]">
+              {activity.planning_note}
+            </p>
           ) : null}
-          <div className="mt-2 flex flex-wrap gap-2 text-xs">
-            {activity.website_uri ? (
-              <a href={activity.website_uri} target="_blank" rel="noreferrer" className="text-[#0400FF]">
-                Website
-              </a>
-            ) : null}
-            {activity.google_maps_uri ? (
-              <a href={activity.google_maps_uri} target="_blank" rel="noreferrer" className="text-[#0400FF]">
-                Maps
-              </a>
-            ) : null}
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <input
               type="time"
-              className="rounded border border-[#D1D7E5] px-2 py-1 text-xs"
+              className="rounded border border-[#D1D7E5] px-1.5 py-0.5 text-[11px]"
               value={activity.start_time?.slice(0, 5) ?? ""}
               onChange={(e) => onUpdate({ start_time: `${e.target.value}:00` })}
             />
             <input
               type="number"
               min={15}
-              className="w-20 rounded border border-[#D1D7E5] px-2 py-1 text-xs"
+              className="w-14 rounded border border-[#D1D7E5] px-1.5 py-0.5 text-[11px]"
               value={activity.duration_minutes ?? 60}
               onChange={(e) =>
                 onUpdate({ duration_minutes: Number(e.target.value) })
@@ -599,27 +581,27 @@ function SortableActivity({
             />
             <button
               type="button"
-              className="text-xs text-[#0400FF]"
+              className="text-[11px] text-[#0400FF]"
               onClick={() => onUpdate({ completed: !activity.completed })}
             >
-              {activity.completed ? "Undo done" : "Mark done"}
+              {activity.completed ? "Undo" : "Done"}
             </button>
             <button
               type="button"
-              className="text-xs text-[#DC2626]"
+              className="text-[11px] text-[#DC2626]"
               onClick={onDelete}
             >
               Delete
             </button>
             {dayCount > 1 ? (
               <select
-                className="rounded border border-[#D1D7E5] px-2 py-1 text-xs"
+                className="rounded border border-[#D1D7E5] px-1.5 py-0.5 text-[11px]"
                 value={dayIndex}
                 onChange={(e) => onMoveDay(Number(e.target.value))}
               >
                 {Array.from({ length: dayCount }, (_, i) => (
                   <option key={i} value={i}>
-                    Move to day {i + 1}
+                    Day {i + 1}
                   </option>
                 ))}
               </select>

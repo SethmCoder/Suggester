@@ -159,18 +159,30 @@ export function TripMap({
 
   const usingGoogle = provider === "google" && Boolean(googleKey);
 
+  useEffect(() => {
+    if (!mounted || !mapRef.current) return;
+    const t = window.setTimeout(() => {
+      try {
+        mapRef.current?.invalidateSize?.();
+      } catch {
+        /* ignore */
+      }
+    }, 200);
+    return () => window.clearTimeout(t);
+  }, [mounted, pins]);
+
   if (!mounted) {
     return (
-      <div className="flex h-full min-h-[280px] w-full items-center justify-center rounded-xl border border-[#E5E7EB] bg-[#F7F8FC] text-sm text-[#6B7280]">
+      <div className="flex h-full min-h-[240px] w-full items-center justify-center rounded-xl bg-[#F7F8FC] text-sm text-[#6B7280]">
         Loading map…
       </div>
     );
   }
 
   return (
-    <div className="relative h-full min-h-[280px] w-full overflow-hidden rounded-xl border border-[#E5E7EB] bg-[#F7F8FC]">
-      <div ref={ref} className="h-full min-h-[280px] w-full" />
-      <span className="pointer-events-none absolute bottom-2 left-2 rounded bg-white/90 px-2 py-0.5 text-[10px] text-[#6B7280] shadow">
+    <div className="relative h-full min-h-[240px] w-full overflow-hidden rounded-xl bg-[#F7F8FC]">
+      <div ref={ref} className="absolute inset-0 h-full w-full" />
+      <span className="pointer-events-none absolute bottom-2 left-2 z-[400] rounded bg-white/90 px-2 py-0.5 text-[10px] text-[#6B7280] shadow">
         {usingGoogle ? "Google Maps" : "OpenStreetMap"}
       </span>
     </div>
