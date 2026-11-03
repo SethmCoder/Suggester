@@ -110,16 +110,24 @@ export function CreateTripWizard() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="mb-6 flex gap-2">
+      <div className="mb-2">
+        <h1 className="text-[28px] font-bold tracking-tight text-[#080B3A]">
+          Create a trip
+        </h1>
+        <p className="mt-1 text-sm text-[#6B7280]">
+          A guided planning flow — skip optional fields anytime.
+        </p>
+      </div>
+      <div className="mb-6 mt-5 flex gap-2">
         {["Basics", "Style", "Priorities", "Review"].map((label, i) => (
           <div
             key={label}
-            className={`flex-1 rounded-lg py-2 text-center text-xs font-medium ${
+            className={`flex-1 rounded-[12px] py-2.5 text-center text-xs font-semibold ${
               i === step
-                ? "bg-[#1616C9] text-white"
+                ? "bg-[#0400FF] text-white shadow-md shadow-[#0400FF]/25"
                 : i < step
-                  ? "bg-[#EEEEFF] text-[#1616C9]"
-                  : "bg-white text-[#6B7280] border border-[#E5E7EB]"
+                  ? "bg-[#DDE1FF] text-[#0400FF]"
+                  : "border border-[#E1E5F0] bg-white text-[#6B7280]"
             }`}
           >
             {label}
@@ -127,10 +135,12 @@ export function CreateTripWizard() {
         ))}
       </div>
 
-      <div className="rounded-2xl border border-[#E5E7EB] bg-white p-6 shadow-sm sm:p-8">
+      <div className="rounded-[16px] border border-[#E1E5F0] bg-white p-6 shadow-[0_8px_28px_rgba(8,11,58,0.06)] sm:p-8">
         {step === 0 && (
           <div className="space-y-4">
-            <h1 className="text-2xl font-semibold">Trip basics</h1>
+            <h2 className="text-[20px] font-semibold text-[#080B3A]">
+              Trip basics
+            </h2>
             <div>
               <Label>Destination</Label>
               <Input
@@ -216,7 +226,7 @@ export function CreateTripWizard() {
 
         {step === 1 && (
           <div className="space-y-4">
-            <h1 className="text-2xl font-semibold">Travel style</h1>
+            <h2 className="text-[20px] font-semibold text-[#080B3A]">Travel style</h2>
             <div>
               <Label>Interests</Label>
               <div className="mt-2 flex flex-wrap gap-2">
@@ -227,8 +237,8 @@ export function CreateTripWizard() {
                     onClick={() => toggleInterest(i)}
                     className={`rounded-full px-3 py-1 text-xs capitalize ${
                       form.interests.includes(i)
-                        ? "bg-[#1616C9] text-white"
-                        : "bg-[#EEEEFF] text-[#1616C9]"
+                        ? "bg-[#0400FF] text-white"
+                        : "bg-[#DDE1FF] text-[#0400FF]"
                     }`}
                   >
                     {i}
@@ -247,7 +257,7 @@ export function CreateTripWizard() {
             <div>
               <Label>Pace</Label>
               <select
-                className="mt-1 w-full rounded-lg border border-[#D1D5DB] px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-lg border border-[#D1D7E5] px-3 py-2 text-sm"
                 value={form.intensity}
                 onChange={(e) =>
                   setForm({
@@ -264,7 +274,7 @@ export function CreateTripWizard() {
             <div>
               <Label>Transportation</Label>
               <select
-                className="mt-1 w-full rounded-lg border border-[#D1D5DB] px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-lg border border-[#D1D7E5] px-3 py-2 text-sm"
                 value={form.transport}
                 onChange={(e) =>
                   setForm({ ...form, transport: e.target.value })
@@ -299,7 +309,7 @@ export function CreateTripWizard() {
 
         {step === 2 && (
           <div className="space-y-4">
-            <h1 className="text-2xl font-semibold">Activity priorities</h1>
+            <h2 className="text-[20px] font-semibold text-[#080B3A]">Activity priorities</h2>
             <div>
               <Label>Must-see</Label>
               <Input
@@ -339,7 +349,7 @@ export function CreateTripWizard() {
               <Label>Describe your ideal trip</Label>
               <textarea
                 rows={4}
-                className="mt-1 w-full rounded-lg border border-[#D1D5DB] px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-lg border border-[#D1D7E5] px-3 py-2 text-sm"
                 value={form.idealTrip}
                 onChange={(e) =>
                   setForm({ ...form, idealTrip: e.target.value })
@@ -351,7 +361,7 @@ export function CreateTripWizard() {
 
         {step === 3 && (
           <div className="space-y-3 text-sm">
-            <h1 className="text-2xl font-semibold">Review</h1>
+            <h2 className="text-[20px] font-semibold text-[#080B3A]">Review</h2>
             <p>
               <span className="text-[#6B7280]">Destination:</span>{" "}
               {form.destination}
@@ -365,7 +375,7 @@ export function CreateTripWizard() {
               {form.interests.join(", ") || "General"}
             </p>
             {progress ? (
-              <p className="text-[#1616C9]">{progress}</p>
+              <p className="text-[#0400FF]">{progress}</p>
             ) : null}
             {error ? <p className="text-[#DC2626]">{error}</p> : null}
           </div>

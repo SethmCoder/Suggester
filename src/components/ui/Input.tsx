@@ -6,7 +6,7 @@ export function Input({
 }: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
-      className={`w-full rounded-lg border border-[#D1D5DB] px-3 py-2 text-sm text-[#1F2937] focus:border-[#818CF8] focus:outline-none focus:ring-2 focus:ring-[#818CF8]/40 ${className}`}
+      className={`h-11 w-full rounded-[12px] border border-[#D1D7E5] bg-white px-3.5 text-sm text-[#1F2937] placeholder:text-[#9299B5] transition-colors focus:border-[#0400FF] focus:outline-none focus:ring-2 focus:ring-[#818CFF]/35 disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
       {...props}
     />
   );
@@ -20,8 +20,22 @@ export function Label({
   className?: string;
 }) {
   return (
-    <label className={`block text-sm font-medium text-[#1F2937] ${className}`}>
+    <label
+      className={`mb-1.5 block text-sm font-semibold text-[#1F2937] ${className}`}
+    >
       {children}
     </label>
+  );
+}
+
+export function TextArea({
+  className = "",
+  ...props
+}: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return (
+    <textarea
+      className={`w-full rounded-[12px] border border-[#D1D7E5] bg-white px-3.5 py-2.5 text-sm text-[#1F2937] placeholder:text-[#9299B5] focus:border-[#0400FF] focus:outline-none focus:ring-2 focus:ring-[#818CFF]/35 ${className}`}
+      {...props}
+    />
   );
 }

@@ -1,11 +1,12 @@
 import Groq from "groq-sdk";
 import { getPopularityConfig } from "../config/popularity";
 import {
+  computeDayRoute,
   geocodeDestination,
   getPlaceDetails,
   searchInterestPlaces,
   textSearchPlace,
-} from "../google/places";
+} from "../maps";
 import { getPopularityForDestination } from "../popularity/service";
 import { rankCandidatesWithPopularity } from "../popularity/rank-candidates";
 import type { RankedCandidate } from "../popularity/types";
@@ -15,7 +16,6 @@ import { itineraryGenerationSchema, type ItineraryGeneration } from "./schema";
 import { logger } from "../logger";
 import { checkVisitAgainstHours } from "./hours";
 import { addMinutes, orderByNearestNeighbor } from "./scheduler";
-import { computeDayRoute } from "../google/routes";
 
 export interface TripPreferencesInput {
   destination: string;
@@ -225,7 +225,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
   const geo = await geocodeDestination(prefs.destination);
   if (!geo) {
     throw new Error(
-      "Could not geocode destination. Configure GOOGLE_MAPS_SERVER_KEY.",
+      "Could not geocode destination. OpenStreetMap Nominatim may be rate-limited — try again, or configure Google Maps keys.",
     );
   }
 

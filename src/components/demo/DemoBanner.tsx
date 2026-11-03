@@ -13,12 +13,12 @@ export function DemoBanner() {
   }
 
   return (
-    <div className="mb-6 flex flex-col gap-2 rounded-xl border border-[#B45309]/40 bg-[#FFFBEB] px-4 py-3 text-sm text-[#B45309] sm:flex-row sm:items-center sm:justify-between">
-      <p>{DEMO_BANNER}</p>
+    <div className="flex flex-col gap-2 rounded-[12px] border border-[#0400FF]/20 bg-[#DDE1FF] px-4 py-3 text-sm text-[#080B3A] sm:flex-row sm:items-center sm:justify-between">
+      <p className="font-medium">{DEMO_BANNER}</p>
       <button
         type="button"
         onClick={exitDemo}
-        className="shrink-0 font-medium underline hover:no-underline"
+        className="shrink-0 font-semibold text-[#0400FF] underline hover:text-[#0A0080]"
       >
         Exit demo
       </button>

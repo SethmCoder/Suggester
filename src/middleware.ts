@@ -2,7 +2,14 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { DEMO_COOKIE, isDemoCookie } from "@/lib/demo/session";
 
-const PROTECTED = ["/dashboard", "/profile", "/trips/new"];
+const PROTECTED = [
+  "/dashboard",
+  "/profile",
+  "/settings",
+  "/saved-places",
+  "/help",
+  "/trips/new",
+];
 const PROTECTED_PREFIX = "/trips/";
 
 export async function middleware(request: NextRequest) {
@@ -20,7 +27,12 @@ export async function middleware(request: NextRequest) {
     if (path === "/trips/new") {
       return NextResponse.redirect(new URL("/dashboard?demo=create-locked", request.url));
     }
-    if (path.startsWith("/trips/") && !path.includes("demo-paris")) {
+    // Allow /settings and /profile in demo; only lock non-demo trip routes
+    if (
+      path.startsWith("/trips/") &&
+      !path.includes("demo-paris") &&
+      path !== "/trips/new"
+    ) {
       return NextResponse.redirect(new URL("/trips/demo-paris", request.url));
     }
     return NextResponse.next();
@@ -76,6 +88,9 @@ export const config = {
   matcher: [
     "/dashboard/:path*",
     "/profile/:path*",
+    "/settings/:path*",
+    "/saved-places/:path*",
+    "/help/:path*",
     "/trips/:path*",
     "/login",
     "/signup",

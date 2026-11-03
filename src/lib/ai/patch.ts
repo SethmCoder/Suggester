@@ -20,21 +20,42 @@ export const patchOpSchema = z.discriminatedUnion("op", [
       priority: z.enum(["must_see", "preferred", "optional"]).optional(),
       planningNote: z.string().optional(),
       completed: z.boolean().optional(),
+      name: z.string().optional(),
     }),
   }),
   z.object({
     op: z.literal("insert"),
     toDayIndex: z.number(),
-    placeId: z.string(),
+    placeId: z.string().optional(),
+    name: z.string().optional(),
     startTime: z.string(),
     durationMinutes: z.number(),
     priority: z.enum(["must_see", "preferred", "optional"]),
+    planningNote: z.string().optional(),
+  }),
+  /** Push/pull every activity on a day by minutes (e.g. flight delay). */
+  z.object({
+    op: z.literal("shift_day"),
+    dayIndex: z.number(),
+    shiftMinutes: z.number(),
+    reason: z.string().optional(),
+  }),
+  /** Replace one activity with another suggested place (by name when no placeId). */
+  z.object({
+    op: z.literal("replace"),
+    activityId: z.string(),
+    newName: z.string(),
+    placeId: z.string().optional(),
+    planningNote: z.string().optional(),
+    durationMinutes: z.number().optional(),
   }),
 ]);
 
 export const assistantPatchSchema = z.object({
   summary: z.string(),
   operations: z.array(patchOpSchema),
+  suggestions: z.array(z.string()).optional(),
 });
 
 export type AssistantPatch = z.infer<typeof assistantPatchSchema>;
+export type PatchOp = z.infer<typeof patchOpSchema>;

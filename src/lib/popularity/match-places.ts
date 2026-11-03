@@ -1,4 +1,4 @@
-import { textSearchPlace } from "../google/places";
+import { textSearchPlace } from "../maps";
 
 const memoryResolved = new Map<string, { placeId: string; displayName: string }>();
 

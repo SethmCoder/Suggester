@@ -2,14 +2,24 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { IconX } from "@/components/ui/Icons";
 import type { AssistantPatch } from "@/lib/ai/patch";
+
+const QUICK_PROMPTS = [
+  "My flight is delayed by 2 hours on day 1",
+  "Change the Louvre to Musée d'Orsay",
+  "Make day 2 less busy",
+  "Suggest a quieter alternative near our hotel",
+];
 
 export function AssistantPanel({
   tripId,
   isDemo = false,
+  onDemoApply,
 }: {
   tripId: string;
   isDemo?: boolean;
+  onDemoApply?: (patch: AssistantPatch) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
@@ -17,22 +27,17 @@ export function AssistantPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function send() {
+  async function send(text?: string) {
+    const content = (text ?? message).trim();
+    if (!content) return;
+    setMessage(content);
     setLoading(true);
     setError(null);
     try {
-      if (isDemo) {
-        setPending({
-          summary:
-            "Demo response: in a real trip I would propose targeted schedule changes. Sign up to use the live assistant.",
-          operations: [],
-        });
-        return;
-      }
       const res = await fetch(`/api/trips/${tripId}/assistant`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message: content }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
@@ -46,68 +51,139 @@ export function AssistantPanel({
 
   async function apply() {
     if (!pending) return;
-    await fetch(`/api/trips/${tripId}/assistant/apply`, {
+    if (isDemo && onDemoApply) {
+      onDemoApply(pending);
+      setPending(null);
+      setMessage("");
+      return;
+    }
+    const res = await fetch(`/api/trips/${tripId}/assistant/apply`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(pending),
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error ?? "Could not apply");
+      return;
+    }
     setPending(null);
     setMessage("");
     window.location.reload();
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 w-[min(100%,22rem)]">
+    <div className="fixed bottom-4 right-4 z-40 w-[min(100%-1.5rem,22rem)]">
       {open ? (
-        <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-lg">
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-sm font-semibold">Itinerary assistant</p>
-            <button type="button" onClick={() => setOpen(false)} className="text-[#6B7280]">
-              ✕
+        <div className="overflow-hidden rounded-[16px] border border-[#E1E5F0] bg-white shadow-[0_16px_48px_rgba(8,11,58,0.18)]">
+          <div className="flex items-center justify-between bg-[#080B3A] px-4 py-3 text-white">
+            <div>
+              <p className="text-sm font-semibold">Itinerary maker</p>
+              <p className="text-[11px] text-[#C5CAE5]">
+                Suggest changes · delays · swaps
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="rounded-lg p-1 text-[#C5CAE5] hover:bg-[#20276D] hover:text-white"
+              aria-label="Close"
+            >
+              <IconX size={16} />
             </button>
           </div>
-          <textarea
-            rows={3}
-            className="w-full rounded-lg border border-[#D1D5DB] px-3 py-2 text-sm"
-            placeholder="e.g. Make Wednesday less busy"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-          />
-          {error ? <p className="mt-1 text-xs text-[#DC2626]">{error}</p> : null}
-          {pending ? (
-            <div className="mt-3 rounded-lg bg-[#EEEEFF] p-3 text-sm">
-              <p className="font-medium">Proposed changes</p>
-              <p className="mt-1 text-[#6B7280]">{pending.summary}</p>
-              <pre className="mt-2 max-h-32 overflow-auto text-xs">
-                {JSON.stringify(pending.operations, null, 2)}
-              </pre>
-              <div className="mt-3 flex gap-2">
-                <Button type="button" onClick={apply}>
-                  Apply
-                </Button>
-                <Button type="button" variant="secondary" onClick={() => setPending(null)}>
-                  Reject
-                </Button>
-              </div>
+          <div className="p-4">
+            <div className="mb-3 flex flex-wrap gap-1.5">
+              {QUICK_PROMPTS.map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  className="rounded-full bg-[#DDE1FF] px-2.5 py-1 text-[10px] font-medium text-[#0400FF] hover:bg-[#0400FF] hover:text-white"
+                  onClick={() => send(q)}
+                >
+                  {q}
+                </button>
+              ))}
             </div>
-          ) : (
-            <Button
-              type="button"
-              className="mt-2 w-full"
-              disabled={loading || !message.trim()}
-              onClick={send}
-            >
-              {loading ? "Thinking…" : "Suggest changes"}
-            </Button>
-          )}
+            <textarea
+              rows={3}
+              className="w-full rounded-[12px] border border-[#D1D7E5] px-3 py-2 text-sm focus:border-[#0400FF] focus:outline-none focus:ring-2 focus:ring-[#818CFF]/35"
+              placeholder="e.g. Flight delayed 90 minutes — shift day 1"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+            />
+            {error ? (
+              <p className="mt-1 text-xs text-[#DC2626]">{error}</p>
+            ) : null}
+            {pending ? (
+              <div className="mt-3 rounded-[12px] border border-[#DDE1FF] bg-[#F5F7FF] p-3 text-sm">
+                <p className="font-semibold text-[#080B3A]">Proposed changes</p>
+                <p className="mt-1 text-[#6B7280]">{pending.summary}</p>
+                {pending.operations.length > 0 ? (
+                  <ul className="mt-2 list-inside list-disc text-xs text-[#1F2937]">
+                    {pending.operations.map((op, i) => (
+                      <li key={i}>
+                        <code className="text-[#0400FF]">{op.op}</code>
+                        {"shiftMinutes" in op && op.shiftMinutes != null
+                          ? ` · +${op.shiftMinutes} min`
+                          : ""}
+                        {"newName" in op && op.newName
+                          ? ` → ${op.newName}`
+                          : ""}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {pending.suggestions?.length ? (
+                  <div className="mt-2 space-y-1">
+                    {pending.suggestions.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        className="block text-left text-xs font-medium text-[#0400FF] underline"
+                        onClick={() => send(s)}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    type="button"
+                    onClick={apply}
+                    disabled={!pending.operations.length}
+                  >
+                    Apply
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setPending(null)}
+                  >
+                    Reject
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                className="mt-3 w-full"
+                disabled={loading || !message.trim()}
+                onClick={() => send()}
+              >
+                {loading ? "Thinking…" : "Ask itinerary maker"}
+              </Button>
+            )}
+          </div>
         </div>
       ) : (
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="rounded-full bg-[#1616C9] px-4 py-3 text-sm font-medium text-white shadow-lg hover:bg-[#1010A3]"
+          className="rounded-full bg-[#0400FF] px-5 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#0400FF]/35 hover:bg-[#0A0080]"
         >
-          Assistant
+          Ask itinerary maker
         </button>
       )}
     </div>

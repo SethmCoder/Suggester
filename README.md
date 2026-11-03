@@ -2,10 +2,10 @@
 
 AI-powered travel itinerary planner built with Next.js, Supabase, Groq, and Google Maps Platform.
 
-## Setup
+## Setup (local)
 
-1. Copy `.env.example` to `.env.local` and fill in keys.
-2. Run Supabase migrations in order:
+1. Copy `.env.example` to `.env` (or `.env.local`) and fill in keys.
+2. Run Supabase SQL migrations:
    - `supabase/migrations/001_init.sql`
    - `supabase/migrations/002_waypoint_full_schema.sql`
 3. Set a **$1 budget alert** on Google Cloud (Maps still requires billing).
@@ -15,41 +15,64 @@ AI-powered travel itinerary planner built with Next.js, Supabase, Groq, and Goog
 
 | Variable | Purpose |
 | --- | --- |
+| `NEXT_PUBLIC_SITE_URL` | Canonical site URL (Vercel production domain) |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Client auth |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server trip writes & caches |
-| `GROQ_API_KEY` | Itinerary generation |
-| `GOOGLE_MAPS_SERVER_KEY` | Geocoding, Places, Routes (server only) |
-| `NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY` | Maps JavaScript (referrer-restricted) |
+| `GROQ_API_KEY` | Itinerary generation + assistant |
+| `MAPS_PROVIDER` | `openstreetmap` (default) or `google` |
+| `GOOGLE_MAPS_*` | Optional — only if you choose Google in Settings |
+
+## Deploy on Vercel
+
+1. Import the GitHub repo (`SethmCoder/Suggester`) into [Vercel](https://vercel.com).
+2. Framework preset: **Next.js** (`vercel.json` included).
+3. Add the env vars above in **Project → Settings → Environment Variables** (Production + Preview).
+4. Deploy. Note the URL, e.g. `https://suggester.vercel.app`.
+5. Set `NEXT_PUBLIC_SITE_URL` to that URL and redeploy.
+
+### Connect Supabase
+
+1. Create a Supabase project.
+2. Paste URL + anon key + service role key into Vercel env.
+3. In Supabase **SQL Editor**, run both migration files.
+4. In Supabase **Authentication → URL configuration**:
+   - **Site URL:** `https://your-app.vercel.app`
+   - **Redirect URLs:**  
+     `https://your-app.vercel.app/auth/callback`  
+     `http://localhost:3000/auth/callback`  
+     `http://localhost:3001/auth/callback`
+5. Optional: enable Email provider (default) for sign-up.
+
+After that, sign-up, create trip, and the itinerary maker assistant all use live Supabase storage.
 
 ## Demo mode
 
-Use **Try demo** on the home or login page (no API keys required). This starts a cookie-backed demo session with a sample Paris itinerary clearly labeled as demo data. Edits stay in the browser; AI regenerate and live assistant patches require a real account.
+**Try demo** works with no keys. Sample Paris trip; assistant still handles flight delays / place swaps locally (approve to apply).
+
+## Itinerary maker assistant
+
+On any itinerary page, open **Ask itinerary maker** to:
+
+- Swap or remove a place (“Change the Louvre to Musée d'Orsay”)
+- Shift a day for delays (“My flight is delayed by 2 hours on day 1”)
+- Lighten a day, move stops, get follow-up suggestions
+
+Changes show as a **proposed patch** — nothing applies until you approve.
 
 ## Features
 
 - Supabase auth (sign up, login, password reset, profile)
 - Dashboard with trip search and cards
-- Four-step trip wizard
-- Groq structured itinerary generation with Google place verification
-- Popularity signals from public travel RSS (+ optional SerpApi / social API hooks)
-- Route-aware scheduling with opening-hours checks
-- Itinerary page: expandable days, map, drag-and-drop edits, autosave
-- In-itinerary assistant with approve-before-apply patches
-- Day regeneration and pace/route actions
+- Four-step trip wizard + AI generation
+- Popularity signals (optional)
+- Route-aware scheduling + opening-hours checks
+- Map / schedule views, drag-and-drop edits, autosave
+- Conversational itinerary maker (delays, place changes)
+- Day regenerate actions
 
 ## Scripts
 
-- `npm run dev` — development server
-- `npm run build` — production build
-- `npm run test` — Vitest (scoring, hours)
-
-## Google free-tier discipline
-
-- Place Details (Enterprise SKU) cached 30 days; hard stop near 900/month
-- Routes Essentials field mask only; transit uses per-leg calls
-- Place photos served via `/api/places/photo` with usage tracking
-
-## Popularity
-
-See env vars `POPULARITY_*` in `.env.example`. Disabled or failed providers fall back to standard generation without trending labels.
+- `npm run dev` — local server
+- `npm run build` — production build (same as Vercel)
+- `npm run test` — Vitest

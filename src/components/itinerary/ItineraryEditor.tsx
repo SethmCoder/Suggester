@@ -16,6 +16,12 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useCallback, useMemo, useState } from "react";
+import { shiftActivityStartTime } from "@/lib/ai/assistant-local";
+import type { AssistantPatch } from "@/lib/ai/patch";
+import {
+  countryFromDestination,
+  destinationImageUrl,
+} from "@/lib/destination-image";
 import { PopularityBadge } from "./PopularityBadge";
 import { TripMap } from "./TripMap";
 import { AssistantPanel } from "./AssistantPanel";
@@ -103,6 +109,112 @@ export function ItineraryEditor({
     [tripId, isDemo],
   );
 
+  const applyAssistantPatch = useCallback(
+    (patch: AssistantPatch) => {
+      setDays((prev) => {
+        let copy = prev.map((d) => ({
+          ...d,
+          activities: d.activities.map((a) => ({ ...a })),
+        }));
+
+        for (const op of patch.operations) {
+          if (op.op === "delete") {
+            copy = copy.map((d) => ({
+              ...d,
+              activities: d.activities.filter((a) => a.id !== op.activityId),
+            }));
+          } else if (op.op === "replace") {
+            copy = copy.map((d) => ({
+              ...d,
+              activities: d.activities.map((a) =>
+                a.id === op.activityId
+                  ? {
+                      ...a,
+                      name: op.newName,
+                      hours_verified: false,
+                      planning_note:
+                        op.planningNote ??
+                        "Replaced by itinerary maker — verify before visiting",
+                      user_locked: true,
+                    }
+                  : a,
+              ),
+            }));
+          } else if (op.op === "move") {
+            let moved: ActivityRow | null = null;
+            copy = copy.map((d) => {
+              const idx = d.activities.findIndex((a) => a.id === op.activityId);
+              if (idx < 0) return d;
+              moved = d.activities[idx];
+              return {
+                ...d,
+                activities: d.activities.filter((a) => a.id !== op.activityId),
+              };
+            });
+            if (moved) {
+              copy = copy.map((d) =>
+                d.dayIndex === op.toDayIndex
+                  ? {
+                      ...d,
+                      activities: [
+                        ...d.activities,
+                        { ...moved!, day_id: d.dayId, user_locked: true },
+                      ],
+                    }
+                  : d,
+              );
+            }
+          } else if (op.op === "shift_day") {
+            copy = copy.map((d) =>
+              d.dayIndex === op.dayIndex
+                ? {
+                    ...d,
+                    activities: d.activities.map((a) => ({
+                      ...a,
+                      start_time: shiftActivityStartTime(
+                        a.start_time,
+                        op.shiftMinutes,
+                      ),
+                      planning_note: op.reason
+                        ? `Adjusted for: ${op.reason}`
+                        : a.planning_note,
+                      user_locked: true,
+                    })),
+                  }
+                : d,
+            );
+          } else if (op.op === "update") {
+            copy = copy.map((d) => ({
+              ...d,
+              activities: d.activities.map((a) =>
+                a.id === op.activityId
+                  ? {
+                      ...a,
+                      start_time: op.fields.startTime
+                        ? `${op.fields.startTime}:00`.slice(0, 8)
+                        : a.start_time,
+                      duration_minutes:
+                        op.fields.durationMinutes ?? a.duration_minutes,
+                      priority: op.fields.priority ?? a.priority,
+                      planning_note:
+                        op.fields.planningNote ?? a.planning_note,
+                      completed: op.fields.completed ?? a.completed,
+                      name: op.fields.name ?? a.name,
+                      user_locked: true,
+                    }
+                  : a,
+              ),
+            }));
+          }
+        }
+
+        void persist(copy);
+        return copy;
+      });
+    },
+    [persist],
+  );
+
   function onDragEnd(event: DragEndEvent, dayIndex: number) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -168,62 +280,88 @@ export function ItineraryEditor({
       order: i + 1,
     }));
 
+  const destName = destination.replace(/\s*\(Demo\)\s*/i, "").trim();
+  const heroImg = destinationImageUrl(destName);
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">{destination}</h1>
-          <p className="text-sm text-[#6B7280]">
-            {saveState === "saving"
-              ? "Saving…"
-              : saveState === "saved"
-                ? "Saved"
-                : saveState === "error"
-                  ? "Couldn’t save"
-                  : `${flatActivities.length} activities`}
-          </p>
+    <div className="space-y-5">
+      <section className="relative overflow-hidden rounded-[16px] bg-[#10194A]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={heroImg}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover opacity-40"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#080B3A]/95 via-[#10194A]/75 to-transparent" />
+        <div className="relative flex flex-col gap-4 px-5 py-7 sm:flex-row sm:items-end sm:justify-between sm:px-8">
+          <div>
+            <p className="text-sm text-[#C5CAE5]">
+              {countryFromDestination(destName)}
+            </p>
+            <h1 className="mt-1 text-[28px] font-bold tracking-tight text-white sm:text-[32px]">
+              {destName}
+            </h1>
+            <p className="mt-1 text-sm text-[#C5CAE5]">
+              {days.length} days · {flatActivities.length} activities ·{" "}
+              {saveState === "saving"
+                ? "Saving…"
+                : saveState === "saved"
+                  ? "Saved"
+                  : saveState === "error"
+                    ? "Couldn’t save"
+                    : "Up to date"}
+            </p>
+          </div>
+          <div className="flex rounded-[12px] border border-[#292F68] bg-[#080B3A]/70 p-1 text-sm backdrop-blur">
+            {(["schedule", "map", "split"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                className={`rounded-[10px] px-3.5 py-1.5 capitalize ${
+                  view === v
+                    ? "bg-[#0400FF] text-white"
+                    : "text-[#C5CAE5] hover:text-white"
+                }`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex rounded-lg border border-[#E5E7EB] bg-white p-1 text-sm">
-          {(["schedule", "map", "split"] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setView(v)}
-              className={`rounded-md px-3 py-1 capitalize ${
-                view === v ? "bg-[#EEEEFF] text-[#1616C9]" : "text-[#6B7280]"
-              }`}
-            >
-              {v}
-            </button>
-          ))}
-        </div>
-      </div>
+      </section>
 
       <div
-        className={`grid gap-4 ${view === "split" ? "lg:grid-cols-2" : "grid-cols-1"}`}
+        className={`grid gap-5 ${view === "split" ? "lg:grid-cols-2" : "grid-cols-1"}`}
       >
         {(view === "schedule" || view === "split") && (
           <div className="space-y-4">
             {days.map((day, dayIndex) => (
               <section
                 key={day.dayId}
-                className="rounded-xl border border-[#E5E7EB] bg-white shadow-sm"
+                className={`overflow-hidden rounded-[14px] border bg-white shadow-[0_4px_20px_rgba(8,11,58,0.05)] ${
+                  selectedDay === dayIndex
+                    ? "border-[#0400FF]/40"
+                    : "border-[#E1E5F0]"
+                }`}
               >
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between px-4 py-3 text-left"
+                  className="flex w-full items-center justify-between px-4 py-3.5 text-left"
                   onClick={() => {
                     setExpanded((e) => ({ ...e, [dayIndex]: !e[dayIndex] }));
                     setSelectedDay(dayIndex);
                   }}
                 >
-                  <span className="font-semibold">Day {day.dayIndex + 1}</span>
-                  <span className="text-xs text-[#6B7280]">
-                    {day.activities.length} stops
+                  <span className="text-[16px] font-semibold text-[#080B3A]">
+                    Day {day.dayIndex + 1}
+                  </span>
+                  <span className="rounded-full bg-[#DDE1FF] px-2.5 py-0.5 text-xs font-medium text-[#0400FF]">
+                    {day.activities.length} activities
                   </span>
                 </button>
                 {expanded[dayIndex] !== false ? (
-                  <div className="border-t border-[#E5E7EB] px-4 pb-4">
+                  <div className="border-t border-[#E1E5F0] px-4 pb-4">
                     <DndContext
                       sensors={sensors}
                       collisionDetection={closestCenter}
@@ -256,7 +394,7 @@ export function ItineraryEditor({
                         dayIndex={day.dayIndex}
                       />
                     ) : (
-                      <p className="mt-4 border-t border-[#E5E7EB] pt-3 text-xs text-[#6B7280]">
+                      <p className="mt-4 border-t border-[#E1E5F0] pt-3 text-xs text-[#6B7280]">
                         Day regenerate is available after you sign up for a real
                         trip.
                       </p>
@@ -275,7 +413,11 @@ export function ItineraryEditor({
         )}
       </div>
 
-      <AssistantPanel tripId={tripId} isDemo={isDemo} />
+      <AssistantPanel
+        tripId={tripId}
+        isDemo={isDemo}
+        onDemoApply={isDemo ? applyAssistantPatch : undefined}
+      />
     </div>
   );
 }
@@ -307,7 +449,7 @@ function SortableActivity({
     <li
       ref={setNodeRef}
       style={style}
-      className="rounded-lg border border-[#E5E7EB] bg-[#F7F8FC] p-3"
+      className="rounded-[12px] border border-[#E1E5F0] bg-[#F5F7FF] p-3.5"
     >
       <div className="flex gap-2">
         <button
@@ -358,12 +500,12 @@ function SortableActivity({
           ) : null}
           <div className="mt-2 flex flex-wrap gap-2 text-xs">
             {activity.website_uri ? (
-              <a href={activity.website_uri} target="_blank" rel="noreferrer" className="text-[#1616C9]">
+              <a href={activity.website_uri} target="_blank" rel="noreferrer" className="text-[#0400FF]">
                 Website
               </a>
             ) : null}
             {activity.google_maps_uri ? (
-              <a href={activity.google_maps_uri} target="_blank" rel="noreferrer" className="text-[#1616C9]">
+              <a href={activity.google_maps_uri} target="_blank" rel="noreferrer" className="text-[#0400FF]">
                 Maps
               </a>
             ) : null}
@@ -371,14 +513,14 @@ function SortableActivity({
           <div className="mt-3 flex flex-wrap gap-2">
             <input
               type="time"
-              className="rounded border border-[#D1D5DB] px-2 py-1 text-xs"
+              className="rounded border border-[#D1D7E5] px-2 py-1 text-xs"
               value={activity.start_time?.slice(0, 5) ?? ""}
               onChange={(e) => onUpdate({ start_time: `${e.target.value}:00` })}
             />
             <input
               type="number"
               min={15}
-              className="w-20 rounded border border-[#D1D5DB] px-2 py-1 text-xs"
+              className="w-20 rounded border border-[#D1D7E5] px-2 py-1 text-xs"
               value={activity.duration_minutes ?? 60}
               onChange={(e) =>
                 onUpdate({ duration_minutes: Number(e.target.value) })
@@ -386,7 +528,7 @@ function SortableActivity({
             />
             <button
               type="button"
-              className="text-xs text-[#1616C9]"
+              className="text-xs text-[#0400FF]"
               onClick={() => onUpdate({ completed: !activity.completed })}
             >
               {activity.completed ? "Undo done" : "Mark done"}
@@ -400,7 +542,7 @@ function SortableActivity({
             </button>
             {dayCount > 1 ? (
               <select
-                className="rounded border border-[#D1D5DB] px-2 py-1 text-xs"
+                className="rounded border border-[#D1D7E5] px-2 py-1 text-xs"
                 value={dayIndex}
                 onChange={(e) => onMoveDay(Number(e.target.value))}
               >
@@ -437,18 +579,18 @@ function RegenerateDayButton({
     setMsg(res.ok ? "Preview ready — reload to apply saved changes." : data.error);
   }
   return (
-    <div className="mt-4 flex flex-wrap gap-2 border-t border-[#E5E7EB] pt-3">
+    <div className="mt-4 flex flex-wrap gap-2 border-t border-[#E1E5F0] pt-3">
       <button
         type="button"
-        className="text-xs text-[#1616C9]"
+        className="text-xs text-[#0400FF]"
         onClick={() => regen()}
       >
         Regenerate day
       </button>
-      <button type="button" className="text-xs text-[#1616C9]" onClick={() => regen("relaxed")}>
+      <button type="button" className="text-xs text-[#0400FF]" onClick={() => regen("relaxed")}>
         More relaxed
       </button>
-      <button type="button" className="text-xs text-[#1616C9]" onClick={() => regen("optimize_geo")}>
+      <button type="button" className="text-xs text-[#0400FF]" onClick={() => regen("optimize_geo")}>
         Optimize route
       </button>
       {msg ? <p className="w-full text-xs text-[#6B7280]">{msg}</p> : null}

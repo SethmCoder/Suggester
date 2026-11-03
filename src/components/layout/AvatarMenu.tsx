@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useRef, useEffect } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { useEffect, useRef, useState } from "react";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 export function AvatarMenu({
   email,
@@ -25,8 +24,6 @@ export function AvatarMenu({
     return () => document.removeEventListener("click", onDoc);
   }, []);
 
-  const initial = (displayName || email || "U").charAt(0).toUpperCase();
-
   async function signOut() {
     await fetch("/api/demo/end", { method: "POST" }).catch(() => null);
     if (isSupabaseConfigured()) {
@@ -46,33 +43,43 @@ export function AvatarMenu({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-[#EEEEFF] text-sm font-semibold text-[#1616C9]"
+        className="rounded-lg px-2 py-1.5 text-xs font-semibold text-[#6B7280] hover:bg-[#DDE1FF] hover:text-[#080B3A]"
         aria-label="Account menu"
       >
-        {initial}
+        Account
       </button>
       {open ? (
-        <div className="absolute right-0 mt-2 w-48 rounded-lg border border-[#E5E7EB] bg-white py-1 shadow-lg">
+        <div className="absolute right-0 z-50 mt-2 w-52 overflow-hidden rounded-[12px] border border-[#E1E5F0] bg-white py-1 shadow-[0_8px_28px_rgba(8,11,58,0.12)]">
           {email ? (
-            <p className="truncate px-3 py-2 text-xs text-[#6B7280]">{email}</p>
+            <p className="truncate border-b border-[#E1E5F0] px-3 py-2 text-xs text-[#6B7280]">
+              {displayName ? `${displayName} · ` : ""}
+              {email}
+            </p>
           ) : null}
           <Link
+            href="/settings"
+            className="block px-3 py-2.5 text-sm text-[#1F2937] hover:bg-[#F5F7FF]"
+            onClick={() => setOpen(false)}
+          >
+            Settings
+          </Link>
+          <Link
             href="/profile"
-            className="block px-3 py-2 text-sm hover:bg-[#F7F8FC]"
+            className="block px-3 py-2.5 text-sm text-[#1F2937] hover:bg-[#F5F7FF]"
             onClick={() => setOpen(false)}
           >
             Profile
           </Link>
           <Link
             href="/dashboard"
-            className="block px-3 py-2 text-sm hover:bg-[#F7F8FC] md:hidden"
+            className="block px-3 py-2.5 text-sm text-[#1F2937] hover:bg-[#F5F7FF]"
             onClick={() => setOpen(false)}
           >
-            Saved trips
+            My Trips
           </Link>
           <button
             type="button"
-            className="block w-full px-3 py-2 text-left text-sm text-[#DC2626] hover:bg-[#F7F8FC]"
+            className="block w-full border-t border-[#E1E5F0] px-3 py-2.5 text-left text-sm text-[#DC2626] hover:bg-[#FEF2F2]"
             onClick={signOut}
           >
             Sign out

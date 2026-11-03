@@ -23,8 +23,8 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#F7F8FC] px-4">
-      <div className="w-full max-w-md rounded-2xl border border-[#E5E7EB] bg-white p-8 shadow-sm">
+    <div className="flex min-h-screen items-center justify-center bg-[#F5F7FF] px-4">
+      <div className="w-full max-w-md rounded-2xl border border-[#E1E5F0] bg-white p-8 shadow-sm">
         <h1 className="text-2xl font-semibold">New password</h1>
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
           <div>

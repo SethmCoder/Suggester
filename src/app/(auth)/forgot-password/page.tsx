@@ -25,8 +25,8 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#F7F8FC] px-4">
-      <div className="w-full max-w-md rounded-2xl border border-[#E5E7EB] bg-white p-8 shadow-sm">
+    <div className="flex min-h-screen items-center justify-center bg-[#F5F7FF] px-4">
+      <div className="w-full max-w-md rounded-2xl border border-[#E1E5F0] bg-white p-8 shadow-sm">
         <h1 className="text-2xl font-semibold">Reset password</h1>
         {sent ? (
           <p className="mt-4 text-sm text-[#15803D]">
@@ -51,7 +51,7 @@ export default function ForgotPasswordPage() {
           </form>
         )}
         <p className="mt-6 text-center text-sm">
-          <Link href="/login" className="text-[#1616C9]">
+          <Link href="/login" className="text-[#0400FF]">
             Back to sign in
           </Link>
         </p>

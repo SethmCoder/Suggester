@@ -2,9 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { format } from "date-fns";
 import { DemoBanner } from "@/components/demo/DemoBanner";
-import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
+import { IconArrowRight, IconPlane, IconSearch } from "@/components/ui/Icons";
+import {
+  countryFromDestination,
+  dashboardHeroImage,
+  destinationImageUrl,
+} from "@/lib/destination-image";
+import { formatTripDate } from "@/lib/format-date";
 import type { TripListItem } from "@/lib/types/trip";
 
 export default function DashboardPage() {
@@ -12,13 +18,21 @@ export default function DashboardPage() {
   const [isDemo, setIsDemo] = useState(false);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [name, setName] = useState("traveler");
 
   useEffect(() => {
+    try {
+      const u = localStorage.getItem("waypoint:username");
+      if (u) setName(u);
+    } catch {
+      /* ignore */
+    }
     fetch("/api/trips")
       .then((r) => r.json())
       .then((d) => {
         setTrips(d.trips ?? []);
         setIsDemo(Boolean(d.isDemo));
+        if (d.isDemo) setName("Seth");
       })
       .catch(() => setTrips([]))
       .finally(() => setLoading(false));
@@ -31,62 +45,76 @@ export default function DashboardPage() {
   }, [trips, search]);
 
   return (
-    <div>
+    <div className="space-y-8">
       {isDemo ? <DemoBanner /> : null}
+
+      {/* Hero */}
+      <section className="relative overflow-hidden rounded-[16px] bg-[#10194A] shadow-[0_8px_28px_rgba(8,11,58,0.15)]">
+        <div
+          className="absolute inset-0 bg-cover bg-center opacity-45"
+          style={{ backgroundImage: `url(${dashboardHeroImage()})` }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#080B3A]/95 via-[#10194A]/80 to-[#10194A]/40" />
+        <div className="relative px-6 py-10 sm:px-10 sm:py-12">
+          <p className="text-sm font-medium text-[#C5CAE5]">Dashboard</p>
+          <h1 className="mt-2 max-w-xl text-[28px] font-bold leading-tight tracking-tight text-white sm:text-[32px]">
+            Welcome back, {name}! Let&apos;s plan your next adventure.
+          </h1>
+          <p className="mt-2 max-w-lg text-sm text-[#C5CAE5]">
+            Build personalized itineraries, refine them with AI, and keep every
+            stop geographically smart.
+          </p>
+          <Link href={isDemo ? "/signup" : "/trips/new"} className="mt-6 inline-flex">
+            <Button>
+              <IconPlane size={16} />
+              {isDemo ? "Sign up to create trips" : "Create a Trip"}
+            </Button>
+          </Link>
+        </div>
+      </section>
+
+      {/* Search + section */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">
-            {isDemo ? "Demo dashboard" : "Welcome back"}
-          </h1>
-          <p className="mt-1 text-sm text-[#6B7280]">
-            {isDemo
-              ? "Open the sample Paris itinerary to explore the editor and map."
-              : "Plan personalized, route-aware itineraries."}
+          <h2 className="text-[20px] font-semibold text-[#1F2937]">My trips</h2>
+          <p className="text-sm text-[#6B7280]">
+            Recently planned itineraries and saved journeys.
           </p>
         </div>
-        {isDemo ? (
-          <Link
-            href="/signup"
-            className="inline-flex justify-center rounded-lg bg-[#1616C9] px-4 py-2 text-sm font-medium text-white hover:bg-[#1010A3]"
-          >
-            Sign up to create real trips
-          </Link>
-        ) : (
-          <Link
-            href="/trips/new"
-            className="inline-flex justify-center rounded-lg bg-[#1616C9] px-4 py-2 text-sm font-medium text-white hover:bg-[#1010A3]"
-          >
-            Create a Trip
-          </Link>
-        )}
-      </div>
-
-      <div className="mt-8">
-        <Input
-          placeholder="Search trips…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="max-w-md"
-        />
+        <div className="relative w-full sm:max-w-sm">
+          <IconSearch
+            size={16}
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#9299B5]"
+          />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search destinations…"
+            className="h-11 w-full rounded-[12px] border border-[#D1D7E5] bg-white pl-9 pr-3 text-sm focus:border-[#0400FF] focus:outline-none focus:ring-2 focus:ring-[#818CFF]/35"
+          />
+        </div>
       </div>
 
       {loading ? (
-        <p className="mt-8 text-sm text-[#6B7280]">Loading trips…</p>
+        <p className="text-sm text-[#6B7280]">Loading trips…</p>
       ) : filtered.length === 0 ? (
-        <div className="mt-8 rounded-xl border border-dashed border-[#E5E7EB] bg-white p-12 text-center">
-          <p className="text-lg font-medium">No trips yet</p>
-          <p className="mt-2 text-sm text-[#6B7280]">
-            Create your first itinerary to see it here.
+        <div className="rounded-[16px] border border-dashed border-[#E1E5F0] bg-white px-8 py-16 text-center shadow-[0_4px_20px_rgba(8,11,58,0.04)]">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#DDE1FF] text-[#0400FF]">
+            <IconPlane size={22} />
+          </div>
+          <p className="text-lg font-semibold text-[#1F2937]">No trips yet</p>
+          <p className="mx-auto mt-2 max-w-md text-sm text-[#6B7280]">
+            Create your first itinerary and Waypoint will craft a day-by-day plan
+            around your interests and schedule.
           </p>
-          <Link
-            href="/trips/new"
-            className="mt-6 inline-block text-sm font-medium text-[#1616C9] hover:underline"
-          >
-            Create a Trip
+          <Link href={isDemo ? "/trips/demo-paris" : "/trips/new"} className="mt-6 inline-flex">
+            <Button>
+              {isDemo ? "Open demo itinerary" : "Create a Trip"}
+            </Button>
           </Link>
         </div>
       ) : (
-        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div id="trips" className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {filtered.map((trip) => (
             <TripCard key={trip.id} trip={trip} />
           ))}
@@ -107,33 +135,40 @@ function TripCard({ trip }: { trip: TripListItem }) {
           86_400_000,
       ) + 1,
     );
+  const img = trip.cover_image_url || destinationImageUrl(trip.destination);
 
   return (
     <Link
       href={`/trips/${trip.id}`}
-      className="group overflow-hidden rounded-xl border border-[#E5E7EB] bg-white shadow-sm transition hover:border-[#1616C9]/30"
+      className="group overflow-hidden rounded-[14px] border border-[#E1E5F0] bg-white shadow-[0_4px_20px_rgba(8,11,58,0.05)] transition hover:-translate-y-0.5 hover:border-[#0400FF]/25 hover:shadow-[0_12px_32px_rgba(8,11,58,0.1)]"
     >
-      <div className="relative flex h-32 items-end bg-gradient-to-br from-[#EEEEFF] to-white p-4">
+      <div className="relative h-40 overflow-hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={img}
+          alt=""
+          className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#080B3A]/50 to-transparent" />
         {trip.id === "demo-paris" ? (
-          <span className="absolute right-3 top-3 rounded bg-[#B45309] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+          <span className="absolute right-3 top-3 rounded-md bg-[#0400FF] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
             Demo
           </span>
         ) : null}
-        <span className="text-lg font-semibold text-[#1616C9]">
-          {trip.destination}
-        </span>
       </div>
-      <div className="space-y-1 p-4 text-sm">
-        <p className="text-[#6B7280]">
-          {format(new Date(trip.start_date), "MMM d")} –{" "}
-          {format(new Date(trip.end_date), "MMM d, yyyy")}
+      <div className="space-y-1.5 p-4">
+        <h3 className="text-[16px] font-semibold text-[#1F2937]">
+          {trip.destination.split(",")[0]}
+        </h3>
+        <p className="text-sm text-[#6B7280]">
+          {countryFromDestination(trip.destination)}
         </p>
-        <p>{days} days</p>
-        <p className="text-xs text-[#6B7280]">
-          Created {format(new Date(trip.created_at), "MMM d, yyyy")}
+        <p className="text-sm text-[#6B7280]">
+          {formatTripDate(trip.start_date, "short")} –{" "}
+          {formatTripDate(trip.end_date, "long")} · {days} days
         </p>
-        <span className="inline-block pt-2 text-sm font-medium text-[#1616C9] group-hover:underline">
-          Open itinerary →
+        <span className="inline-flex items-center gap-1 pt-2 text-sm font-semibold text-[#0400FF] group-hover:gap-2">
+          View itinerary <IconArrowRight size={14} />
         </span>
       </div>
     </Link>

@@ -13,7 +13,7 @@ export function PopularityBadge({
   const href = attributionUrls?.[0];
 
   return (
-    <div className="mt-2 inline-flex max-w-full flex-col gap-1 rounded-md bg-[#EEEEFF] px-2 py-1 text-xs text-[#1616C9]">
+    <div className="mt-2 inline-flex max-w-full flex-col gap-1 rounded-md bg-[#DDE1FF] px-2 py-1 text-xs text-[#0400FF]">
       <span>{label}</span>
       {sources && sources.length > 0 ? (
         <span className="text-[#6B7280]">Sources: {sources.join(", ")}</span>

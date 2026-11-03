@@ -17,8 +17,10 @@ export default function SignupPage() {
 
   if (!isSupabaseConfigured()) {
     return (
-      <div className="flex min-h-screen items-center justify-center px-4">
-        <p className="text-[#DC2626]">Configure Supabase in .env.local first.</p>
+      <div className="flex min-h-screen items-center justify-center bg-[#080B3A] px-4">
+        <p className="rounded-[14px] bg-white px-6 py-4 text-[#DC2626]">
+          Configure Supabase in .env to create an account.
+        </p>
       </div>
     );
   }
@@ -50,49 +52,55 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#F7F8FC] px-4">
-      <div className="w-full max-w-md rounded-2xl border border-[#E5E7EB] bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-semibold">Create account</h1>
-        <form onSubmit={onSubmit} className="mt-6 space-y-4">
-          <div>
-            <Label>Display name</Label>
-            <Input
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              className="mt-1"
-            />
-          </div>
-          <div>
-            <Label>Email</Label>
-            <Input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mt-1"
-            />
-          </div>
-          <div>
-            <Label>Password</Label>
-            <Input
-              type="password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1"
-            />
-          </div>
-          {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
-          <Button type="submit" disabled={loading} className="w-full">
-            {loading ? "Creating…" : "Sign up"}
-          </Button>
-        </form>
-        <p className="mt-6 text-center text-sm text-[#6B7280]">
-          <Link href="/login" className="text-[#1616C9] hover:underline">
-            Sign in
-          </Link>
-        </p>
+    <div className="flex min-h-screen items-center justify-center bg-[#080B3A] px-4 py-12">
+      <div className="w-full max-w-md overflow-hidden rounded-[16px] border border-[#292F68] bg-white shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
+        <div className="h-1.5 bg-[#0400FF]" />
+        <div className="p-8">
+          <h1 className="text-[28px] font-bold tracking-tight text-[#1F2937]">
+            Create account
+          </h1>
+          <p className="mt-1 text-sm text-[#6B7280]">
+            Join Waypoint and start planning smarter trips.
+          </p>
+          <form onSubmit={onSubmit} className="mt-6 space-y-4">
+            <div>
+              <Label>Display name</Label>
+              <Input
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Seth"
+              />
+            </div>
+            <div>
+              <Label>Email</Label>
+              <Input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Password</Label>
+              <Input
+                type="password"
+                required
+                minLength={8}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
+            <Button type="submit" disabled={loading} className="w-full">
+              {loading ? "Creating…" : "Sign up"}
+            </Button>
+          </form>
+          <p className="mt-6 text-center text-sm text-[#6B7280]">
+            <Link href="/login" className="font-semibold text-[#0400FF]">
+              Sign in
+            </Link>
+          </p>
+        </div>
       </div>
     </div>
   );

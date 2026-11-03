@@ -1,14 +1,29 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { z } from "zod";
+import { shiftActivityStartTime } from "@/lib/ai/assistant-local";
 import { assistantPatchSchema } from "@/lib/ai/patch";
-import { createSupabaseServerClient, createServiceClient } from "@/lib/supabase/server";
+import { DEMO_TRIP_ID } from "@/lib/demo/data";
+import { DEMO_COOKIE, isDemoCookie } from "@/lib/demo/session";
 import { getPlaceDetails } from "@/lib/google/places";
+import {
+  createServiceClient,
+  createSupabaseServerClient,
+} from "@/lib/supabase/server";
 
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: tripId } = await params;
+  const patch = assistantPatchSchema.parse(await req.json());
+  const cookieStore = await cookies();
+  const demo = isDemoCookie(cookieStore.get(DEMO_COOKIE)?.value);
+
+  if (demo && tripId === DEMO_TRIP_ID) {
+    // Client applies demo patches to sessionStorage; acknowledge approval.
+    return NextResponse.json({ ok: true, mode: "demo", patch });
+  }
+
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -17,10 +32,12 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const patch = assistantPatchSchema.parse(await req.json());
   const svc = createServiceClient();
   if (!svc) {
-    return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+    return NextResponse.json(
+      { error: "Database not configured (SUPABASE_SERVICE_ROLE_KEY)" },
+      { status: 503 },
+    );
   }
 
   const { data: trip } = await svc
@@ -33,19 +50,28 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  const { data: days } = await svc
+    .from("itinerary_days")
+    .select("id, day_index")
+    .eq("trip_id", tripId);
+
   for (const op of patch.operations) {
     if (op.op === "delete") {
       await svc.from("activities").delete().eq("id", op.activityId);
     } else if (op.op === "update") {
       await svc
         .from("activities")
-        .update({ ...op.fields, user_locked: true })
+        .update({
+          start_time: op.fields.startTime,
+          duration_minutes: op.fields.durationMinutes,
+          priority: op.fields.priority,
+          planning_note: op.fields.planningNote,
+          completed: op.fields.completed,
+          name: op.fields.name,
+          user_locked: true,
+        })
         .eq("id", op.activityId);
     } else if (op.op === "move") {
-      const { data: days } = await svc
-        .from("itinerary_days")
-        .select("id, day_index")
-        .eq("trip_id", tripId);
       const targetDay = days?.find((d) => d.day_index === op.toDayIndex);
       if (targetDay) {
         await svc
@@ -58,33 +84,113 @@ export async function POST(
           .eq("id", op.activityId);
       }
     } else if (op.op === "insert") {
-      const { data: days } = await svc
-        .from("itinerary_days")
-        .select("id, day_index")
-        .eq("trip_id", tripId);
       const targetDay = days?.find((d) => d.day_index === op.toDayIndex);
-      const details = await getPlaceDetails(op.placeId);
-      if (targetDay && details) {
-        await svc.from("activities").insert({
-          day_id: targetDay.id,
-          place_id: op.placeId,
-          name: details.displayName,
-          address: details.formattedAddress,
-          lat: details.lat,
-          lng: details.lng,
-          start_time: op.startTime,
-          duration_minutes: op.durationMinutes,
-          priority: op.priority,
-          hours_verified: details.hoursVerified,
-          website_uri: details.websiteUri,
-          google_maps_uri: details.googleMapsUri,
-          sort_order: 999,
-          source: "ai",
-          user_locked: false,
-        });
+      if (!targetDay) continue;
+      let name = op.name ?? "Suggested stop";
+      let address: string | null = null;
+      let lat: number | null = null;
+      let lng: number | null = null;
+      let hoursVerified = false;
+      let website: string | null = null;
+      let maps: string | null = null;
+      if (op.placeId) {
+        const details = await getPlaceDetails(op.placeId);
+        if (details) {
+          name = details.displayName;
+          address = details.formattedAddress ?? null;
+          lat = details.lat;
+          lng = details.lng;
+          hoursVerified = details.hoursVerified;
+          website = details.websiteUri ?? null;
+          maps = details.googleMapsUri ?? null;
+        }
       }
+      await svc.from("activities").insert({
+        day_id: targetDay.id,
+        place_id: op.placeId ?? null,
+        name,
+        address,
+        lat,
+        lng,
+        start_time: op.startTime,
+        duration_minutes: op.durationMinutes,
+        priority: op.priority,
+        planning_note:
+          op.planningNote ??
+          (op.placeId
+            ? null
+            : "AI suggestion — verify location before visiting"),
+        hours_verified: hoursVerified,
+        website_uri: website,
+        google_maps_uri: maps,
+        sort_order: 999,
+        source: "ai",
+        user_locked: false,
+      });
+    } else if (op.op === "shift_day") {
+      const targetDay = days?.find((d) => d.day_index === op.dayIndex);
+      if (!targetDay) continue;
+      const { data: acts } = await svc
+        .from("activities")
+        .select("id, start_time")
+        .eq("day_id", targetDay.id);
+      for (const act of acts ?? []) {
+        const next = shiftActivityStartTime(
+          act.start_time,
+          op.shiftMinutes,
+        );
+        await svc
+          .from("activities")
+          .update({
+            start_time: next,
+            planning_note: op.reason
+              ? `Adjusted for: ${op.reason}`
+              : "Schedule shifted",
+            user_locked: true,
+          })
+          .eq("id", act.id);
+      }
+    } else if (op.op === "replace") {
+      let extra: Record<string, unknown> = {
+        name: op.newName,
+        planning_note:
+          op.planningNote ??
+          "Replaced by itinerary maker — verify place details",
+        user_locked: true,
+      };
+      if (op.durationMinutes) {
+        extra = { ...extra, duration_minutes: op.durationMinutes };
+      }
+      if (op.placeId) {
+        const details = await getPlaceDetails(op.placeId);
+        if (details) {
+          extra = {
+            ...extra,
+            place_id: details.placeId,
+            name: details.displayName,
+            address: details.formattedAddress,
+            lat: details.lat,
+            lng: details.lng,
+            hours_verified: details.hoursVerified,
+            website_uri: details.websiteUri,
+            google_maps_uri: details.googleMapsUri,
+          };
+        }
+      } else {
+        extra = {
+          ...extra,
+          hours_verified: false,
+          place_id: null,
+        };
+      }
+      await svc.from("activities").update(extra).eq("id", op.activityId);
     }
   }
+
+  await svc
+    .from("trips")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", tripId);
 
   return NextResponse.json({ ok: true });
 }

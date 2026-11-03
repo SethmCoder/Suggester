@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, Suspense } from "react";
+import { Suspense, useState } from "react";
+import { TryDemoButton } from "@/components/demo/TryDemoButton";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
-import { TryDemoButton } from "@/components/demo/TryDemoButton";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 function LoginForm() {
@@ -19,10 +19,13 @@ function LoginForm() {
 
   if (!isSupabaseConfigured()) {
     return (
-      <p className="text-sm text-[#DC2626]">
-        Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and
-        NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local.
-      </p>
+      <div className="space-y-4">
+        <p className="text-sm text-[#6B7280]">
+          Supabase is not configured yet. Explore the product with demo mode, or
+          add your keys to enable sign-in.
+        </p>
+        <TryDemoButton className="w-full" variant="primary" />
+      </div>
     );
   }
 
@@ -53,55 +56,79 @@ function LoginForm() {
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="mt-1"
+          placeholder="you@company.com"
         />
       </div>
       <div>
-        <Label>Password</Label>
+        <div className="mb-1.5 flex items-center justify-between">
+          <Label className="mb-0">Password</Label>
+          <Link
+            href="/forgot-password"
+            className="text-sm font-medium text-[#0400FF] hover:text-[#0A0080]"
+          >
+            Forgot password?
+          </Link>
+        </div>
         <Input
           type="password"
           required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="mt-1"
+          placeholder="••••••••"
         />
       </div>
       {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
       <Button type="submit" disabled={loading} className="w-full">
         {loading ? "Signing in…" : "Sign in"}
       </Button>
-      <p className="text-center text-sm text-[#6B7280]">
-        <Link href="/forgot-password" className="text-[#1616C9] hover:underline">
-          Forgot password?
-        </Link>
-      </p>
     </form>
   );
 }
 
 export default function LoginPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#F7F8FC] px-4">
-      <div className="w-full max-w-md rounded-2xl border border-[#E5E7EB] bg-white p-8 shadow-sm">
-        <p className="text-sm font-semibold text-[#1616C9]">Waypoint</p>
-        <h1 className="mt-1 text-2xl font-semibold">Sign in</h1>
-        <div className="mt-6">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#080B3A] px-4 py-12">
+      <div
+        className="pointer-events-none absolute inset-0 opacity-40"
+        style={{
+          backgroundImage:
+            "radial-gradient(ellipse at 20% 20%, #0400FF55, transparent 50%), radial-gradient(ellipse at 80% 80%, #11165Aaa, transparent 45%)",
+        }}
+      />
+      <div className="relative w-full max-w-md overflow-hidden rounded-[16px] border border-[#292F68] bg-white shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
+        <div className="h-1.5 w-full bg-[#0400FF]" />
+        <div className="p-7 sm:p-9">
+          <div className="mb-6 text-center">
+            <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-[#0400FF] text-lg font-bold text-white">
+              W
+            </div>
+            <p className="text-sm font-semibold text-[#0400FF]">Waypoint</p>
+            <h1 className="mt-2 text-[28px] font-bold tracking-tight text-[#1F2937]">
+              Welcome back
+            </h1>
+            <p className="mt-1 text-sm text-[#6B7280]">
+              Sign in to continue planning your next adventure.
+            </p>
+          </div>
           <Suspense>
             <LoginForm />
           </Suspense>
-        </div>
-        <div className="mt-6 border-t border-[#E5E7EB] pt-6">
-          <p className="mb-3 text-center text-xs text-[#6B7280]">
-            Or explore a sample Paris trip without signing in
+          <div className="my-6 flex items-center gap-3">
+            <div className="h-px flex-1 bg-[#E1E5F0]" />
+            <span className="text-xs text-[#9299B5]">or</span>
+            <div className="h-px flex-1 bg-[#E1E5F0]" />
+          </div>
+          <TryDemoButton className="w-full" variant="secondary" />
+          <p className="mt-6 text-center text-sm text-[#6B7280]">
+            No account?{" "}
+            <Link
+              href="/signup"
+              className="font-semibold text-[#0400FF] hover:text-[#0A0080]"
+            >
+              Create account
+            </Link>
           </p>
-          <TryDemoButton className="w-full" />
         </div>
-        <p className="mt-6 text-center text-sm text-[#6B7280]">
-          No account?{" "}
-          <Link href="/signup" className="text-[#1616C9] hover:underline">
-            Sign up
-          </Link>
-        </p>
       </div>
     </div>
   );
