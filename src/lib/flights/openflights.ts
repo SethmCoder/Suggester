@@ -56,6 +56,8 @@ type Cache = {
   airportsList: OpenFlightsAirport[];
   /** "SEA-HND" → airline codes that fly the route */
   routes: Map<string, string[]>;
+  /** How many OpenFlights route legs touch this IATA (proxy for commercial activity). */
+  routeDegree: Map<string, number>;
   airlineNames: Map<string, string>;
   loadedAt: number;
 };
@@ -161,6 +163,7 @@ export async function loadOpenFlights(): Promise<Cache> {
   }
 
   const routes = new Map<string, string[]>();
+  const routeDegree = new Map<string, number>();
   for (const line of routesRaw.split("\n")) {
     if (!line.trim()) continue;
     const f = parseDatLine(line);
@@ -172,17 +175,29 @@ export async function loadOpenFlights(): Promise<Cache> {
     const list = routes.get(key) ?? [];
     if (airline && !list.includes(airline)) list.push(airline);
     routes.set(key, list);
+    routeDegree.set(src, (routeDegree.get(src) ?? 0) + 1);
+    routeDegree.set(dst, (routeDegree.get(dst) ?? 0) + 1);
   }
 
   const cache: Cache = {
     airportsByIata,
     airportsList,
     routes,
+    routeDegree,
     airlineNames,
     loadedAt: Date.now(),
   };
   setCache(cache);
   return cache;
+}
+
+function routeScore(cache: Cache, iata: string) {
+  return cache.routeDegree.get(iata) ?? 0;
+}
+
+/** True when OpenFlights lists at least one published airline route touching this airport. */
+export function hasPublishedService(cache: Cache, iata: string) {
+  return routeScore(cache, iata) > 0;
 }
 
 export async function findAirport(
@@ -196,37 +211,53 @@ export async function findAirport(
     return cache.airportsByIata.get(upper) ?? null;
   }
   const lower = q.toLowerCase();
-  // Exact city match first
-  let hit =
-    cache.airportsList.find(
-      (a) => a.city.toLowerCase() === lower || a.name.toLowerCase() === lower,
-    ) ?? null;
-  if (hit) return cache.airportsByIata.get(hit.iata) ?? hit;
-  hit =
-    cache.airportsList.find(
+  // Prefer the busiest airport for a city name (Paris → CDG, not LBG)
+  const cityHits = cache.airportsList.filter(
+    (a) => a.city.toLowerCase() === lower || a.name.toLowerCase() === lower,
+  );
+  if (cityHits.length) {
+    cityHits.sort(
+      (a, b) => routeScore(cache, b.iata) - routeScore(cache, a.iata),
+    );
+    const best = cityHits[0];
+    return cache.airportsByIata.get(best.iata) ?? best;
+  }
+  const partial = cache.airportsList
+    .filter(
       (a) =>
         a.city.toLowerCase().includes(lower) ||
-        a.name.toLowerCase().includes(lower) ||
-        a.iata.toLowerCase() === lower,
-    ) ?? null;
+        a.name.toLowerCase().includes(lower),
+    )
+    .sort((a, b) => routeScore(cache, b.iata) - routeScore(cache, a.iata));
+  const hit = partial[0] ?? null;
   return hit ? cache.airportsByIata.get(hit.iata) ?? hit : null;
 }
 
 export async function searchAirports(
   query: string,
   limit = 8,
+  near?: { lat: number; lng: number },
 ): Promise<OpenFlightsAirport[]> {
   const q = query.trim().toLowerCase();
-  if (q.length < 1) return [];
   const cache = await loadOpenFlights();
-  if (/^[a-z]{3}$/.test(q)) {
+  if (q.length >= 1 && /^[a-z]{3}$/.test(q)) {
     const exact = cache.airportsByIata.get(q.toUpperCase());
     return exact ? [exact] : [];
   }
+
+  // Empty query + location → nearest airports for the area
+  if (q.length < 1 && near) {
+    return nearbyAirports(near.lat, near.lng, limit);
+  }
+  if (q.length < 1) return [];
+
   const scored: { a: OpenFlightsAirport; score: number }[] = [];
   const seen = new Set<string>();
   for (const a of cache.airportsList) {
-    if (seen.has(a.iata)) continue;
+    if (!a.iata || seen.has(a.iata)) continue;
+    const degree = routeScore(cache, a.iata);
+    // Skip airports with no published airline routes (e.g. LBG business jet field)
+    if (degree < 1) continue;
     const city = a.city.toLowerCase();
     const name = a.name.toLowerCase();
     let score = 0;
@@ -236,11 +267,52 @@ export async function searchAirports(
     else if (name.startsWith(q)) score = 60;
     else if (city.includes(q) || name.includes(q)) score = 40;
     else continue;
+    // Busier hubs rank higher (CDG/ORY beat LBG)
+    score += Math.min(30, Math.log10(degree + 1) * 12);
+    if (near) {
+      const km = haversineKm(near.lat, near.lng, a.lat, a.lng);
+      score += Math.max(0, 25 - km / 40);
+    }
     seen.add(a.iata);
     scored.push({ a: cache.airportsByIata.get(a.iata) ?? a, score });
   }
   return scored
     .sort((x, y) => y.score - x.score)
+    .slice(0, limit)
+    .map((s) => s.a);
+}
+
+/** Closest commercial IATA airports to a lat/lng (for city-area dropdowns). */
+export async function nearbyAirports(
+  lat: number,
+  lng: number,
+  limit = 8,
+  maxKm = 250,
+): Promise<OpenFlightsAirport[]> {
+  const cache = await loadOpenFlights();
+  const scored: { a: OpenFlightsAirport; km: number; degree: number }[] = [];
+  const seen = new Set<string>();
+  for (const a of cache.airportsList) {
+    if (!a.iata || seen.has(a.iata)) continue;
+    const degree = routeScore(cache, a.iata);
+    if (degree < 1) continue;
+    const km = haversineKm(lat, lng, a.lat, a.lng);
+    if (km > maxKm) continue;
+    seen.add(a.iata);
+    scored.push({
+      a: cache.airportsByIata.get(a.iata) ?? a,
+      km,
+      degree,
+    });
+  }
+  return scored
+    .sort((x, y) => {
+      // Prefer major hubs over tiny nearby fields, then distance
+      const hubX = Math.log10(x.degree + 1);
+      const hubY = Math.log10(y.degree + 1);
+      if (Math.abs(hubY - hubX) > 0.35) return hubY - hubX;
+      return x.km - y.km;
+    })
     .slice(0, limit)
     .map((s) => s.a);
 }
@@ -285,16 +357,52 @@ export async function estimateFlight(input: {
   arrivalBufferMinutes?: number;
 }): Promise<FlightEstimate | null> {
   const from = await findAirport(input.from);
-  const to = await findAirport(input.to);
+  let to = await findAirport(input.to);
   if (!from || !to) return null;
 
   const cache = await loadOpenFlights();
-  const key = `${from.iata}-${to.iata}`;
-  const airlineCodes = cache.routes.get(key) ?? [];
+  let key = `${from.iata}-${to.iata}`;
+  let airlineCodes = cache.routes.get(key) ?? [];
+
+  // If this pair has no published route, try a busier airport near the destination
+  // that OpenFlights actually lists from the origin (HND→LBG → HND→CDG).
+  let reroutedNote = "";
+  if (!airlineCodes.length) {
+    const alternates = await nearbyAirports(to.lat, to.lng, 12, 120);
+    const better = alternates.find((a) => {
+      if (a.iata === to!.iata) return false;
+      const codes = cache.routes.get(`${from.iata}-${a.iata}`) ?? [];
+      return codes.length > 0;
+    });
+    if (better) {
+      reroutedNote = `Switched arrival ${to.iata} → ${better.iata} (no published ${from.iata}→${to.iata} service). `;
+      to = better;
+      key = `${from.iata}-${to.iata}`;
+      airlineCodes = cache.routes.get(key) ?? [];
+    }
+  }
+
   const routeKnown = airlineCodes.length > 0;
   const sampleAirlines = airlineCodes
     .slice(0, 5)
     .map((c) => cache.airlineNames.get(c) ?? c);
+
+  // Still no route — refuse to invent a fake commercial flight
+  if (!routeKnown) {
+    return {
+      from,
+      to,
+      distanceKm: haversineKm(from.lat, from.lng, to.lat, to.lng),
+      durationMinutes: 0,
+      routeKnown: false,
+      sampleAirlines: [],
+      assumedDepartureLocal: input.departureLocal ?? "10:00",
+      estimatedArrivalLocal: "—",
+      arrivalDayOffset: 0,
+      suggestedDayStart: "12:00",
+      note: `${reroutedNote}No published OpenFlights airline route ${from.iata}→${to.iata}. Pick a commercial airport pair (e.g. HND→CDG) — we do not invent flight times for unpublished routes.`,
+    };
+  }
 
   const distanceKm = haversineKm(from.lat, from.lng, to.lat, to.lng);
   const durationMinutes = estimateBlockMinutes(distanceKm);
@@ -324,9 +432,7 @@ export async function estimateFlight(input: {
   // If buffer crosses midnight, fold into day offset note only for dayStart same calendar arrival day.
   const suggestedDayStart = ready.time;
 
-  const note = routeKnown
-    ? `OpenFlights lists ${airlineCodes.length} airline route(s) ${from.iata}→${to.iata}. Times are estimates (no live schedules).`
-    : `No published OpenFlights route ${from.iata}→${to.iata}; duration is great-circle estimate only.`;
+  const note = `${reroutedNote}OpenFlights lists ${airlineCodes.length} airline route(s) ${from.iata}→${to.iata}. Times are estimates (no live schedules).`;
 
   return {
     from,

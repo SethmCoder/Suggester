@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
@@ -32,6 +32,9 @@ type LegDraft = {
   lat?: number;
   lng?: number;
   countryCode?: string;
+  hotelLat?: number;
+  hotelLng?: number;
+  hotelPlaceId?: string;
 };
 
 type CitySuggestion = {
@@ -42,6 +45,51 @@ type CitySuggestion = {
   lng: number;
   label: string;
 };
+
+type HotelSuggestion = {
+  placeId: string;
+  name: string;
+  address: string | null;
+  lat: number;
+  lng: number;
+  label: string;
+};
+
+type AirportSuggestion = {
+  iata: string;
+  name: string;
+  city: string;
+  country: string;
+  lat: number;
+  lng: number;
+  label: string;
+};
+
+function SuggestionList({
+  items,
+  onPick,
+}: {
+  items: { key: string; label: string }[];
+  onPick: (index: number) => void;
+}) {
+  if (!items.length) return null;
+  return (
+    <ul className="absolute z-20 mt-1 max-h-44 w-full overflow-auto rounded-[10px] border border-[#E1E5F0] bg-white shadow-lg">
+      {items.map((item, index) => (
+        <li key={item.key}>
+          <button
+            type="button"
+            className="w-full px-3 py-2 text-left text-sm hover:bg-[#DDE1FF]"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onPick(index)}
+          >
+            {item.label}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export function CreateTripWizard({
   previewMode = false,
@@ -84,7 +132,28 @@ export function CreateTripWizard({
   const [citySuggestions, setCitySuggestions] = useState<
     Record<number, CitySuggestion[]>
   >({});
+  const [hotelSuggestions, setHotelSuggestions] = useState<
+    Record<number, HotelSuggestion[]>
+  >({});
+  const [departureSuggestions, setDepartureSuggestions] = useState<
+    CitySuggestion[]
+  >([]);
+  const [departureCoords, setDepartureCoords] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [originAirportSuggestions, setOriginAirportSuggestions] = useState<
+    AirportSuggestion[]
+  >([]);
+  const [destAirportSuggestions, setDestAirportSuggestions] = useState<
+    AirportSuggestion[]
+  >([]);
   const [flightHint, setFlightHint] = useState<string | null>(null);
+  const hotelTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const airportTimers = useRef<{
+    origin?: ReturnType<typeof setTimeout>;
+    dest?: ReturnType<typeof setTimeout>;
+  }>({});
 
   const totalDays = useMemo(
     () => legs.reduce((s, l) => s + Math.max(1, l.days || 1), 0),
@@ -114,6 +183,118 @@ export function CreateTripWizard({
     }
   }
 
+  async function searchDepartureCities(q: string) {
+    if (q.trim().length < 2) {
+      setDepartureSuggestions([]);
+      return;
+    }
+    try {
+      const res = await fetch(
+        `/api/cities/search?q=${encodeURIComponent(q.trim())}`,
+      );
+      const data = await res.json();
+      setDepartureSuggestions(data.cities ?? []);
+    } catch {
+      setDepartureSuggestions([]);
+    }
+  }
+
+  async function searchHotels(legIndex: number, q: string, immediate = false) {
+    const leg = legs[legIndex];
+    if (leg?.lat == null || leg?.lng == null) {
+      setHotelSuggestions((s) => ({ ...s, [legIndex]: [] }));
+      return;
+    }
+    const run = async () => {
+      try {
+        const params = new URLSearchParams({
+          lat: String(leg.lat),
+          lng: String(leg.lng),
+          limit: "8",
+        });
+        if (q.trim()) params.set("q", q.trim());
+        const res = await fetch(`/api/hotels/search?${params}`);
+        const data = await res.json();
+        setHotelSuggestions((s) => ({
+          ...s,
+          [legIndex]: data.hotels ?? [],
+        }));
+      } catch {
+        setHotelSuggestions((s) => ({ ...s, [legIndex]: [] }));
+      }
+    };
+    clearTimeout(hotelTimers.current[legIndex]);
+    if (immediate) void run();
+    else hotelTimers.current[legIndex] = setTimeout(run, 280);
+  }
+
+  async function searchAirportsFor(
+    which: "origin" | "dest",
+    q: string,
+    near: { lat: number; lng: number } | null,
+    immediate = false,
+  ) {
+    const run = async () => {
+      try {
+        const params = new URLSearchParams({ limit: "8" });
+        if (q.trim()) params.set("q", q.trim());
+        if (near) {
+          params.set("lat", String(near.lat));
+          params.set("lng", String(near.lng));
+        }
+        if (!q.trim() && !near) {
+          if (which === "origin") setOriginAirportSuggestions([]);
+          else setDestAirportSuggestions([]);
+          return;
+        }
+        const res = await fetch(`/api/flights/lookup?${params}`);
+        const data = await res.json();
+        const list = (data.airports ?? []) as AirportSuggestion[];
+        if (which === "origin") setOriginAirportSuggestions(list);
+        else setDestAirportSuggestions(list);
+      } catch {
+        if (which === "origin") setOriginAirportSuggestions([]);
+        else setDestAirportSuggestions([]);
+      }
+    };
+    clearTimeout(airportTimers.current[which]);
+    if (immediate) void run();
+    else airportTimers.current[which] = setTimeout(run, 220);
+  }
+
+  async function refreshFlightEstimate(from?: string, to?: string) {
+    const origin = from || form.originAirport || form.departureCity;
+    const dest = to || form.destinationAirport || legs[0]?.city;
+    if (!origin || !dest) {
+      setFlightHint(null);
+      return;
+    }
+    try {
+      const res = await fetch(
+        `/api/flights/lookup?from=${encodeURIComponent(origin)}&to=${encodeURIComponent(dest)}`,
+      );
+      const data = await res.json();
+      if (!res.ok || !data.estimate) {
+        setFlightHint(data.error ?? "Could not estimate this flight");
+        return;
+      }
+      const e = data.estimate;
+      setForm((f) => ({
+        ...f,
+        originAirport: e.from.iata,
+        destinationAirport: e.to.iata,
+        dayStart: e.routeKnown ? e.suggestedDayStart : f.dayStart,
+      }));
+      setFlightHint(
+        e.routeKnown
+          ? `${e.from.iata} → ${e.to.iata} · ~${Math.round(e.durationMinutes / 60)}h ${e.durationMinutes % 60}m · lands ~${e.estimatedArrivalLocal} local${e.arrivalDayOffset ? ` (+${e.arrivalDayOffset}d)` : ""} · sightseeing from ${e.suggestedDayStart}. ${e.note}`
+          : e.note,
+      );
+    } catch {
+      setFlightHint("Flight lookup unavailable right now");
+    }
+  }
+
   function pickCity(legIndex: number, c: CitySuggestion) {
     setLegs((prev) =>
       prev.map((l, i) =>
@@ -130,7 +311,78 @@ export function CreateTripWizard({
       ),
     );
     setCitySuggestions((s) => ({ ...s, [legIndex]: [] }));
+    // Prefetch nearby hotels + suggest arrival airport for first city
+    void (async () => {
+      try {
+        const params = new URLSearchParams({
+          lat: String(c.lat),
+          lng: String(c.lng),
+          limit: "8",
+        });
+        const res = await fetch(`/api/hotels/search?${params}`);
+        const data = await res.json();
+        setHotelSuggestions((s) => ({
+          ...s,
+          [legIndex]: data.hotels ?? [],
+        }));
+      } catch {
+        /* ignore */
+      }
+      if (legIndex === 0) {
+        void searchAirportsFor("dest", "", { lat: c.lat, lng: c.lng }, true);
+      }
+    })();
   }
+
+  function pickHotel(legIndex: number, h: HotelSuggestion) {
+    setLegs((prev) =>
+      prev.map((l, i) =>
+        i === legIndex
+          ? {
+              ...l,
+              hotel: h.name,
+              hotelLat: h.lat,
+              hotelLng: h.lng,
+              hotelPlaceId: h.placeId,
+            }
+          : l,
+      ),
+    );
+    setHotelSuggestions((s) => ({ ...s, [legIndex]: [] }));
+  }
+
+  function pickDepartureCity(c: CitySuggestion) {
+    setForm((f) => ({ ...f, departureCity: c.name }));
+    setDepartureCoords({ lat: c.lat, lng: c.lng });
+    setDepartureSuggestions([]);
+    void searchAirportsFor("origin", "", { lat: c.lat, lng: c.lng }, true);
+  }
+
+  function pickAirport(which: "origin" | "dest", a: AirportSuggestion) {
+    if (which === "origin") {
+      setForm((f) => ({ ...f, originAirport: a.iata }));
+      setOriginAirportSuggestions([]);
+      void refreshFlightEstimate(a.iata, form.destinationAirport || legs[0]?.city);
+    } else {
+      setForm((f) => ({ ...f, destinationAirport: a.iata }));
+      setDestAirportSuggestions([]);
+      void refreshFlightEstimate(form.originAirport || form.departureCity, a.iata);
+    }
+  }
+
+  // When first destination city gains coords, seed arrival-airport options
+  useEffect(() => {
+    const first = legs[0];
+    if (first?.lat != null && first?.lng != null && !form.destinationAirport) {
+      void searchAirportsFor(
+        "dest",
+        "",
+        { lat: first.lat, lng: first.lng },
+        true,
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional on first-leg coords
+  }, [legs[0]?.lat, legs[0]?.lng]);
 
   function toggleInterest(i: string) {
     setForm((f) => ({
@@ -188,6 +440,9 @@ export function CreateTripWizard({
           lat: l.lat,
           lng: l.lng,
           countryCode: l.countryCode,
+          hotelLat: l.hotelLat,
+          hotelLng: l.hotelLng,
+          hotelPlaceId: l.hotelPlaceId,
         })),
     };
 
@@ -468,20 +723,55 @@ export function CreateTripWizard({
                       />
                     </div>
                   </div>
-                  <div>
+                  <div className="relative">
                     <Label>Hotel name or address</Label>
                     <Input
                       value={leg.hotel}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const hotel = e.target.value;
                         setLegs((prev) =>
                           prev.map((l, j) =>
-                            j === i ? { ...l, hotel: e.target.value } : l,
+                            j === i
+                              ? {
+                                  ...l,
+                                  hotel,
+                                  hotelLat: undefined,
+                                  hotelLng: undefined,
+                                  hotelPlaceId: undefined,
+                                }
+                              : l,
                           ),
-                        )
-                      }
+                        );
+                        void searchHotels(i, hotel);
+                      }}
+                      onFocus={() => {
+                        if (leg.lat != null && leg.lng != null) {
+                          void searchHotels(i, leg.hotel, true);
+                        }
+                      }}
                       className="mt-1"
-                      placeholder="Hotel name in this city"
+                      placeholder={
+                        leg.lat != null
+                          ? "Search hotels near this city"
+                          : "Pick a city first"
+                      }
+                      autoComplete="off"
+                      disabled={leg.lat == null}
                     />
+                    <SuggestionList
+                      items={(hotelSuggestions[i] ?? []).map((h) => ({
+                        key: h.placeId,
+                        label: h.label,
+                      }))}
+                      onPick={(idx) =>
+                        pickHotel(i, hotelSuggestions[i][idx])
+                      }
+                    />
+                    {leg.lat != null && !(hotelSuggestions[i]?.length) ? (
+                      <p className="mt-1 text-[11px] text-[#6B7280]">
+                        Focus or type to list nearby hotels from OpenStreetMap.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -490,80 +780,112 @@ export function CreateTripWizard({
                 {endDate ? ` · ends ${endDate}` : ""}
               </p>
             </div>
-            <div>
+            <div className="relative">
               <Label>Departure city (optional)</Label>
               <Input
                 value={form.departureCity}
-                onChange={(e) =>
-                  setForm({ ...form, departureCity: e.target.value })
-                }
+                onChange={(e) => {
+                  setForm({ ...form, departureCity: e.target.value });
+                  setDepartureCoords(null);
+                  void searchDepartureCities(e.target.value);
+                }}
                 className="mt-1"
                 placeholder="Seattle"
+                autoComplete="off"
+              />
+              <SuggestionList
+                items={departureSuggestions.map((c) => ({
+                  key: String(c.id),
+                  label: c.label,
+                }))}
+                onPick={(idx) => pickDepartureCity(departureSuggestions[idx])}
               />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div>
+              <div className="relative">
                 <Label>Start airport (IATA)</Label>
                 <Input
                   value={form.originAirport}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      originAirport: e.target.value.toUpperCase(),
-                    })
+                  onChange={(e) => {
+                    const originAirport = e.target.value.toUpperCase();
+                    setForm({ ...form, originAirport });
+                    void searchAirportsFor(
+                      "origin",
+                      originAirport,
+                      departureCoords,
+                    );
+                  }}
+                  onFocus={() =>
+                    void searchAirportsFor(
+                      "origin",
+                      form.originAirport,
+                      departureCoords,
+                      true,
+                    )
                   }
-                  onBlur={async () => {
-                    const from =
-                      form.originAirport || form.departureCity;
-                    const to =
-                      form.destinationAirport || legs[0]?.city;
-                    if (!from || !to) {
-                      setFlightHint(null);
-                      return;
-                    }
-                    try {
-                      const res = await fetch(
-                        `/api/flights/lookup?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
-                      );
-                      const data = await res.json();
-                      if (!res.ok || !data.estimate) {
-                        setFlightHint(
-                          data.error ?? "Could not estimate this flight",
-                        );
-                        return;
-                      }
-                      const e = data.estimate;
-                      setForm((f) => ({
-                        ...f,
-                        originAirport: e.from.iata,
-                        destinationAirport: e.to.iata,
-                        dayStart: e.suggestedDayStart,
-                      }));
-                      setFlightHint(
-                        `${e.from.iata} → ${e.to.iata} · ~${Math.round(e.durationMinutes / 60)}h ${e.durationMinutes % 60}m · lands ~${e.estimatedArrivalLocal} local${e.arrivalDayOffset ? ` (+${e.arrivalDayOffset}d)` : ""} · sightseeing from ${e.suggestedDayStart}. ${e.note}`,
-                      );
-                    } catch {
-                      setFlightHint("Flight lookup unavailable right now");
-                    }
+                  onBlur={() => {
+                    window.setTimeout(() => {
+                      void refreshFlightEstimate();
+                      setOriginAirportSuggestions([]);
+                    }, 150);
                   }}
                   className="mt-1"
-                  placeholder="SEA"
-                  maxLength={3}
+                  placeholder="SEA or search…"
+                  autoComplete="off"
+                />
+                <SuggestionList
+                  items={originAirportSuggestions.map((a) => ({
+                    key: a.iata + a.name,
+                    label: a.label,
+                  }))}
+                  onPick={(idx) =>
+                    pickAirport("origin", originAirportSuggestions[idx])
+                  }
                 />
               </div>
-              <div>
+              <div className="relative">
                 <Label>Arrival airport (IATA)</Label>
                 <Input
                   value={form.destinationAirport}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      destinationAirport: e.target.value.toUpperCase(),
-                    })
-                  }
+                  onChange={(e) => {
+                    const destinationAirport = e.target.value.toUpperCase();
+                    setForm({ ...form, destinationAirport });
+                    const near =
+                      legs[0]?.lat != null && legs[0]?.lng != null
+                        ? { lat: legs[0].lat, lng: legs[0].lng }
+                        : null;
+                    void searchAirportsFor("dest", destinationAirport, near);
+                  }}
+                  onFocus={() => {
+                    const near =
+                      legs[0]?.lat != null && legs[0]?.lng != null
+                        ? { lat: legs[0].lat, lng: legs[0].lng }
+                        : null;
+                    void searchAirportsFor(
+                      "dest",
+                      form.destinationAirport,
+                      near,
+                      true,
+                    );
+                  }}
+                  onBlur={() => {
+                    window.setTimeout(() => {
+                      void refreshFlightEstimate();
+                      setDestAirportSuggestions([]);
+                    }, 150);
+                  }}
                   className="mt-1"
-                  placeholder="HND"
-                  maxLength={4}
+                  placeholder="HND or search…"
+                  autoComplete="off"
+                />
+                <SuggestionList
+                  items={destAirportSuggestions.map((a) => ({
+                    key: a.iata + a.name,
+                    label: a.label,
+                  }))}
+                  onPick={(idx) =>
+                    pickAirport("dest", destAirportSuggestions[idx])
+                  }
                 />
               </div>
             </div>
@@ -573,8 +895,9 @@ export function CreateTripWizard({
               </p>
             ) : (
               <p className="text-xs text-[#6B7280]">
-                Set airports (e.g. SEA → HND) to estimate arrival from OpenFlights
-                data so day 1 does not schedule impossible morning stops.
+                Pick airports from the lists (nearest to your cities) to estimate
+                arrival from OpenFlights so day 1 does not schedule impossible
+                morning stops.
               </p>
             )}
             <div className="grid gap-4 sm:grid-cols-2">

@@ -2,12 +2,15 @@ import { NextResponse } from "next/server";
 import {
   estimateFlight,
   listRoutesFrom,
+  nearbyAirports,
   searchAirports,
 } from "@/lib/flights/openflights";
 
 /**
  * OpenFlights-backed airport / route lookup (no commercial flight API).
  * GET ?q=SEA — airport search
+ * GET ?q=sea&lat=&lng= — search biased to area
+ * GET ?lat=&lng= — nearest airports (empty q)
  * GET ?from=SEA&to=HND — estimate block time + arrival
  * GET ?from=SEA&routes=1 — sample destinations from origin
  */
@@ -19,10 +22,24 @@ export async function GET(req: Request) {
     const to = searchParams.get("to");
     const routes = searchParams.get("routes");
     const dep = searchParams.get("dep") ?? undefined;
+    const lat = Number(searchParams.get("lat"));
+    const lng = Number(searchParams.get("lng"));
+    const near =
+      Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : undefined;
 
-    if (q) {
-      const airports = await searchAirports(q, 10);
-      return NextResponse.json({ airports });
+    if (q != null || near) {
+      const airports =
+        q && q.trim()
+          ? await searchAirports(q, 10, near)
+          : near
+            ? await nearbyAirports(near.lat, near.lng, 10)
+            : [];
+      return NextResponse.json({
+        airports: airports.map((a) => ({
+          ...a,
+          label: `${a.iata} · ${a.name} (${a.city})`,
+        })),
+      });
     }
 
     if (from && routes === "1") {
