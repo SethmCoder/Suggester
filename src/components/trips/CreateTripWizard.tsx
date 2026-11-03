@@ -43,7 +43,12 @@ type CitySuggestion = {
   label: string;
 };
 
-export function CreateTripWizard() {
+export function CreateTripWizard({
+  previewMode = false,
+}: {
+  /** Demo visitors can explore the form; generating requires signup. */
+  previewMode?: boolean;
+}) {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -137,6 +142,11 @@ export function CreateTripWizard() {
   }
 
   async function submit() {
+    if (previewMode) {
+      setError(null);
+      router.push("/signup?next=/trips/new");
+      return;
+    }
     setLoading(true);
     setError(null);
     setProgress("Saving trip…");
@@ -308,9 +318,19 @@ export function CreateTripWizard() {
 
   return (
     <div className="mx-auto max-w-2xl" data-tour="tour-create-wizard">
+      {previewMode ? (
+        <div className="mb-4 rounded-[12px] border border-[#DDE1FF] bg-[#F5F7FF] px-4 py-3 text-sm text-[#080B3A]">
+          <p className="font-semibold">Demo preview — create trip</p>
+          <p className="mt-1 text-[#6B7280]">
+            Try cities, dates, hotels, and interests here. Generating a real
+            itinerary needs a free account — you&apos;ll be guided to sign up
+            when you finish.
+          </p>
+        </div>
+      ) : null}
       <div className="mb-2">
         <h1 className="text-[28px] font-bold tracking-tight text-[#080B3A]">
-          Create a trip
+          {previewMode ? "Create a trip (preview)" : "Create a trip"}
         </h1>
         <p className="mt-1 text-sm text-[#6B7280]">
           A guided planning flow — skip optional fields anytime.
@@ -795,7 +815,11 @@ export function CreateTripWizard() {
             </Button>
           ) : (
             <Button type="button" onClick={submit} disabled={loading}>
-              {loading ? "Working…" : "Generate itinerary"}
+              {loading
+                ? "Working…"
+                : previewMode
+                  ? "Sign up to generate"
+                  : "Generate itinerary"}
             </Button>
           )}
         </div>

@@ -68,11 +68,33 @@ export function TripMap({
       );
       mapRef.current = map;
 
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        maxZoom: 19,
-      }).addTo(map);
+      // Satellite basemap + place/road labels overlay (keeps readable names)
+      L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        {
+          attribution:
+            "Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics",
+          maxZoom: 19,
+        },
+      ).addTo(map);
+      L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+        {
+          attribution: "Labels &copy; Esri",
+          maxZoom: 19,
+          opacity: 0.95,
+          pane: "overlayPane",
+        },
+      ).addTo(map);
+      L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}",
+        {
+          attribution: "Roads &copy; Esri",
+          maxZoom: 19,
+          opacity: 0.85,
+          pane: "overlayPane",
+        },
+      ).addTo(map);
 
       const bounds = L.latLngBounds([]);
       pins.forEach((p) => {
@@ -112,6 +134,7 @@ export function TripMap({
         const map = new window.google.maps.Map(ref.current, {
           center: { lat: center.lat, lng: center.lng },
           zoom: 13,
+          mapTypeId: "hybrid", // satellite + labels
         });
         const bounds = new window.google.maps.LatLngBounds();
         pins.forEach((p) => {
@@ -193,7 +216,7 @@ export function TripMap({
     <div className="relative h-full min-h-[240px] w-full overflow-hidden rounded-xl bg-[#F7F8FC]">
       <div ref={ref} className="absolute inset-0 h-full w-full" />
       <span className="pointer-events-none absolute bottom-2 left-2 z-[400] rounded bg-white/90 px-2 py-0.5 text-[10px] text-[#6B7280] shadow">
-        {usingGoogle ? "Google Maps" : "OpenStreetMap"}
+        {usingGoogle ? "Google hybrid" : "Satellite + labels"}
       </span>
     </div>
   );

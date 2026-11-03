@@ -29,12 +29,9 @@ export async function middleware(request: NextRequest) {
       !path.startsWith("/trips/preview") &&
       path !== "/trips/new");
 
-  // Demo cookie unlocks dashboard + demo trips without Supabase auth
+  // Demo cookie unlocks dashboard + demo trips + create-trip preview
   if (demo && isProtected) {
-    if (path === "/trips/new") {
-      return NextResponse.redirect(new URL("/dashboard?demo=create-locked", request.url));
-    }
-    // Allow all sample demos; lock other /trips/* routes to the Paris sample
+    // /trips/new is allowed as an interactive preview (submit still requires signup)
     if (
       path.startsWith("/trips/") &&
       !isDemoTripPath(path) &&

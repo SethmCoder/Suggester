@@ -129,12 +129,19 @@ export default function DashboardPage() {
             Build personalized itineraries, refine them with AI, and keep every
             stop geographically smart.
           </p>
-          <Link href={isDemo ? "/signup" : "/trips/new"} className="mt-6 inline-flex">
-            <Button>
-              <IconPlane size={16} />
-              {isDemo ? "Sign up to create trips" : "Create a Trip"}
-            </Button>
-          </Link>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link href="/trips/new" className="inline-flex">
+              <Button>
+                <IconPlane size={16} />
+                {isDemo ? "Preview create trip" : "Create a Trip"}
+              </Button>
+            </Link>
+            {isDemo ? (
+              <Link href="/signup" className="inline-flex">
+                <Button variant="secondary">Sign up to save trips</Button>
+              </Link>
+            ) : null}
+          </div>
         </div>
       </section>
 
@@ -175,23 +182,51 @@ export default function DashboardPage() {
             Create your first itinerary and Waypoint will craft a day-by-day plan
             around your interests and schedule.
           </p>
-          <Link
-            href={isDemo ? "/trips/demo-paris" : "/trips/new"}
-            className="mt-6 inline-flex"
-          >
+          <Link href="/trips/new" className="mt-6 inline-flex">
             <Button>
-              {isDemo ? "Open Paris demo" : "Create a Trip"}
+              {isDemo ? "Preview create trip" : "Create a Trip"}
             </Button>
           </Link>
         </div>
       ) : (
         <div id="trips" className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          {isDemo ? <CreateTripPreviewCard /> : null}
           {filtered.map((trip) => (
             <TripCard key={trip.id} trip={trip} />
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+function CreateTripPreviewCard() {
+  return (
+    <Link
+      href="/trips/new"
+      className="group flex flex-col overflow-hidden rounded-[14px] border border-dashed border-[#0400FF]/35 bg-white shadow-[0_4px_20px_rgba(8,11,58,0.05)] transition hover:-translate-y-0.5 hover:border-[#0400FF] hover:shadow-[0_12px_32px_rgba(8,11,58,0.1)]"
+    >
+      <div className="relative flex h-40 items-center justify-center bg-gradient-to-br from-[#DDE1FF] via-[#F5F7FF] to-white">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0400FF] text-white shadow-lg shadow-[#0400FF]/30 transition group-hover:scale-105">
+          <IconPlane size={26} />
+        </div>
+        <span className="absolute right-3 top-3 rounded-md bg-[#080B3A] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+          Try the form
+        </span>
+      </div>
+      <div className="flex flex-1 flex-col space-y-1.5 p-4">
+        <h3 className="text-[16px] font-semibold text-[#1F2937]">
+          Create a trip
+        </h3>
+        <p className="text-sm text-[#6B7280]">
+          Preview cities, dates, hotels, and interests — the same flow you use
+          after signup.
+        </p>
+        <span className="inline-flex items-center gap-1 pt-2 text-sm font-semibold text-[#0400FF] group-hover:gap-2">
+          Open planner <IconArrowRight size={14} />
+        </span>
+      </div>
+    </Link>
   );
 }
 
