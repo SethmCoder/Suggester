@@ -22,26 +22,15 @@ export async function GET(req: Request) {
     const to = searchParams.get("to");
     const routes = searchParams.get("routes");
     const dep = searchParams.get("dep") ?? undefined;
-    const lat = Number(searchParams.get("lat"));
-    const lng = Number(searchParams.get("lng"));
+    // Important: Number(null) === 0, so only parse when params are present
+    const latRaw = searchParams.get("lat");
+    const lngRaw = searchParams.get("lng");
+    const lat = latRaw != null && latRaw !== "" ? Number(latRaw) : NaN;
+    const lng = lngRaw != null && lngRaw !== "" ? Number(lngRaw) : NaN;
     const near =
       Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : undefined;
 
-    if (q != null || near) {
-      const airports =
-        q && q.trim()
-          ? await searchAirports(q, 10, near)
-          : near
-            ? await nearbyAirports(near.lat, near.lng, 10)
-            : [];
-      return NextResponse.json({
-        airports: airports.map((a) => ({
-          ...a,
-          label: `${a.iata} · ${a.name} (${a.city})`,
-        })),
-      });
-    }
-
+    // Route / flight estimate takes priority over airport autocomplete
     if (from && routes === "1") {
       const list = await listRoutesFrom(from, 50);
       return NextResponse.json({ from: from.toUpperCase(), routes: list });
@@ -60,6 +49,21 @@ export async function GET(req: Request) {
         );
       }
       return NextResponse.json({ estimate });
+    }
+
+    if (q != null || near) {
+      const airports =
+        q && q.trim()
+          ? await searchAirports(q, 10, near)
+          : near
+            ? await nearbyAirports(near.lat, near.lng, 10)
+            : [];
+      return NextResponse.json({
+        airports: airports.map((a) => ({
+          ...a,
+          label: `${a.iata} · ${a.name} (${a.city})`,
+        })),
+      });
     }
 
     return NextResponse.json(

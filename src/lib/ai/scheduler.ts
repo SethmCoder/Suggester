@@ -50,6 +50,53 @@ export function orderByNearestNeighbor<T extends { lat: number; lng: number }>(
   return ordered;
 }
 
+/**
+ * Order stops by real path duration (OSRM), not crow-flies distance.
+ * Two places across a river sort far apart if the bridge is a long detour.
+ */
+export async function orderByRoutedNeighbor<
+  T extends { lat: number; lng: number },
+>(
+  items: T[],
+  start: { lat: number; lng: number } | undefined,
+  mode: "WALK" | "DRIVE" | "TRANSIT",
+): Promise<T[]> {
+  if (items.length <= 1) return items;
+
+  const { osmDurationMatrix } = await import("@/lib/maps/openstreetmap");
+
+  const seed: { lat: number; lng: number } = start ?? items[0];
+  const rest = start ? [...items] : items.slice(1);
+  const points = [seed, ...rest];
+  const matrix = await osmDurationMatrix({ mode, points });
+
+  if (!matrix) {
+    return orderByNearestNeighbor(items, start);
+  }
+
+  const ordered: T[] = start ? [] : [items[0]];
+  const remaining = rest.map((_, i) => i);
+  let current = 0; // index in `points`
+
+  while (remaining.length) {
+    let bestPos = 0;
+    let bestMin = Infinity;
+    for (let r = 0; r < remaining.length; r++) {
+      const pointIdx = remaining[r] + 1;
+      const minutes = matrix[current]?.[pointIdx] ?? Infinity;
+      if (minutes < bestMin) {
+        bestMin = minutes;
+        bestPos = r;
+      }
+    }
+    const restIdx = remaining.splice(bestPos, 1)[0];
+    ordered.push(rest[restIdx]);
+    current = restIdx + 1;
+  }
+
+  return ordered;
+}
+
 export function addMinutes(time: string, minutes: number): string {
   const [h, m] = time.split(":").map(Number);
   let total = h * 60 + m + minutes;

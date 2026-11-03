@@ -1,7 +1,7 @@
-import { computeDayRoute } from "@/lib/maps";
+import { computeDayRoute, estimateTravelFallback } from "@/lib/maps";
 import type { ActivityRow } from "@/lib/types/trip";
 import type { PatchOp } from "./patch";
-import { addMinutes, orderByNearestNeighbor } from "./scheduler";
+import { addMinutes, orderByRoutedNeighbor } from "./scheduler";
 
 export type Schedulable = {
   id: string;
@@ -139,12 +139,12 @@ export async function planDelayReshuffle(input: {
     (a) => a.lat != null && a.lng != null,
   ) as (ActivityRow & { lat: number; lng: number })[];
 
-  // Reorder keepers geographically from the first remaining stop when possible.
+  // Reorder by real path duration (bridges/detours), not crow-flies.
   let working: ActivityRow[] = candidates;
   if (geoReady.length >= 2) {
     const startPt = { lat: geoReady[0].lat, lng: geoReady[0].lng };
     const rest = geoReady.slice(1);
-    const orderedRest = orderByNearestNeighbor(rest, startPt);
+    const orderedRest = await orderByRoutedNeighbor(rest, startPt, mode);
     const noGeo = candidates.filter((a) => a.lat == null || a.lng == null);
     working = [geoReady[0], ...orderedRest, ...noGeo];
   }
@@ -153,17 +153,18 @@ export async function planDelayReshuffle(input: {
   const drop: ActivityRow[] = [];
   const moveNext: ActivityRow[] = [];
 
-  // Greedy pack from newDayStart with estimated travel (refined by OSM after).
+  // Greedy pack with path-aware travel estimates (OSRM retimes survivors after).
   let cursor = newDayStart;
   let prev: ActivityRow | null = null;
   for (const act of working) {
     const duration = act.duration_minutes ?? 60;
     let travel = 0;
     if (prev && prev.lat != null && prev.lng != null && act.lat != null && act.lng != null) {
-      // Temporary haversine estimate; OSM retimes later.
-      const km =
-        Math.hypot(act.lat - prev.lat, act.lng - prev.lng) * 111;
-      travel = Math.max(8, Math.ceil((km / (mode === "WALK" ? 4.5 : 22)) * 60));
+      travel = estimateTravelFallback(
+        mode,
+        { lat: prev.lat, lng: prev.lng },
+        { lat: act.lat, lng: act.lng },
+      ).durationMinutes;
     } else if (prev) {
       travel = 15;
     }

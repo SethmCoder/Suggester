@@ -296,17 +296,47 @@ export async function osmSearchInterestPlaces(input: {
   return hits;
 }
 
-/** OSRM public routing — free. */
+function osrmProfile(mode: "WALK" | "DRIVE" | "TRANSIT") {
+  // Foot/car follow the real path network (bridges, embankments, one-ways).
+  // Public OSRM has no GTFS transit — use foot as the city-transfer proxy.
+  return mode === "DRIVE" ? "car" : "foot";
+}
+
+/**
+ * Crow-flies fallback with a detour factor — never trusts raw straight-line
+ * time when a river/park may force a longer path. Prefer OSRM whenever possible.
+ */
+export function estimateTravelFallback(
+  mode: "WALK" | "DRIVE" | "TRANSIT",
+  from: { lat: number; lng: number },
+  to: { lat: number; lng: number },
+): { durationMinutes: number; distanceMeters: number } {
+  const km = haversineKm(from.lat, from.lng, to.lat, to.lng);
+  // Urban path networks are rarely straight; 1.4–1.6× reduces “across the river” optimism
+  const detour = mode === "WALK" ? 1.55 : 1.35;
+  const pathKm = km * detour;
+  const speedKmh = mode === "WALK" ? 4.5 : mode === "TRANSIT" ? 18 : 28;
+  return {
+    durationMinutes: Math.max(3, Math.ceil((pathKm / speedKmh) * 60)),
+    distanceMeters: Math.round(pathKm * 1000),
+  };
+}
+
+/** OSRM public routing — follows roads/paths (bridges, not water diagonals). */
 export async function osmComputeDayRoute(input: {
   mode: "WALK" | "DRIVE" | "TRANSIT";
   points: { lat: number; lng: number }[];
 }): Promise<DayRouteResult | null> {
   if (input.points.length < 2) {
-    return { legs: [], totalDurationMinutes: 0, totalDistanceMeters: 0 };
+    return {
+      legs: [],
+      totalDurationMinutes: 0,
+      totalDistanceMeters: 0,
+      source: "osrm",
+    };
   }
 
-  const profile =
-    input.mode === "WALK" ? "foot" : input.mode === "DRIVE" ? "car" : "foot";
+  const profile = osrmProfile(input.mode);
   const coords = input.points.map((p) => `${p.lng},${p.lat}`).join(";");
   const url = `https://router.project-osrm.org/route/v1/${profile}/${coords}?overview=false&steps=false`;
 
@@ -315,49 +345,90 @@ export async function osmComputeDayRoute(input: {
       headers: { "User-Agent": UA },
       signal: AbortSignal.timeout(15000),
     });
+    if (res.ok) {
+      const data = (await res.json()) as {
+        code?: string;
+        routes?: {
+          duration?: number;
+          distance?: number;
+          legs?: { duration?: number; distance?: number }[];
+        }[];
+      };
+      const route = data.routes?.[0];
+      if (route?.legs?.length) {
+        const legs = route.legs.map((leg) => ({
+          durationMinutes: Math.max(1, Math.ceil((leg.duration ?? 0) / 60)),
+          distanceMeters: Math.round(leg.distance ?? 0),
+          routed: true as const,
+        }));
+        return {
+          legs,
+          totalDurationMinutes: Math.ceil((route.duration ?? 0) / 60),
+          totalDistanceMeters: Math.round(route.distance ?? 0),
+          source: "osrm",
+        };
+      }
+    }
+  } catch {
+    /* fall through to estimate */
+  }
+
+  // Fallback: never leave travel at 0 — use detoured straight-line estimate
+  const legs = [];
+  let totalM = 0;
+  let totalMin = 0;
+  for (let i = 0; i < input.points.length - 1; i++) {
+    const est = estimateTravelFallback(
+      input.mode,
+      input.points[i],
+      input.points[i + 1],
+    );
+    legs.push({ ...est, routed: false as const });
+    totalM += est.distanceMeters;
+    totalMin += est.durationMinutes;
+  }
+  return {
+    legs,
+    totalDurationMinutes: totalMin,
+    totalDistanceMeters: totalM,
+    source: "estimate",
+  };
+}
+
+/**
+ * OSRM duration matrix — used to sequence stops by real path time so a
+ * near bank across a river is not treated as “next door.”
+ */
+export async function osmDurationMatrix(input: {
+  mode: "WALK" | "DRIVE" | "TRANSIT";
+  points: { lat: number; lng: number }[];
+}): Promise<number[][] | null> {
+  if (input.points.length < 2) return null;
+  // Public demo server: keep matrices small
+  if (input.points.length > 12) return null;
+
+  const profile = osrmProfile(input.mode);
+  const coords = input.points.map((p) => `${p.lng},${p.lat}`).join(";");
+  const url = `https://router.project-osrm.org/table/v1/${profile}/${coords}?annotations=duration`;
+
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": UA },
+      signal: AbortSignal.timeout(15000),
+    });
     if (!res.ok) return null;
     const data = (await res.json()) as {
-      routes?: {
-        duration?: number;
-        distance?: number;
-        legs?: { duration?: number; distance?: number }[];
-      }[];
+      durations?: (number | null)[][];
     };
-    const route = data.routes?.[0];
-    if (!route) return null;
-    const legs =
-      route.legs?.map((leg) => ({
-        durationMinutes: Math.ceil((leg.duration ?? 0) / 60),
-        distanceMeters: Math.round(leg.distance ?? 0),
-      })) ?? [];
-    return {
-      legs,
-      totalDurationMinutes: Math.ceil((route.duration ?? 0) / 60),
-      totalDistanceMeters: Math.round(route.distance ?? 0),
-    };
+    if (!data.durations?.length) return null;
+    return data.durations.map((row) =>
+      row.map((sec) =>
+        sec == null || !Number.isFinite(sec)
+          ? Number.POSITIVE_INFINITY
+          : sec / 60,
+      ),
+    );
   } catch {
-    // Haversine fallback estimates
-    const legs = [];
-    let totalM = 0;
-    let totalMin = 0;
-    for (let i = 0; i < input.points.length - 1; i++) {
-      const km = haversineKm(
-        input.points[i].lat,
-        input.points[i].lng,
-        input.points[i + 1].lat,
-        input.points[i + 1].lng,
-      );
-      const meters = Math.round(km * 1000);
-      const speedKmh = input.mode === "WALK" ? 4.5 : 25;
-      const minutes = Math.ceil((km / speedKmh) * 60);
-      legs.push({ durationMinutes: minutes, distanceMeters: meters });
-      totalM += meters;
-      totalMin += minutes;
-    }
-    return {
-      legs,
-      totalDurationMinutes: totalMin,
-      totalDistanceMeters: totalM,
-    };
+    return null;
   }
 }

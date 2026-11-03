@@ -19,8 +19,15 @@ export interface PlaceDetails extends PlaceHit {
 }
 
 export interface DayRouteResult {
-  legs: { durationMinutes: number; distanceMeters: number }[];
+  legs: {
+    durationMinutes: number;
+    distanceMeters: number;
+    /** True when this leg came from a road/path router (not crow-flies). */
+    routed?: boolean;
+  }[];
   totalDurationMinutes: number;
   totalDistanceMeters: number;
   polyline?: string;
+  /** osrm/google = network path; estimate = straight-line fallback. */
+  source?: "osrm" | "google" | "estimate";
 }

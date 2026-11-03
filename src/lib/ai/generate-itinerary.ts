@@ -29,12 +29,15 @@ import { buildItinerarySystemPrompt, buildItineraryUserPrompt } from "./prompts"
 import { itineraryGenerationSchema, type ItineraryGeneration } from "./schema";
 import { logger } from "../logger";
 import { checkVisitAgainstHours } from "./hours";
-import { addMinutes, orderByNearestNeighbor } from "./scheduler";
+import {
+  addMinutes,
+  haversineKm,
+  orderByRoutedNeighbor,
+} from "./scheduler";
 import type { TripLeg } from "../types/trip";
 import {
   estimateIntercityMinutes,
   expandLegsToDays,
-  haversineKm,
   legsLabel,
 } from "../trips/legs";
 import {
@@ -602,12 +605,13 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       lng: leg.hotelLng ?? leg.lng ?? geo.lng,
     };
 
-    const orderedIds = orderByNearestNeighbor(
+    const orderedIds = await orderByRoutedNeighbor(
       dayActs.map((a) => {
         const b = byId.get(a.placeId)!;
         return { ...a, lat: b.lat, lng: b.lng, placeId: a.placeId };
       }),
       startPt,
+      routeMode,
     );
 
     const activities: GeneratedActivity[] = [];
@@ -743,17 +747,45 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       .map((a) => ({ lat: a.lat, lng: a.lng }));
     const route = await computeDayRoute({
       mode: routeMode,
-      points: routePoints.length >= 2 ? routePoints : activities.map((a) => ({ lat: a.lat, lng: a.lng })),
+      points:
+        routePoints.length >= 2
+          ? routePoints
+          : activities.map((a) => ({ lat: a.lat, lng: a.lng })),
     });
     if (route && localStartIdx >= 0) {
+      if (route.source === "estimate") {
+        warnings.push(
+          "Some walking/driving times used a path estimate — live routing was unavailable. Times still include a detour buffer (not crow-flies across rivers).",
+        );
+      }
       for (let i = localStartIdx + 1; i < activities.length; i++) {
         const routeLeg = route.legs[i - localStartIdx - 1];
         const travel = routeLeg?.durationMinutes ?? 0;
         activities[i].travelMinutesFromPrev = travel;
         if (travel > 45) {
           warnings.push(
-            `Long transfer (${travel} min) before ${activities[i].name}`,
+            `Long transfer (${travel} min) before ${activities[i].name} — likely a real-path detour (bridge, one-way, or sparse paths), not crow-flies distance.`,
           );
+        }
+        // Flag when routed path is much longer than straight line (river banks, etc.)
+        if (
+          routeLeg?.routed &&
+          activities[i - 1].lat != null &&
+          activities[i].lat != null
+        ) {
+          const straightKm = haversineKm(
+            activities[i - 1].lat,
+            activities[i - 1].lng,
+            activities[i].lat,
+            activities[i].lng,
+          );
+          const routedKm = (routeLeg.distanceMeters ?? 0) / 1000;
+          if (straightKm > 0.05 && routedKm / straightKm >= 2.2) {
+            activities[i].scheduleWarnings = [
+              ...(activities[i].scheduleWarnings ?? []),
+              `Path is ~${Math.round(routedKm / straightKm)}× longer than straight-line (${Math.round(routedKm * 1000)} m vs ${Math.round(straightKm * 1000)} m) — expect bridges/detours.`,
+            ];
+          }
         }
         activities[i].startTime = addMinutes(
           activities[i - 1].startTime,

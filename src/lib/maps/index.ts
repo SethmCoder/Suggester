@@ -81,7 +81,16 @@ export async function computeDayRoute(
 ): Promise<DayRouteResult | null> {
   if (provider(cookieHeader) === "google") {
     const g = await googleRoutes.computeDayRoute(input);
-    if (g) return g;
+    if (g?.legs?.length) {
+      return {
+        ...g,
+        source: "google",
+        legs: g.legs.map((leg) => ({ ...leg, routed: true })),
+      };
+    }
   }
+  // OSRM (or detoured estimate) — always returns path-aware legs when possible
   return osm.osmComputeDayRoute(input);
 }
+
+export { osmDurationMatrix, estimateTravelFallback } from "./openstreetmap";
