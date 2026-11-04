@@ -3,7 +3,7 @@
  * Survives reloads without network; synced to server when PATCH succeeds.
  */
 
-import type { ActivityRow, TripListItem } from "@/lib/types/trip";
+import type { ActivityRow, TripLeg, TripListItem } from "@/lib/types/trip";
 
 const INDEX_KEY = "waypoint:offline-trips-index-v1";
 const SNAPSHOT_PREFIX = "waypoint:offline-trip:";
@@ -18,6 +18,8 @@ export type OfflineTripSnapshot = {
   offlineOnly?: boolean;
   /** Demo payload version — ignore stale local copies when bumped. */
   contentVersion?: number;
+  /** Multi-city stays with hotels + place-to-place transit. */
+  legs?: TripLeg[];
 };
 
 function readIndex(): string[] {
@@ -108,6 +110,7 @@ export function saveOfflineDayGroups(
     updatedAt: new Date().toISOString(),
     offlineOnly: existing?.offlineOnly,
     contentVersion: existing?.contentVersion,
+    legs: existing?.legs,
   });
 }
 

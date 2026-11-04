@@ -369,7 +369,10 @@ export async function planIntercityTransit(input: {
   const modeTitle = MODE_LABEL[mode];
   const fromAnchor = input.fromHotel?.trim() || input.fromCity;
   const toAnchor = input.toHotel?.trim() || input.toCity;
-  const name = `${modeTitle} · ${input.fromCity} → ${input.toCity}`;
+  const name =
+    input.fromHotel?.trim() || input.toHotel?.trim()
+      ? `${modeTitle} · ${fromAnchor} → ${toAnchor}`
+      : `${modeTitle} · ${input.fromCity} → ${input.toCity}`;
 
   const scheduleWarnings = [
     "Transit times are planned windows, not live booked tickets.",

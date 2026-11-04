@@ -5,7 +5,7 @@ import { expandLegsToDays, type DayCityAssignment } from "@/lib/trips/legs";
 export const DEMO_TRIP_ID = "demo-paris";
 export const DEMO_DUBAI_ID = "demo-dubai";
 /** Bump when demo payloads change so stale localStorage copies are ignored. */
-export const DEMO_CONTENT_VERSION = 4;
+export const DEMO_CONTENT_VERSION = 5;
 
 export const DEMO_BANNER =
   "Demo mode — sample data only. Place facts here are illustrative, not live-verified.";
@@ -38,6 +38,7 @@ export const demoDubaiLegs: TripLeg[] = [
     lat: 24.4764,
     lng: 54.3705,
     countryCode: "AE",
+    transitFromPrevious: "coach",
   },
 ];
 
@@ -361,8 +362,8 @@ export const demoDubaiActivities: ActivityRow[] = [
   act({
     id: "demo-dxb-a9",
     day_id: "demo-dxb-day-3",
-    name: "Coach / bus · Dubai → Abu Dhabi (demo)",
-    address: "Coach / bus · ~140 km · ~2h 0m",
+    name: "Coach / bus · Marina area → Corniche area (demo)",
+    address: "Dubai hotel → Abu Dhabi hotel · ~140 km · ~2h 0m",
     lat: 24.85,
     lng: 54.7,
     start_time: "08:45:00",
@@ -371,7 +372,7 @@ export const demoDubaiActivities: ActivityRow[] = [
     priority: "must_see",
     place_id: "transit:coach:Dubai:Abu Dhabi",
     planning_note:
-      "city=Abu Dhabi · Coach / bus for ~140 km. Depart ~08:45, arrive ~10:45 local (estimate). Usually no long-distance reservation required. Not a live timetable — verify schedules when booking.",
+      "city=Abu Dhabi · Hotel-to-hotel: Marina area (demo hotel) (Dubai) → Corniche area (demo hotel) (Abu Dhabi). Coach / bus for ~140 km. Depart ~08:45, arrive ~10:45 local (estimate). Usually no long-distance reservation required. Not a live timetable — verify schedules when booking.",
     schedule_warnings: [
       "Transit times are planned windows, not live booked tickets.",
     ],

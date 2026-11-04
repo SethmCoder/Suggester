@@ -529,6 +529,19 @@ export function CreateTripWizard({
         activities,
         updatedAt: new Date().toISOString(),
         offlineOnly: true,
+        legs: body.legs.map((l) => ({
+          city: l.city,
+          days: l.days,
+          hotel: l.hotel,
+          geonameId: l.geonameId,
+          lat: l.lat,
+          lng: l.lng,
+          countryCode: l.countryCode,
+          hotelLat: l.hotelLat,
+          hotelLng: l.hotelLng,
+          hotelPlaceId: l.hotelPlaceId,
+          transitFromPrevious: l.transitFromPrevious,
+        })),
       });
       router.push(`/trips/${tripId}`);
       router.refresh();

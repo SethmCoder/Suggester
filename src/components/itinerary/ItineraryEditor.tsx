@@ -27,7 +27,11 @@ import {
   getDemoTripPayload,
   isDemoTripId,
 } from "@/lib/demo/data";
-import { saveOfflineDayGroups, loadOfflineTrip } from "@/lib/offline/trips";
+import {
+  loadOfflineTrip,
+  saveOfflineDayGroups,
+  saveOfflineTrip,
+} from "@/lib/offline/trips";
 import type { DayCityAssignment } from "@/lib/trips/legs";
 import {
   formatIntercityModeLabel,
@@ -37,7 +41,24 @@ import {
 import { PopularityBadge } from "./PopularityBadge";
 import { TripMap } from "./TripMap";
 import { AssistantPanel } from "./AssistantPanel";
-import type { ActivityRow } from "@/lib/types/trip";
+import type { ActivityRow, LegTransitMode, TripLeg } from "@/lib/types/trip";
+
+const LEG_CARD_COLORS = [
+  { border: "border-[#0400FF]/35", bg: "bg-[#F5F7FF]", tag: "bg-[#0400FF]" },
+  { border: "border-[#0F766E]/35", bg: "bg-[#F0FDFA]", tag: "bg-[#0F766E]" },
+  { border: "border-[#B45309]/35", bg: "bg-[#FFF7ED]", tag: "bg-[#B45309]" },
+  { border: "border-[#6D28D9]/35", bg: "bg-[#F5F3FF]", tag: "bg-[#6D28D9]" },
+];
+
+const INTERCITY_MODE_OPTIONS: { value: LegTransitMode; label: string }[] = [
+  { value: "auto", label: "Auto (planner picks)" },
+  { value: "flight", label: "Flight" },
+  { value: "major_train", label: "Major train (book)" },
+  { value: "regional_rail", label: "Regional rail" },
+  { value: "coach", label: "Coach / bus" },
+  { value: "ferry", label: "Ferry / boat" },
+  { value: "car", label: "Car / road" },
+];
 
 function transitModeFromActivity(activity: ActivityRow): IntercityMode | "flight_arrive" | null {
   if (activity.place_id?.startsWith("flight:arrive:")) return "flight_arrive";
@@ -88,6 +109,7 @@ export function ItineraryEditor({
   startDate,
   endDate,
   dayCities,
+  initialLegs,
 }: {
   tripId: string;
   destination: string;
@@ -97,6 +119,7 @@ export function ItineraryEditor({
   startDate?: string;
   endDate?: string;
   dayCities?: DayCityAssignment[];
+  initialLegs?: TripLeg[];
 }) {
   const [days, setDays] = useState<DayGroup[]>(() =>
     initialDays
@@ -117,6 +140,7 @@ export function ItineraryEditor({
     "idle",
   );
   const [offlineSaved, setOfflineSaved] = useState(false);
+  const [legs, setLegs] = useState<TripLeg[]>(() => initialLegs ?? []);
 
   // Prefer locally saved edits (works offline / after reload).
   // Demo trips ignore stale snapshots (e.g. old Paris data under demo-dubai).
@@ -143,14 +167,20 @@ export function ItineraryEditor({
                   .sort((a, b) => a.sort_order - b.sort_order),
               })),
           );
+          if (snap.legs?.length) setLegs(snap.legs);
           setOfflineSaved(true);
+        } else if (isDemoTripId(tripId) && initialLegs?.length) {
+          // Stale demo cache — use fresh legs from payload
+          setLegs(initialLegs);
         }
+      } else if (initialLegs?.length) {
+        setLegs(initialLegs);
       }
     } catch {
       /* ignore */
     }
     setHydratedOffline(true);
-  }, [tripId, hydratedOffline]);
+  }, [tripId, hydratedOffline, initialLegs]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -205,6 +235,77 @@ export function ItineraryEditor({
     },
     [tripId, isDemo, destination, startDate, endDate],
   );
+
+  function updateLeg(index: number, patch: Partial<TripLeg>) {
+    setLegs((prev) => {
+      const next = prev.map((leg, i) =>
+        i === index ? { ...leg, ...patch } : leg,
+      );
+
+      const relabelTransit = (
+        groups: DayGroup[],
+        from: TripLeg,
+        to: TripLeg,
+        modeOverride?: LegTransitMode,
+      ) =>
+        groups.map((d) => ({
+          ...d,
+          activities: d.activities.map((a) => {
+            const mode = transitModeFromActivity(a);
+            if (!mode || mode === "flight_arrive") return a;
+            const labelMode =
+              modeOverride && modeOverride !== "auto"
+                ? modeOverride
+                : mode;
+            const fromHotel = from.hotel?.trim() || `${from.city} hotel`;
+            const toHotel = to.hotel?.trim() || `${to.city} hotel`;
+            const rest =
+              a.planning_note
+                ?.replace(/^city=\S+\s*·\s*/, "")
+                .replace(/^Hotel-to-hotel:[^.]*\.\s*/, "") ?? "";
+            return {
+              ...a,
+              name: `${formatIntercityModeLabel(labelMode)} · ${fromHotel} → ${toHotel}`,
+              address: `${from.city} hotel → ${to.city} hotel`,
+              planning_note: `city=${to.city} · Hotel-to-hotel: ${fromHotel} (${from.city}) → ${toHotel} (${to.city}). ${rest}`,
+              place_id:
+                modeOverride && modeOverride !== "auto"
+                  ? `transit:${modeOverride}:${from.city}:${to.city}`
+                  : a.place_id,
+            };
+          }),
+        }));
+
+      // Hotel edits on either city — refresh the connecting transit card
+      if (patch.hotel !== undefined || patch.transitFromPrevious !== undefined) {
+        const pairIndex = index === 0 ? 1 : index;
+        const from = next[pairIndex - 1];
+        const to = next[pairIndex];
+        if (from && to) {
+          queueMicrotask(() => {
+            setDays((groups) => {
+              const copy = relabelTransit(
+                groups,
+                from,
+                to,
+                patch.transitFromPrevious,
+              );
+              void persist(copy);
+              return copy;
+            });
+          });
+        }
+      }
+
+      try {
+        const snap = loadOfflineTrip(tripId);
+        if (snap) saveOfflineTrip({ ...snap, legs: next });
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
 
   const applyAssistantPatch = useCallback(
     (patch: AssistantPatch) => {
@@ -508,6 +609,99 @@ export function ItineraryEditor({
       >
         {(view === "schedule" || view === "split") && (
           <div className="min-w-0 space-y-2">
+            {legs.length > 0 ? (
+              <section className="space-y-2 rounded-[14px] border border-[#E1E5F0] bg-white p-3 shadow-[0_2px_12px_rgba(8,11,58,0.04)]">
+                <div>
+                  <h2 className="text-sm font-semibold text-[#080B3A]">
+                    Cities & hotels
+                  </h2>
+                  <p className="text-[11px] text-[#6B7280]">
+                    Each card is a different city. Between cities, set how you
+                    travel hotel → hotel.
+                  </p>
+                </div>
+                {legs.map((leg, i) => {
+                  const palette = LEG_CARD_COLORS[i % LEG_CARD_COLORS.length];
+                  const prev = i > 0 ? legs[i - 1] : null;
+                  const fromLabel =
+                    prev?.hotel?.trim() ||
+                    (prev ? `${prev.city} hotel` : "");
+                  const toLabel =
+                    leg.hotel?.trim() || `${leg.city} hotel`;
+                  return (
+                    <div key={`${leg.city}-${i}`} className="space-y-2">
+                      {prev ? (
+                        <div className="rounded-[12px] border border-dashed border-[#C5CAD8] bg-[#FAFBFF] px-3 py-2.5">
+                          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#6B7280]">
+                            Place to place
+                          </p>
+                          <p className="mb-1 text-sm font-medium text-[#080B3A]">
+                            {fromLabel}
+                            <span className="mx-1.5 text-[#0400FF]">→</span>
+                            {toLabel}
+                          </p>
+                          <p className="mb-2 text-[11px] text-[#6B7280]">
+                            {prev.city} → {leg.city}
+                          </p>
+                          <label className="block text-[11px] font-medium text-[#080B3A]">
+                            Mode of transportation
+                            <select
+                              className="mt-1 w-full rounded-lg border border-[#D1D7E5] bg-white px-2.5 py-1.5 text-sm"
+                              value={leg.transitFromPrevious || "auto"}
+                              onChange={(e) =>
+                                updateLeg(i, {
+                                  transitFromPrevious: e.target
+                                    .value as LegTransitMode,
+                                })
+                              }
+                            >
+                              {INTERCITY_MODE_OPTIONS.map((m) => (
+                                <option key={m.value} value={m.value}>
+                                  {m.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                      ) : null}
+                      <div
+                        className={`rounded-[12px] border-2 ${palette.border} ${palette.bg} p-3`}
+                      >
+                        <div className="mb-2 flex items-center gap-2">
+                          <span
+                            className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-[11px] font-bold text-white ${palette.tag}`}
+                          >
+                            {i + 1}
+                          </span>
+                          <div>
+                            <p className="text-sm font-semibold text-[#080B3A]">
+                              {leg.city}
+                              <span className="ml-1.5 font-normal text-[#6B7280]">
+                                · {leg.days}d
+                              </span>
+                            </p>
+                            <p className="text-[11px] text-[#6B7280]">
+                              Separate city stay
+                            </p>
+                          </div>
+                        </div>
+                        <label className="block text-[11px] font-medium text-[#080B3A]">
+                          Hotel in {leg.city}
+                          <input
+                            className="mt-1 w-full rounded-lg border border-[#D1D7E5] bg-white px-2.5 py-1.5 text-sm"
+                            value={leg.hotel ?? ""}
+                            placeholder={`Hotel name in ${leg.city}`}
+                            onChange={(e) =>
+                              updateLeg(i, { hotel: e.target.value })
+                            }
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })}
+              </section>
+            ) : null}
             {days.map((day, dayIndex) => {
               const isOpen = Boolean(expanded[dayIndex]);
               return (
@@ -535,9 +729,37 @@ export function ItineraryEditor({
                     {dayCities?.[day.dayIndex] ? (
                       <span className="ml-2 font-normal text-[#0400FF]">
                         · {dayCities[day.dayIndex].city}
-                        {dayCities[day.dayIndex].isArrivalTransitDay
-                          ? ` (from ${dayCities[day.dayIndex].previousCity})`
-                          : ""}
+                        {dayCities[day.dayIndex].isArrivalTransitDay ? (
+                          <>
+                            {" "}
+                            <span className="text-[#6B7280]">
+                              · arrive from{" "}
+                              {dayCities[day.dayIndex].previousCity}
+                              {(() => {
+                                const legIdx = legs.findIndex(
+                                  (l) =>
+                                    l.city === dayCities[day.dayIndex].city,
+                                );
+                                const to = legIdx >= 0 ? legs[legIdx] : null;
+                                const from =
+                                  legIdx > 0 ? legs[legIdx - 1] : null;
+                                if (!from?.hotel && !to?.hotel) return null;
+                                return (
+                                  <>
+                                    {" "}
+                                    (
+                                    {from?.hotel?.trim() ||
+                                      `${from?.city ?? "prev"} hotel`}
+                                    {" → "}
+                                    {to?.hotel?.trim() ||
+                                      `${to?.city ?? "next"} hotel`}
+                                    )
+                                  </>
+                                );
+                              })()}
+                            </span>
+                          </>
+                        ) : null}
                       </span>
                     ) : null}
                     <span className="ml-2 font-normal text-[#6B7280]">

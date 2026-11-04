@@ -37,6 +37,7 @@ export default async function TripItineraryPage({
           startDate={data.trip.start_date}
           endDate={data.trip.end_date}
           dayCities={data.dayCities}
+          initialLegs={data.legs}
         />
       </>
     );
@@ -87,6 +88,13 @@ export default async function TripItineraryPage({
         initialActivities={data.activities}
         startDate={data.trip.start_date}
         endDate={data.trip.end_date}
+        initialLegs={
+          (
+            data.preferences as
+              | { legs?: import("@/lib/types/trip").TripLeg[] }
+              | undefined
+          )?.legs
+        }
       />
     );
   } catch {
