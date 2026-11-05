@@ -2,35 +2,28 @@ import Link from "next/link";
 
 const FAQS = [
   {
-    q: "How does demo mode work?",
-    a: "Try demo opens a sample Paris itinerary without API keys. Edits stay in your browser until you sign up.",
+    q: "How do I try Waypoint?",
+    a: "Choose Try demo on the start page. You’ll get sample trips for Paris and Dubai, and you can plan a new trip that stays on this device.",
   },
   {
-    q: "Do I need Google Maps?",
-    a: "No. OpenStreetMap is the default for maps, places, routes, and opening hours when tagged. Switch providers in Settings if you add Google keys later.",
+    q: "How does Waypoint pick places?",
+    a: "It looks at the cities and hotels you enter, then builds a day around your interests, pace, and how far each stop is from the last one.",
+  },
+  {
+    q: "Are times and tickets confirmed?",
+    a: "No. Travel times and flight windows are estimates so the day is realistic. Book trains, flights, and tickets with the operator before you go.",
   },
   {
     q: "How do I adjust for a delayed flight?",
-    a: "Open your itinerary and use Ask itinerary maker — for example “My flight is delayed by 2 hours on day 1” — then approve the proposed reshuffle.",
-  },
-];
-
-const DISCOVERY = [
-  {
-    title: "1. OpenStreetMap place discovery",
-    body: "Waypoint queries public OpenStreetMap data (Overpass) for restaurants, museums, parks, viewpoints, and more near your destination. No account or API key. Results are cached about 24 hours. Map data © OpenStreetMap contributors, available under the Open Database License (ODbL).",
+    a: "Open the trip and choose Trip Wizard. Tell them the delay, for example “My flight is two hours late on day 1,” then accept the revised plan.",
   },
   {
-    title: "2. Wikimedia online interest",
-    body: "When an OSM place is confidently linked to a Wikipedia article, Waypoint compares the last seven complete days of pageviews to the prior seven. Rising views may show as “Online interest increasing.” This is a weak secondary signal — not foot traffic, Instagram, or “most visited.” Places without a verified article stay neutral.",
+    q: "What is the difference between Free and Pro?",
+    a: "Free includes 3 trips and the standard planner. Pro removes the trip cap and uses the more detailed planner. Open Plans to see the monthly price in your currency.",
   },
   {
-    title: "3. Sorted Travel destination context",
-    body: "Optional destination-level facts (brief, weather, currency) come from Sorted Travel’s free zero-auth tools. Sorted does not provide trending restaurants or venues; Waypoint never pretends otherwise.",
-  },
-  {
-    title: "4. How ranking works",
-    body: "Default weights: ~65% your interests and itinerary fit, 15% geography, 10% place-data quality, 10% online interest. If interest data is missing, its weight is redistributed — never invented. Your preferences always outrank a rising Wikipedia chart.",
+    q: "Where are my trips saved?",
+    a: "Until you create an account, trips stay in this browser. After you sign in, they’re saved to your profile.",
   },
 ];
 
@@ -42,53 +35,32 @@ export default function HelpPage() {
           Help & Support
         </h1>
         <p className="mt-1 text-sm text-[#6B7280]">
-          Quick answers and how discovery & online interest work.
+          How planning, hotels, and saved trips work.
         </p>
       </div>
 
       <section className="space-y-3">
-        <h2 className="text-[18px] font-semibold text-[#080B3A]">
-          How discovery & online interest work
-        </h2>
-        <p className="text-sm text-[#6B7280]">
-          Waypoint uses only free, accountless sources for place discovery and
-          interest signals. Paid or login-gated APIs are not used for this
-          feature.
-        </p>
-        {DISCOVERY.map((d) => (
+        {FAQS.map((item) => (
           <div
-            key={d.title}
+            key={item.q}
             className="rounded-[14px] border border-[#E1E5F0] bg-white p-5 shadow-[0_4px_20px_rgba(8,11,58,0.04)]"
           >
-            <h3 className="text-[15px] font-semibold text-[#080B3A]">
-              {d.title}
-            </h3>
+            <h2 className="text-[16px] font-semibold text-[#080B3A]">
+              {item.q}
+            </h2>
             <p className="mt-2 text-sm leading-relaxed text-[#6B7280]">
-              {d.body}
+              {item.a}
             </p>
           </div>
         ))}
       </section>
 
-      <section className="space-y-3">
-        <h2 className="text-[18px] font-semibold text-[#080B3A]">FAQ</h2>
-        {FAQS.map((f) => (
-          <div
-            key={f.q}
-            className="rounded-[14px] border border-[#E1E5F0] bg-white p-5 shadow-[0_4px_20px_rgba(8,11,58,0.04)]"
-          >
-            <h3 className="text-[16px] font-semibold text-[#080B3A]">{f.q}</h3>
-            <p className="mt-2 text-sm leading-relaxed text-[#6B7280]">{f.a}</p>
-          </div>
-        ))}
-      </section>
-
       <p className="text-sm text-[#6B7280]">
-        Need more? Visit{" "}
+        Still stuck? Open{" "}
         <Link href="/settings" className="font-semibold text-[#0400FF]">
           Settings
         </Link>{" "}
-        or open a trip and chat with the itinerary maker.
+        or ask Trip Wizard inside a trip.
       </p>
     </div>
   );

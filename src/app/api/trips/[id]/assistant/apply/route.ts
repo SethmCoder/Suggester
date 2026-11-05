@@ -179,7 +179,7 @@ export async function POST(
         name: op.newName,
         planning_note:
           op.planningNote ??
-          "Replaced by itinerary maker — verify place details",
+          "Suggested by Trip Wizard — confirm details before you visit",
         user_locked: true,
       };
       if (op.durationMinutes) {

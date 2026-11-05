@@ -201,12 +201,7 @@ export function LocalHeroBackground({
       />
       {showLabel ? (
         <p className="pointer-events-none absolute bottom-3 right-4 z-10 max-w-[70%] truncate rounded-full bg-[#080B3A]/55 px-2.5 py-1 text-[10px] font-medium text-[#C5CAE5] backdrop-blur">
-          Showing {hero.caption}
-          {hero.source === "wikipedia"
-            ? " · Wikipedia"
-            : hero.source === "unsplash"
-              ? " · Unsplash"
-              : ""}
+          {hero.caption}
         </p>
       ) : null}
     </>

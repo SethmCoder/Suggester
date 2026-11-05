@@ -9,7 +9,7 @@ import {
   isDemoTripId,
 } from "@/lib/demo/data";
 import { loadOfflineTrip, saveOfflineTrip } from "@/lib/offline/trips";
-import type { DayCityAssignment } from "@/lib/trips/legs";
+import { expandLegsToDays, type DayCityAssignment } from "@/lib/trips/legs";
 
 export function OfflineTripLoader({ tripId }: { tripId: string }) {
   const [state, setState] = useState<
@@ -72,8 +72,9 @@ export function OfflineTripLoader({ tripId }: { tripId: string }) {
       activities: snap.activities,
       startDate: snap.trip.start_date,
       endDate: snap.trip.end_date,
-      isDemo: Boolean(snap.offlineOnly) || tripId.startsWith("offline-"),
-      legs: snap.legs,
+        isDemo: Boolean(snap.offlineOnly) || tripId.startsWith("offline-"),
+        dayCities: snap.legs?.length ? expandLegsToDays(snap.legs) : undefined,
+        legs: snap.legs,
     });
   }, [tripId]);
 

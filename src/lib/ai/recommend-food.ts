@@ -283,7 +283,7 @@ export async function buildFoodRecommendPatch(input: {
         durationMinutes: meal === "cafe" ? 45 : 75,
         priority: recommended ? "must_see" : "optional",
         planningNote: recommended
-          ? `★ Recommended for day ${dayIndex + 1} — closest strong match to ${centerLabel} (~${distM} m). OSM tags/cuisine used; verify hours before going.`
+          ? `Recommended for day ${dayIndex + 1} — closest strong match to ${centerLabel}, about ${distM} m away. Check hours before you go.`
           : `Nearby ${meal === "cafe" ? "café" : "restaurant"} option (~${distM} m from ${centerLabel}).`,
         lat: pick.place.lat,
         lng: pick.place.lng,
@@ -309,8 +309,8 @@ export async function buildFoodRecommendPatch(input: {
   if (!operations.length) {
     return {
       summary: usedOsm
-        ? "I looked for places to eat near your stops but couldn’t rank a confident set. Try naming a landmark already on the itinerary."
-        : "I couldn’t reach the map directory right now. Try again online, or ask once your day’s stops have map pins.",
+        ? "I looked for places to eat near your stops, but I don't have a confident set to recommend. Naming a landmark already on the itinerary would help."
+        : "I can't reach the place directory right now. Try again when you're online, or once this day's stops have map pins.",
       operations: [],
       suggestions: [
         "Best places to eat near the Eiffel Tower",
@@ -330,7 +330,7 @@ export async function buildFoodRecommendPatch(input: {
           : "places to eat";
 
   return {
-    summary: `Here are ${mealLabel} near each day’s cluster (not across town). Starred picks are the best balance of proximity and place quality for that day. Approve to drop them on the map.\n${daySummaries.join(" · ")}`,
+    summary: `I've identified ${mealLabel} close to each day's stops, so you aren't crossing town between meals. The starred option is the strongest match for location and place quality. These are suggestions, not reservations.\n${daySummaries.join(" · ")}`,
     operations,
     suggestions: [
       "Only keep the starred restaurant on each day",

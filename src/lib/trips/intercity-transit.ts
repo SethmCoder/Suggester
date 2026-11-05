@@ -6,6 +6,7 @@
  * Not a live booking API — times are illustrative schedule windows.
  */
 
+import { FREE_MODEL } from "@/lib/billing/plans";
 import { estimateFlight, findAirport } from "@/lib/flights/openflights";
 import { haversineKm } from "@/lib/ai/scheduler";
 
@@ -198,13 +199,14 @@ async function maybeAiRefine(input: {
   heuristic: IntercityMode;
   hasFlightRoute: boolean;
   flightNote?: string;
+  model: string;
 }): Promise<{ mode: IntercityMode; departLocal: string; note: string } | null> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return null;
   try {
     const Groq = (await import("groq-sdk")).default;
     const client = new Groq({ apiKey });
-    const model = process.env.GROQ_MODEL ?? "openai/gpt-oss-120b";
+    const model = input.model;
     const completion = await client.chat.completions.create({
       model,
       temperature: 0.2,
@@ -302,6 +304,8 @@ export async function planIntercityTransit(input: {
   preferredLocalTransport?: string;
   /** User-forced mode from create-trip (skips auto heuristics when set). */
   preferredMode?: IntercityMode | "auto" | null;
+  /** Planner model for this plan. Free stays on the smaller model. */
+  model?: string;
 }): Promise<IntercityTransitPlan> {
   const distanceKm =
     input.fromLat != null &&
@@ -347,6 +351,7 @@ export async function planIntercityTransit(input: {
         heuristic,
         hasFlightRoute,
         flightNote: flight?.note,
+        model: input.model ?? FREE_MODEL,
       });
 
   const mode = forced ?? ai?.mode ?? heuristic;
@@ -397,7 +402,7 @@ export async function planIntercityTransit(input: {
     forced ? "Mode chosen by traveler in trip setup." : null,
     ai?.note ? `Planner note: ${ai.note}` : null,
     flight?.routeKnown && mode === "flight"
-      ? `OpenFlights route ${flight.from.iata}→${flight.to.iata} (${flight.sampleAirlines.slice(0, 2).join(", ") || "airlines"}).`
+      ? `Airlines on ${flight.from.iata} to ${flight.to.iata}: ${flight.sampleAirlines.slice(0, 2).join(", ") || "scheduled service"}.`
       : null,
     "Not a live timetable — verify schedules when booking.",
   ].filter(Boolean);

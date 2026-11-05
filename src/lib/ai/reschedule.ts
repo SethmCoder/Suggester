@@ -226,7 +226,7 @@ export async function planDelayReshuffle(input: {
       activityId: t.id,
       fields: {
         startTime: t.startTime,
-        planningNote: `Rescheduled after ${input.delayMinutes}-min delay · ${t.travelMinutesFromPrev ? `${t.travelMinutesFromPrev} min transit from previous (OSM)` : "first stop of the day"}`,
+        planningNote: `Moved after a ${input.delayMinutes}-minute delay. ${t.travelMinutesFromPrev ? `${t.travelMinutesFromPrev} minutes from the previous stop.` : "First stop of the day."}`,
       },
     });
     // Carry travel minutes via a dedicated op field on update — extend patch
@@ -241,20 +241,20 @@ export async function planDelayReshuffle(input: {
 
   const parts: string[] = [];
   parts.push(
-    `Delay of ${input.delayMinutes} min → day now starts around ${newDayStart}.`,
+    `I've reviewed this day after a ${input.delayMinutes}-minute delay. It would now start around ${newDayStart}.`,
   );
   if (drop.length) {
     parts.push(
-      `Removed ${drop.length} stop(s) that no longer fit: ${drop.map((d) => d.name).join(", ")}.`,
+      `I'd remove ${drop.length} stop(s) that no longer fit: ${drop.map((d) => d.name).join(", ")}.`,
     );
   }
   if (moveNext.length) {
     parts.push(
-      `Moved ${moveNext.length} must-see(s) to day ${(input.nextDayIndex ?? 0) + 1}: ${moveNext.map((d) => d.name).join(", ")}.`,
+      `I'd move ${moveNext.length} must-see stop(s) to day ${(input.nextDayIndex ?? 0) + 1}: ${moveNext.map((d) => d.name).join(", ")}.`,
     );
   }
   parts.push(
-    `Retimed ${timed.length} remaining stop(s) with OSM travel times between them.`,
+    `I've retimed the remaining ${timed.length} stop${timed.length === 1 ? "" : "s"} using travel time between them.`,
   );
 
   return {

@@ -44,6 +44,7 @@ export function AssistantPanel({
     };
   }, []);
   const [message, setMessage] = useState("");
+  const [thread, setThread] = useState<{ role: "you" | "wizard"; text: string }[]>([]);
   const [pending, setPending] = useState<AssistantPatch | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +64,11 @@ export function AssistantPanel({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
       setPending(data.patch);
+      setThread((prev) => [
+        ...prev,
+        { role: "you", text: content },
+        { role: "wizard", text: data.patch?.summary ?? "I have a suggestion." },
+      ]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -102,9 +108,9 @@ export function AssistantPanel({
         <div className="overflow-hidden rounded-[16px] border border-[#E1E5F0] bg-white shadow-[0_16px_48px_rgba(8,11,58,0.18)]">
           <div className="flex items-center justify-between bg-[#080B3A] px-4 py-3 text-white">
             <div>
-              <p className="text-sm font-semibold">Itinerary maker</p>
+              <p className="text-sm font-semibold">Trip Wizard</p>
               <p className="text-[11px] text-[#C5CAE5]">
-                Suggest changes · delays · swaps
+                Your travel agent
               </p>
             </div>
             <button
@@ -129,10 +135,27 @@ export function AssistantPanel({
                 </button>
               ))}
             </div>
+            {thread.length ? (
+              <div className="mb-3 max-h-40 space-y-1 overflow-auto">
+                {thread.map((line, index) => (
+                  <p key={`${line.role}-${index}`} className="text-xs text-[#1F2937]">
+                    <span className="font-semibold">
+                      {line.role === "you" ? "You" : "Trip Wizard"}:
+                    </span>{" "}
+                    {line.text}
+                  </p>
+                ))}
+              </div>
+            ) : !pending && !message.trim() ? (
+              <p className="mb-3 text-sm leading-relaxed text-[#1F2937]">
+                Hello. I&apos;m Trip Wizard. What would you like to adjust on
+                this trip?
+              </p>
+            ) : null}
             <textarea
               rows={3}
               className="w-full rounded-[12px] border border-[#D1D7E5] px-3 py-2 text-sm focus:border-[#0400FF] focus:outline-none focus:ring-2 focus:ring-[#818CFF]/35"
-              placeholder="e.g. Flight delayed 90 minutes — shift day 1"
+              placeholder="For example, my flight is 90 minutes late on day 1"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
             />
@@ -141,7 +164,7 @@ export function AssistantPanel({
             ) : null}
             {pending ? (
               <div className="mt-3 rounded-[12px] border border-[#DDE1FF] bg-[#F5F7FF] p-3 text-sm">
-                <p className="font-semibold text-[#080B3A]">Proposed changes</p>
+                <p className="font-semibold text-[#080B3A]">Suggested changes</p>
                 <p className="mt-1 text-[#6B7280]">{pending.summary}</p>
                 {pending.operations.length > 0 ? (
                   <ul className="mt-2 list-inside list-disc text-xs text-[#1F2937]">
@@ -196,7 +219,7 @@ export function AssistantPanel({
                 disabled={loading || !message.trim()}
                 onClick={() => send()}
               >
-                {loading ? "Thinking…" : "Ask itinerary maker"}
+                {loading ? "Reviewing your trip…" : "Ask Trip Wizard"}
               </Button>
             )}
           </div>
@@ -207,7 +230,7 @@ export function AssistantPanel({
           onClick={() => setOpen(true)}
           className="rounded-full bg-[#0400FF] px-5 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#0400FF]/35 hover:bg-[#0A0080]"
         >
-          Ask itinerary maker
+          Trip Wizard
         </button>
       )}
     </div>

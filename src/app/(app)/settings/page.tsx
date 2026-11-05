@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { PlanSummary } from "@/components/billing/PlanSummary";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
@@ -82,8 +83,8 @@ export default function SettingsPage() {
     document.cookie = `waypoint_maps=${next};path=/;max-age=${60 * 60 * 24 * 365};samesite=lax`;
     setStatus(
       next === "openstreetmap"
-        ? "Using OpenStreetMap (no Google key required)."
-        : "Using Google Maps when API keys are configured.",
+        ? "Using standard maps."
+        : "Using Google Maps.",
     );
   }
 
@@ -120,7 +121,7 @@ export default function SettingsPage() {
     }
 
     if (!isSupabaseConfigured() || isDemo) {
-      setStatus("Saved locally (demo / no Supabase).");
+      setStatus("Saved on this device.");
       return;
     }
 
@@ -176,7 +177,7 @@ export default function SettingsPage() {
       return;
     }
     if (!isSupabaseConfigured() || isDemo) {
-      setError("Password changes require a Supabase account (not available in demo).");
+      setError("Create an account before you can change a password.");
       return;
     }
     const supabase = createClient();
@@ -205,9 +206,16 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-2xl font-semibold">Settings</h1>
         <p className="mt-1 text-sm text-[#6B7280]">
-          Account, avatar, and maps provider.
+          Account, photo, and maps.
         </p>
       </div>
+
+      <section className="rounded-2xl border border-[#E1E5F0] bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold">Plan</h2>
+        <div className="mt-2">
+          <PlanSummary />
+        </div>
+      </section>
 
       {/* Avatar */}
       <section className="rounded-2xl border border-[#E1E5F0] bg-white p-6 shadow-sm">
@@ -287,7 +295,7 @@ export default function SettingsPage() {
           />
           {isDemo ? (
             <p className="mt-1 text-xs text-[#6B7280]">
-              Email changes need a signed-in Supabase account.
+              Email changes are available after you create an account.
             </p>
           ) : null}
         </div>
@@ -327,8 +335,8 @@ export default function SettingsPage() {
       <section className="rounded-2xl border border-[#E1E5F0] bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold">Maps & places</h2>
         <p className="mt-1 text-sm text-[#6B7280]">
-          OpenStreetMap works without a Google key (Nominatim + OSRM + Overpass
-          for hours when tagged). Google Maps needs your API keys.
+          Standard maps are ready to use. Switch to Google Maps if you prefer
+          that map.
         </p>
         <div className="mt-6">
           <div className="mb-2 flex justify-between text-sm font-medium">
@@ -339,7 +347,7 @@ export default function SettingsPage() {
                   : "text-[#6B7280]"
               }
             >
-              OpenStreetMap
+              Standard maps
             </span>
             <span
               className={
@@ -363,12 +371,12 @@ export default function SettingsPage() {
             Active:{" "}
             <strong>
               {mapsProvider === "openstreetmap"
-                ? "OpenStreetMap"
+                ? "Standard maps"
                 : "Google Maps"}
             </strong>
             {mapsProvider === "google" &&
             !process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY
-              ? " — no browser key set; map will fall back to OpenStreetMap until keys are added."
+              ? " — Google Maps isn’t connected yet, so the map stays on standard maps."
               : null}
           </p>
         </div>

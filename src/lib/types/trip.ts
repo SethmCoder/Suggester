@@ -42,6 +42,8 @@ export interface TripLeg {
   hotelBooked?: boolean;
   hotelMinRating?: number;
   hotelPlace?: "any" | "center" | "beach" | "sights" | "transit";
+  /** Brand the traveler asked for when the hotel is not booked yet. */
+  hotelBrand?: string;
   /**
    * Transport from the previous city's hotel → this city's hotel.
    * Ignored on the first leg. "auto" lets the planner choose.

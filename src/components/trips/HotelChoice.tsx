@@ -18,6 +18,8 @@ type Suggestion = {
   rating: number;
   reviewCount: number;
   locationScore?: number | null;
+  lat?: number;
+  lng?: number;
   quotes: {
     author: string;
     rating: number | null;
@@ -31,22 +33,28 @@ export function HotelChoice({
   booked,
   minRating,
   place,
+  brand,
   selectedName,
   onBooked,
   onMinRating,
   onPlace,
+  onBrand,
   onPick,
+  onClear,
   onResults,
 }: {
   city: string;
   booked: boolean;
   minRating: number;
   place: HotelPlacePreference;
+  brand: string;
   selectedName: string;
   onBooked: (booked: boolean) => void;
   onMinRating: (rating: number) => void;
   onPlace: (place: HotelPlacePreference) => void;
+  onBrand: (brand: string) => void;
   onPick: (hotel: Suggestion) => void;
+  onClear?: () => void;
   onResults?: (hotels: Suggestion[]) => void;
 }) {
   const [hotels, setHotels] = useState<Suggestion[]>([]);
@@ -58,11 +66,11 @@ export function HotelChoice({
     0,
     PLACES.findIndex((item) => item.value === place),
   );
-  const onPickRef = useRef(onPick);
   const onResultsRef = useRef(onResults);
+  const onClearRef = useRef(onClear);
   const selectedRef = useRef(selectedName);
-  onPickRef.current = onPick;
   onResultsRef.current = onResults;
+  onClearRef.current = onClear;
   selectedRef.current = selectedName;
 
   useEffect(() => {
@@ -81,6 +89,7 @@ export function HotelChoice({
         minRating: String(minRating),
         place,
       });
+      if (brand.trim().length >= 2) params.set("brand", brand.trim());
       void fetch(`/api/hotels/suggest?${params}`)
         .then((res) => res.json())
         .then((data) => {
@@ -92,10 +101,10 @@ export function HotelChoice({
           setStatus("ready");
           onResultsRef.current?.(next);
           if (
-            next.length &&
+            selectedRef.current &&
             !next.some((hotel) => hotel.name === selectedRef.current)
           ) {
-            onPickRef.current(next[0]);
+            onClearRef.current?.();
           }
         })
         .catch(() => {
@@ -110,7 +119,7 @@ export function HotelChoice({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [booked, city, minRating, place]);
+  }, [booked, city, minRating, place, brand]);
 
   return (
     <div className="space-y-3">
@@ -136,6 +145,21 @@ export function HotelChoice({
       </div>
       {booked ? null : (
         <div className="space-y-3">
+          <label className="block">
+            <span className="text-[11px] font-medium text-[#080B3A]">
+              Preferred brand
+            </span>
+            <input
+              value={brand}
+              onChange={(e) => onBrand(e.target.value)}
+              placeholder="Westin, Hilton, hostel…"
+              className="mt-1 w-full rounded-[10px] border border-[#D1D7E5] bg-white px-3 py-2 text-sm focus:border-[#0400FF] focus:outline-none focus:ring-2 focus:ring-[#818CFF]/35"
+            />
+            <span className="mt-1 block text-[10px] leading-snug text-[#6B7280]">
+              Leave this blank for a few hotels in the city. A brand only
+              returns places whose name matches. Pick one before generating.
+            </span>
+          </label>
           <div>
             <div className="flex items-center justify-between text-[11px] font-medium text-[#080B3A]">
               <span>Minimum rating</span>
@@ -183,9 +207,8 @@ export function HotelChoice({
           ) : null}
           {status === "ready" && hotels.length === 0 ? (
             <p className="text-[11px] text-[#6B7280]">
-              No HotelRec hotels matched {city.trim()} at this rating. Try a
-              lower rating, or set Hotel booked to Yes and enter one yourself.
-              Waypoint does not invent hotels.
+              No hotels in {city.trim()} match this rating. Try a lower rating,
+              or set Hotel booked to Yes and enter your own.
             </p>
           ) : null}
           <ul className="space-y-2">
@@ -205,12 +228,15 @@ export function HotelChoice({
                     {hotel.name}
                   </p>
                   <p className="text-[11px] text-[#6B7280]">
-                    {hotel.rating.toFixed(1)} / 5
-                    {hotel.locationScore != null
-                      ? ` · location ${hotel.locationScore.toFixed(1)} / 5`
-                      : ""}
-                    {" · "}
-                    {hotel.reviewCount} reviews in this sample
+                    {hotel.reviewCount > 0
+                      ? `${hotel.rating.toFixed(1)} / 5${
+                          hotel.locationScore != null
+                            ? ` · location ${hotel.locationScore.toFixed(1)} / 5`
+                            : ""
+                        } · ${hotel.reviewCount} reviews`
+                      : hotel.rating > 0
+                        ? `${hotel.rating.toFixed(1)} stars`
+                        : "Stars and reviews are not listed for this place."}
                   </p>
                   <p className="text-[11px] text-[#6B7280]">{hotel.location}</p>
                   <div className="mt-1.5 flex gap-3">
@@ -221,16 +247,18 @@ export function HotelChoice({
                     >
                       {selected ? "Using this hotel" : "Use this hotel"}
                     </button>
-                    <button
-                      type="button"
-                      className="text-[11px] font-semibold text-[#0400FF]"
-                      aria-expanded={reviewsOpen}
-                      onClick={() =>
-                        setOpenReviews(reviewsOpen ? null : hotel.id)
-                      }
-                    >
-                      Reviews
-                    </button>
+                    {hotel.quotes.length ? (
+                      <button
+                        type="button"
+                        className="text-[11px] font-semibold text-[#0400FF]"
+                        aria-expanded={reviewsOpen}
+                        onClick={() =>
+                          setOpenReviews(reviewsOpen ? null : hotel.id)
+                        }
+                      >
+                        Reviews
+                      </button>
+                    ) : null}
                   </div>
                   {reviewsOpen ? (
                     <ul className="mt-2 space-y-2">
@@ -242,10 +270,6 @@ export function HotelChoice({
                           <p className="text-[11px] font-semibold text-[#080B3A]">
                             {quote.author}
                             {quote.rating != null ? ` · ${quote.rating}/5` : ""}
-                            <span className="font-normal text-[#6B7280]">
-                              {" "}
-                              · HotelRec
-                            </span>
                           </p>
                           {quote.title ? (
                             <p className="text-[12px] font-medium text-[#080B3A]">

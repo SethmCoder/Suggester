@@ -59,6 +59,11 @@ export function loadOfflineTrip(id: string): OfflineTripSnapshot | null {
   }
 }
 
+/** Trips the traveler created. Sample itineraries are not counted toward the free plan. */
+export function countCreatedOfflineTrips(): number {
+  return readIndex().filter((id) => id.startsWith("offline-")).length;
+}
+
 export function listOfflineTrips(): TripListItem[] {
   return readIndex()
     .map((id) => loadOfflineTrip(id)?.trip)

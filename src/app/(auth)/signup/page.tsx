@@ -19,7 +19,7 @@ export default function SignupPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#080B3A] px-4">
         <p className="rounded-[14px] bg-white px-6 py-4 text-[#DC2626]">
-          Configure Supabase in .env to create an account.
+          Accounts aren’t available yet. Try the demo to plan a trip on this device.
         </p>
       </div>
     );

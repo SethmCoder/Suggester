@@ -8,7 +8,6 @@ interface PopularityBadgeProps {
 export function PopularityBadge({
   label,
   sources,
-  attributionUrls,
 }: PopularityBadgeProps) {
   if (!label) return null;
 
@@ -16,7 +15,6 @@ export function PopularityBadge({
     /online interest|gaining attention|popular destination/i.test(label) ||
     sources?.includes("wikimedia_pageviews");
 
-  const href = attributionUrls?.[0];
   const display = isOnlineInterest
     ? label.includes("Gaining")
       ? "Gaining attention"
@@ -32,25 +30,6 @@ export function PopularityBadge({
       }`}
     >
       <span className="font-medium">{display}</span>
-      {isOnlineInterest ? (
-        <span className="text-[10px] font-normal text-[#6B7280]">
-          Wikipedia pageviews · not visitor counts
-        </span>
-      ) : sources && sources.length > 0 ? (
-        <span className="text-[10px] text-[#6B7280]">
-          Sources: {sources.join(", ")}
-        </span>
-      ) : null}
-      {href ? (
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="truncate text-[10px] underline"
-        >
-          View source
-        </a>
-      ) : null}
     </div>
   );
 }

@@ -9,18 +9,28 @@ export default function Home() {
         <LocalHeroBackground opacityClass="opacity-55" showCaption />
         <div className="absolute inset-0 bg-gradient-to-b from-[#080B3A]/55 via-[#080B3A]/75 to-[#080B3A]" />
         <div className="relative mx-auto flex max-w-4xl flex-col items-start px-6 py-20 sm:py-28">
-          <div className="mb-6 flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0400FF] text-sm font-bold">
-              W
+          <div className="mb-8 flex items-center gap-4">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/waypoint-mark-transparent.png"
+              alt=""
+              className="h-20 w-auto drop-shadow-[0_10px_18px_rgba(0,0,0,0.28)]"
+            />
+            <div>
+              <p className="text-[1.65rem] font-bold leading-none tracking-tight">
+                Waypoint
+              </p>
+              <p className="mt-1 text-sm font-medium text-[#C5CAE5]">
+                Plan smarter. Travel better.
+              </p>
             </div>
-            <span className="text-lg font-bold tracking-tight">Waypoint</span>
           </div>
           <h1 className="max-w-2xl text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
             AI-powered itineraries that feel handcrafted.
           </h1>
           <p className="mt-4 max-w-xl text-base text-[#C5CAE5] sm:text-lg">
-            Personalized, geographically optimized day-by-day plans — with an
-            itinerary maker that adapts when your plans change.
+            Personalized, geographically optimized day-by-day plans — with
+            Trip Wizard, your travel agent, when plans change.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <TryDemoButton variant="primary" />
@@ -38,8 +48,8 @@ export default function Home() {
             </Link>
           </div>
           <p className="mt-5 text-xs text-[#9299B5]">
-            Demo works without API keys. Connect Supabase, Groq, and maps when
-            you&apos;re ready for live generation.
+            Try a sample trip now. Sign in when you want trips saved to your
+            account.
           </p>
         </div>
       </div>

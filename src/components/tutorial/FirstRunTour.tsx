@@ -52,8 +52,8 @@ const STEPS: TourStep[] = [
     placement: "bottom",
   },
   {
-    title: "Ask the itinerary maker",
-    body: "Delayed flight? Best places to eat near your stops? Open the assistant, get a suggested patch, then approve to update the plan and map.",
+    title: "Meet Trip Wizard",
+    body: "Delayed flight or a meal near your stops? Open Trip Wizard, review the suggested changes, then approve them to update the plan and map.",
     href: "/trips/demo-paris",
     target: "tour-assistant",
     placement: "left",

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { loadHotelRec } from "@/lib/hotels/hotelrec";
+import { resolveGeonameCity } from "@/lib/geonames/cities";
 import {
-  hotelNameMatchScore,
-  searchHotelsByName,
-} from "@/lib/hotels/name-match";
-import { discoverPlacesFromOsm } from "@/lib/places/osm-discover";
+  chooseOsmHotel,
+  listOsmHotelsNear,
+  rankOsmHotels,
+} from "@/lib/hotels/osm-hotels";
 
 export type HotelMatch = {
   id: string;
@@ -13,87 +13,59 @@ export type HotelMatch = {
   rating: number | null;
   lat: number | null;
   lng: number | null;
+  suggested: boolean;
 };
 
 /**
- * Hotels in one city, best name match first.
- * HotelRec covers cities in the local subset; OpenStreetMap fills in
- * hotels near the city's coordinates when those are known.
+ * OpenStreetMap hotels in one city.
+ * One row is marked suggested: Groq chooses among these real hotels when a
+ * key is set, otherwise the highest-ranked hotel (stars, then closeness).
  */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const city = searchParams.get("city")?.trim() ?? "";
-  const q = searchParams.get("q")?.trim() ?? "";
-  const lat = Number(searchParams.get("lat"));
-  const lng = Number(searchParams.get("lng"));
-  if (city.length < 2 || q.length < 1) {
-    return NextResponse.json({ hotels: [] as HotelMatch[] });
+  let lat = Number(searchParams.get("lat"));
+  let lng = Number(searchParams.get("lng"));
+  if (city.length < 2) {
+    return NextResponse.json({ hotels: [] as HotelMatch[], source: "openstreetmap" });
   }
-
-  const ranked = new Map<string, HotelMatch & { score: number }>();
-
-  function add(hit: HotelMatch & { score: number }) {
-    const key = hit.name.trim().toLowerCase();
-    const prev = ranked.get(key);
-    if (!prev || hit.score > prev.score || (hit.score === prev.score && hit.lat != null && prev.lat == null)) {
-      ranked.set(key, hit);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    const resolved = resolveGeonameCity(city);
+    if (!resolved) {
+      return NextResponse.json({
+        hotels: [] as HotelMatch[],
+        source: "openstreetmap",
+        reason: null,
+      });
     }
+    lat = resolved.lat;
+    lng = resolved.lng;
   }
 
-  const named = searchHotelsByName(loadHotelRec().hotels, {
-    city,
-    query: q,
-    limit: 8,
+  const inputs = await listOsmHotelsNear({ lat, lng, limit: 20 });
+  const ranked = rankOsmHotels(inputs, { lat, lng }).slice(0, 8);
+  const suggestion = await chooseOsmHotel(city, ranked);
+  const hotels: HotelMatch[] = ranked.map((hotel) => ({
+    id: hotel.id,
+    name: hotel.name,
+    label: hotel.address
+      ? `${hotel.name}${hotel.stars != null ? ` · ${hotel.stars}★` : ""} · ${hotel.address}`
+      : hotel.name,
+    rating: hotel.stars,
+    lat: hotel.lat,
+    lng: hotel.lng,
+    suggested: hotel.id === suggestion.id,
+  }));
+  hotels.sort((a, b) => Number(b.suggested) - Number(a.suggested));
+
+  return NextResponse.json({
+    hotels,
+    suggestedId: suggestion.id,
+    suggestedBy: suggestion.by,
+    source: "openstreetmap",
+    reason:
+      suggestion.id == null
+        ? null
+        : "A good fit for this city.",
   });
-  for (const hotel of named ?? []) {
-    add({
-      id: hotel.id,
-      name: hotel.name,
-      label: `${hotel.name} · ${hotel.rating.toFixed(1)}/5 · ${hotel.location}`,
-      rating: hotel.rating,
-      lat: null,
-      lng: null,
-      score: hotelNameMatchScore(q, hotel.name) + hotel.rating,
-    });
-  }
-
-  if (Number.isFinite(lat) && Number.isFinite(lng)) {
-    try {
-      const places = await Promise.race([
-        discoverPlacesFromOsm({
-          destination: `${city} hotels`,
-          lat,
-          lng,
-          radiusMeters: 14000,
-          categories: ["hotel"],
-          limit: 48,
-        }),
-        new Promise<never[]>((resolve) => {
-          setTimeout(() => resolve([]), 2500);
-        }),
-      ]);
-      for (const place of places) {
-        const score = hotelNameMatchScore(q, place.name);
-        if (score <= 0) continue;
-        add({
-          id: place.placeId,
-          name: place.name,
-          label: place.address ? `${place.name} · ${place.address}` : place.name,
-          rating: null,
-          lat: place.lat,
-          lng: place.lng,
-          score: score + 5,
-        });
-      }
-    } catch {
-      /* HotelRec matches still return */
-    }
-  }
-
-  const hotels = [...ranked.values()]
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 8)
-    .map(({ score: _score, ...hotel }) => hotel);
-
-  return NextResponse.json({ hotels });
 }

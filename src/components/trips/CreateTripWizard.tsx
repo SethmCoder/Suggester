@@ -1,14 +1,25 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import {
+  countCreatedOfflineTrips,
   createOfflineTripId,
   saveOfflineTrip,
 } from "@/lib/offline/trips";
+import { PLAN_LIMIT_MESSAGE } from "@/lib/billing/plans";
+import { offlineSnapshotFromGenerated } from "@/lib/trips/offline-from-generated";
+import type { GeneratedDay } from "@/lib/ai/generate-itinerary";
+import { CityHotelField } from "@/components/itinerary/CityHotelField";
 import { HotelChoice } from "@/components/trips/HotelChoice";
+import {
+  filterAirlines,
+  type AirlineOption,
+  type PricePoint,
+} from "@/lib/flights/airline-class";
 import type { HotelPlacePreference } from "@/lib/hotels/hotelrec";
 import type { ActivityRow, LegTransitMode } from "@/lib/types/trip";
 
@@ -60,21 +71,13 @@ type LegDraft = {
   hotelBooked: boolean;
   hotelMinRating: number;
   hotelPlace: HotelPlacePreference;
+  hotelBrand: string;
 };
 
 type CitySuggestion = {
   id: number;
   name: string;
   countryCode: string;
-  lat: number;
-  lng: number;
-  label: string;
-};
-
-type HotelSuggestion = {
-  placeId: string;
-  name: string;
-  address: string | null;
   lat: number;
   lng: number;
   label: string;
@@ -124,17 +127,15 @@ export function CreateTripWizard({
 }) {
   const router = useRouter();
   const [step, setStep] = useState(0);
-  const [clarifyQuestions, setClarifyQuestions] = useState<
-    { id: string; prompt: string }[]
-  >([]);
   const [clarifyAnswers, setClarifyAnswers] = useState<Record<string, string>>(
     {},
   );
-  const [clarifyState, setClarifyState] = useState<
-    "idle" | "loading" | "ready" | "error"
-  >("idle");
+  const [clarifyPrompts, setClarifyPrompts] = useState<Record<string, string>>(
+    {},
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [planLimited, setPlanLimited] = useState(false);
   const [progress, setProgress] = useState("");
 
   const [form, setForm] = useState({
@@ -159,7 +160,11 @@ export function CreateTripWizard({
     avoid: "",
     idealTrip: "",
     prefersHiddenGems: false,
+    preferredAirlines: "",
+    flightPricePoint: "any" as PricePoint,
+    chosenAirline: "",
   });
+  const [routeAirlines, setRouteAirlines] = useState<AirlineOption[]>([]);
   const [legs, setLegs] = useState<LegDraft[]>([
     {
       city: "",
@@ -169,13 +174,11 @@ export function CreateTripWizard({
       hotelBooked: true,
       hotelMinRating: 4,
       hotelPlace: "center",
+      hotelBrand: "",
     },
   ]);
   const [citySuggestions, setCitySuggestions] = useState<
     Record<number, CitySuggestion[]>
-  >({});
-  const [hotelSuggestions, setHotelSuggestions] = useState<
-    Record<number, HotelSuggestion[]>
   >({});
   const [recLists, setRecLists] = useState<
     Record<number, { id: string; name: string; rating: number; location: string }[]>
@@ -194,7 +197,6 @@ export function CreateTripWizard({
     AirportSuggestion[]
   >([]);
   const [flightHint, setFlightHint] = useState<string | null>(null);
-  const hotelTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const airportTimers = useRef<{
     origin?: ReturnType<typeof setTimeout>;
     dest?: ReturnType<typeof setTimeout>;
@@ -244,35 +246,6 @@ export function CreateTripWizard({
     }
   }
 
-  async function searchHotels(legIndex: number, q: string, immediate = false) {
-    const leg = legs[legIndex];
-    if (leg?.lat == null || leg?.lng == null) {
-      setHotelSuggestions((s) => ({ ...s, [legIndex]: [] }));
-      return;
-    }
-    const run = async () => {
-      try {
-        const params = new URLSearchParams({
-          lat: String(leg.lat),
-          lng: String(leg.lng),
-          limit: "8",
-        });
-        if (q.trim()) params.set("q", q.trim());
-        const res = await fetch(`/api/hotels/search?${params}`);
-        const data = await res.json();
-        setHotelSuggestions((s) => ({
-          ...s,
-          [legIndex]: data.hotels ?? [],
-        }));
-      } catch {
-        setHotelSuggestions((s) => ({ ...s, [legIndex]: [] }));
-      }
-    };
-    clearTimeout(hotelTimers.current[legIndex]);
-    if (immediate) void run();
-    else hotelTimers.current[legIndex] = setTimeout(run, 280);
-  }
-
   async function searchAirportsFor(
     which: "origin" | "dest",
     q: string,
@@ -320,10 +293,12 @@ export function CreateTripWizard({
       );
       const data = await res.json();
       if (!res.ok || !data.estimate) {
+        setRouteAirlines([]);
         setFlightHint(data.error ?? "Could not estimate this flight");
         return;
       }
       const e = data.estimate;
+      setRouteAirlines(Array.isArray(e.airlines) ? e.airlines : []);
       setForm((f) => ({
         ...f,
         originAirport: e.from.iata,
@@ -356,44 +331,9 @@ export function CreateTripWizard({
       ),
     );
     setCitySuggestions((s) => ({ ...s, [legIndex]: [] }));
-    // Prefetch nearby hotels + suggest arrival airport for first city
-    void (async () => {
-      try {
-        const params = new URLSearchParams({
-          lat: String(c.lat),
-          lng: String(c.lng),
-          limit: "8",
-        });
-        const res = await fetch(`/api/hotels/search?${params}`);
-        const data = await res.json();
-        setHotelSuggestions((s) => ({
-          ...s,
-          [legIndex]: data.hotels ?? [],
-        }));
-      } catch {
-        /* ignore */
-      }
-      if (legIndex === 0) {
-        void searchAirportsFor("dest", "", { lat: c.lat, lng: c.lng }, true);
-      }
-    })();
-  }
-
-  function pickHotel(legIndex: number, h: HotelSuggestion) {
-    setLegs((prev) =>
-      prev.map((l, i) =>
-        i === legIndex
-          ? {
-              ...l,
-              hotel: h.name,
-              hotelLat: h.lat,
-              hotelLng: h.lng,
-              hotelPlaceId: h.placeId,
-            }
-          : l,
-      ),
-    );
-    setHotelSuggestions((s) => ({ ...s, [legIndex]: [] }));
+    if (legIndex === 0) {
+      void searchAirportsFor("dest", "", { lat: c.lat, lng: c.lng }, true);
+    }
   }
 
   function pickDepartureCity(c: CitySuggestion) {
@@ -439,14 +379,27 @@ export function CreateTripWizard({
   }
 
   async function submit() {
-    if (previewMode) {
-      setError(null);
-      router.push("/signup?next=/trips/new");
-      return;
-    }
     setLoading(true);
     setError(null);
+    setPlanLimited(false);
     setProgress("Saving trip…");
+    try {
+      const created = countCreatedOfflineTrips();
+      const gate = await fetch("/api/billing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sync", created }),
+      }).then((res) => res.json());
+      if (gate.plan !== "pro" && gate.remaining === 0) {
+        setPlanLimited(true);
+        setError(PLAN_LIMIT_MESSAGE);
+        setLoading(false);
+        setProgress("");
+        return;
+      }
+    } catch {
+      /* the create route still enforces the cap */
+    }
     const destination = legs.map((l) => l.city).filter(Boolean).join(" → ");
     const body = {
       destination,
@@ -474,12 +427,29 @@ export function CreateTripWizard({
       preferred: splitList(form.preferred),
       optional: splitList(form.optional),
       avoid: splitList(form.avoid),
+      preferredAirlines: form.preferredAirlines.trim() || undefined,
+      flightPricePoint: form.flightPricePoint,
+      chosenAirline: form.chosenAirline || undefined,
       idealTrip: [
         form.idealTrip.trim(),
-        clarifyQuestions
-          .map((q) => {
-            const answer = clarifyAnswers[q.id]?.trim();
-            return answer ? `Q: ${q.prompt}\nA: ${answer}` : "";
+        legs
+          .filter((l) => !l.hotelBooked && l.hotel.trim())
+          .map(
+            (l) =>
+              `Build the ${l.city} days around ${l.hotel.trim()}${
+                l.hotelBrand.trim() ? ` (${l.hotelBrand.trim()})` : ""
+              }. Do not switch to a different hotel.`,
+          )
+          .join("\n"),
+        form.chosenAirline
+          ? `Inbound flight preference: ${form.chosenAirline}. Price point: ${form.flightPricePoint}. Do not invent a fare or a booking.`
+          : form.preferredAirlines.trim() || form.flightPricePoint !== "any"
+            ? `Flight restrictions: airlines ${form.preferredAirlines.trim() || "any"}, price point ${form.flightPricePoint}. Use only a published match. Do not invent a fare.`
+            : "",
+        Object.entries(clarifyAnswers)
+          .map(([id, answer]) => {
+            const trimmed = answer.trim();
+            return trimmed ? `Q: ${clarifyPrompts[id] ?? id}\nA: ${trimmed}` : "";
           })
           .filter(Boolean)
           .join("\n"),
@@ -502,11 +472,47 @@ export function CreateTripWizard({
           hotelBooked: l.hotelBooked,
           hotelMinRating: l.hotelMinRating,
           hotelPlace: l.hotelPlace,
+          hotelBrand: l.hotelBrand.trim() || undefined,
           hotelAddress: l.hotelAddress,
           transitFromPrevious:
             i === 0 ? undefined : l.transitFromPrevious || "auto",
         })),
     };
+
+    if (previewMode) {
+      try {
+        setProgress("Generating itinerary…");
+        const res = await fetch("/api/trips/demo-create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          if (data.code === "plan_limit") setPlanLimited(true);
+          throw new Error(data.error ?? "Could not generate this trip");
+        }
+        const tripId = createOfflineTripId();
+        saveOfflineTrip(
+          offlineSnapshotFromGenerated({
+            tripId,
+            destination: data.destination || destination || "Untitled trip",
+            startDate: form.startDate,
+            endDate,
+            days: (data.days ?? []) as GeneratedDay[],
+            legs: body.legs,
+          }),
+        );
+        router.push(`/trips/${tripId}`);
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not generate this trip");
+      } finally {
+        setLoading(false);
+        setProgress("");
+      }
+      return;
+    }
 
     const saveOfflineFallback = () => {
       setProgress("Saving on this device…");
@@ -604,7 +610,10 @@ export function CreateTripWizard({
       });
       setProgress("Generating itinerary…");
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed");
+      if (!res.ok) {
+        if (data.code === "plan_limit") setPlanLimited(true);
+        throw new Error(data.error ?? "Failed");
+      }
       // Mirror server trip locally so later offline edits still work
       try {
         const tripId = data.tripId as string;
@@ -654,17 +663,16 @@ export function CreateTripWizard({
     <div className="mx-auto max-w-2xl" data-tour="tour-create-wizard">
       {previewMode ? (
         <div className="mb-4 rounded-[12px] border border-[#DDE1FF] bg-[#F5F7FF] px-4 py-3 text-sm text-[#080B3A]">
-          <p className="font-semibold">Demo preview — create trip</p>
+          <p className="font-semibold">Your trip stays on this device</p>
           <p className="mt-1 text-[#6B7280]">
-            Try cities, dates, hotels, and interests here. Generating a real
-            itinerary needs a free account — you&apos;ll be guided to sign up
-            when you finish.
+            Generate a full itinerary here. Create an account later if you want
+            it saved when you sign in on another device.
           </p>
         </div>
       ) : null}
       <div className="mb-2">
         <h1 className="text-[28px] font-bold tracking-tight text-[#080B3A]">
-          {previewMode ? "Create a trip (preview)" : "Create a trip"}
+          Create a trip
         </h1>
         <p className="mt-1 text-sm text-[#6B7280]">
           A guided planning flow — skip optional fields anytime.
@@ -710,6 +718,7 @@ export function CreateTripWizard({
                         hotelBooked: true,
                         hotelMinRating: 4,
                         hotelPlace: "center",
+                        hotelBrand: "",
                       },
                     ])
                   }
@@ -901,11 +910,35 @@ export function CreateTripWizard({
                           booked={leg.hotelBooked}
                           minRating={leg.hotelMinRating}
                           place={leg.hotelPlace}
+                          brand={leg.hotelBrand}
                           selectedName={leg.hotel}
                           onBooked={(hotelBooked) =>
                             setLegs((prevLegs) =>
                               prevLegs.map((l, j) =>
                                 j === i ? { ...l, hotelBooked } : l,
+                              ),
+                            )
+                          }
+                          onBrand={(hotelBrand) =>
+                            setLegs((prevLegs) =>
+                              prevLegs.map((l, j) =>
+                                j === i ? { ...l, hotelBrand } : l,
+                              ),
+                            )
+                          }
+                          onClear={() =>
+                            setLegs((prevLegs) =>
+                              prevLegs.map((l, j) =>
+                                j === i
+                                  ? {
+                                      ...l,
+                                      hotel: "",
+                                      hotelAddress: undefined,
+                                      hotelLat: undefined,
+                                      hotelLng: undefined,
+                                      hotelPlaceId: undefined,
+                                    }
+                                  : l,
                               ),
                             )
                           }
@@ -932,9 +965,9 @@ export function CreateTripWizard({
                                       hotel: hotel.name,
                                       hotelAddress: hotel.location,
                                       hotelBooked: false,
-                                      hotelLat: undefined,
-                                      hotelLng: undefined,
-                                      hotelPlaceId: undefined,
+                                      hotelLat: hotel.lat,
+                                      hotelLng: hotel.lng,
+                                      hotelPlaceId: hotel.id,
                                     }
                                   : l,
                               ),
@@ -949,54 +982,28 @@ export function CreateTripWizard({
                             <Label>
                               Hotel in {leg.city.trim() || `city ${i + 1}`}
                             </Label>
-                            <Input
+                            <CityHotelField
+                              city={leg.city}
                               value={leg.hotel}
-                              onChange={(e) => {
-                                const hotel = e.target.value;
+                              lat={leg.lat}
+                              lng={leg.lng}
+                              onChange={(next) =>
                                 setLegs((prevLegs) =>
                                   prevLegs.map((l, j) =>
                                     j === i
                                       ? {
                                           ...l,
-                                          hotel,
-                                          hotelLat: undefined,
-                                          hotelLng: undefined,
-                                          hotelPlaceId: undefined,
+                                          hotel: next.hotel,
+                                          hotelLat: next.hotelLat,
+                                          hotelLng: next.hotelLng,
+                                          hotelPlaceId: next.hotelPlaceId,
+                                          hotelAddress: next.hotelAddress,
                                         }
                                       : l,
                                   ),
-                                );
-                                void searchHotels(i, hotel);
-                              }}
-                              onFocus={() => {
-                                if (leg.lat != null && leg.lng != null) {
-                                  void searchHotels(i, leg.hotel, true);
-                                }
-                              }}
-                              className="mt-1"
-                              placeholder={
-                                leg.lat != null
-                                  ? "Search hotels in this city"
-                                  : "Pick a city first"
-                              }
-                              autoComplete="off"
-                              disabled={leg.lat == null}
-                            />
-                            <SuggestionList
-                              items={(hotelSuggestions[i] ?? []).map((h) => ({
-                                key: h.placeId,
-                                label: h.label,
-                              }))}
-                              onPick={(idx) =>
-                                pickHotel(i, hotelSuggestions[i][idx])
+                                )
                               }
                             />
-                            {leg.lat != null && !hotelSuggestions[i]?.length ? (
-                              <p className="mt-1 text-[11px] text-[#6B7280]">
-                                Focus or type to list nearby hotels from
-                                OpenStreetMap.
-                              </p>
-                            ) : null}
                           </>
                         ) : leg.hotel ? (
                           <p className="text-[12px] text-[#080B3A]">
@@ -1129,11 +1136,25 @@ export function CreateTripWizard({
               </p>
             ) : (
               <p className="text-xs text-[#6B7280]">
-                Pick airports from the lists (nearest to your cities) to estimate
-                arrival from OpenFlights so day 1 does not schedule impossible
-                morning stops.
+                Pick airports near your cities so the first day starts after you
+                land. Times are estimates, not a live flight.
               </p>
             )}
+            <FlightRestrictions
+              airlines={routeAirlines}
+              preferred={form.preferredAirlines}
+              pricePoint={form.flightPricePoint}
+              chosen={form.chosenAirline}
+              onPreferred={(preferredAirlines) =>
+                setForm((f) => ({ ...f, preferredAirlines }))
+              }
+              onPricePoint={(flightPricePoint) =>
+                setForm((f) => ({ ...f, flightPricePoint }))
+              }
+              onChoose={(chosenAirline) =>
+                setForm((f) => ({ ...f, chosenAirline }))
+              }
+            />
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <Label>Start date</Label>
@@ -1333,15 +1354,11 @@ export function CreateTripWizard({
             destination={legs.map((l) => l.city).filter(Boolean).join(" → ")}
             cities={legs.map((l) => l.city.trim()).filter(Boolean)}
             form={form}
-            questions={clarifyQuestions}
             answers={clarifyAnswers}
-            status={clarifyState}
             onAnswers={setClarifyAnswers}
-            onLoaded={(questions) => {
-              setClarifyQuestions(questions);
-              setClarifyState("ready");
-            }}
-            onStatus={setClarifyState}
+            onPrompt={(id, prompt) =>
+              setClarifyPrompts((prev) => ({ ...prev, [id]: prompt }))
+            }
           />
         )}
 
@@ -1380,6 +1397,7 @@ export function CreateTripWizard({
                           <ul className="mt-1 space-y-0.5 text-[11px] text-[#6B7280]">
                             <li>
                               Hotel booked? No · rating {l.hotelMinRating.toFixed(1)}+ · places {l.hotelPlace}
+                              {l.hotelBrand.trim() ? ` · brand ${l.hotelBrand.trim()}` : ""}
                             </li>
                             {(recLists[legs.indexOf(l)] ?? []).map((hotel) => (
                               <li key={hotel.id}>
@@ -1389,7 +1407,7 @@ export function CreateTripWizard({
                             ))}
                             {!(recLists[legs.indexOf(l)] ?? []).length ? (
                               <li>
-                                No HotelRec suggestions for these filters. Generation uses the city center if you leave the hotel empty.
+                                No hotel matched these filters. The plan uses the city center if you leave this blank.
                               </li>
                             ) : null}
                           </ul>
@@ -1407,15 +1425,15 @@ export function CreateTripWizard({
               <span className="text-[#6B7280]">Interests:</span>{" "}
               {form.interests.join(", ") || "General"}
             </p>
-            {clarifyQuestions.some((q) => clarifyAnswers[q.id]?.trim()) ? (
+            {Object.entries(clarifyAnswers).some(([, answer]) => answer.trim()) ? (
               <div className="space-y-1">
                 <span className="text-[#6B7280]">Personalized answers:</span>
                 <ul className="space-y-1">
-                  {clarifyQuestions.map((q) =>
-                    clarifyAnswers[q.id]?.trim() ? (
-                      <li key={q.id}>
-                        <span className="text-[#6B7280]">{q.prompt}</span>{" "}
-                        {clarifyAnswers[q.id].trim()}
+                  {Object.entries(clarifyAnswers).map(([id, answer]) =>
+                    answer.trim() ? (
+                      <li key={id}>
+                        <span className="text-[#6B7280]">{clarifyPrompts[id] ?? id}</span>{" "}
+                        {answer.trim()}
                       </li>
                     ) : null,
                   )}
@@ -1425,7 +1443,16 @@ export function CreateTripWizard({
             {progress ? (
               <p className="text-[#0400FF]">{progress}</p>
             ) : null}
-            {error ? <p className="text-[#DC2626]">{error}</p> : null}
+            {error ? (
+              <p className="text-[#DC2626]">
+                {error}{" "}
+                {planLimited ? (
+                  <Link href="/plan" className="font-semibold text-[#0400FF] underline">
+                    See plans
+                  </Link>
+                ) : null}
+              </p>
+            ) : null}
           </div>
         )}
 
@@ -1443,8 +1470,7 @@ export function CreateTripWizard({
               type="button"
               onClick={() => {
                 if (step === 2) {
-                  setClarifyState("idle");
-                  setClarifyQuestions([]);
+                  setClarifyPrompts({});
                 }
                 setStep((s) => s + 1);
               }}
@@ -1457,11 +1483,7 @@ export function CreateTripWizard({
             </Button>
           ) : (
             <Button type="button" onClick={submit} disabled={loading}>
-              {loading
-                ? "Working…"
-                : previewMode
-                  ? "Sign up to generate"
-                  : "Generate itinerary"}
+              {loading ? "Working…" : "Generate itinerary"}
             </Button>
           )}
         </div>
@@ -1474,12 +1496,9 @@ function ClarifyStep({
   destination,
   cities,
   form,
-  questions,
   answers,
-  status,
   onAnswers,
-  onLoaded,
-  onStatus,
+  onPrompt,
 }: {
   destination: string;
   cities: string[];
@@ -1496,86 +1515,222 @@ function ClarifyStep({
     avoid: string;
     idealTrip: string;
   };
-  questions: { id: string; prompt: string }[];
   answers: Record<string, string>;
-  status: "idle" | "loading" | "ready" | "error";
   onAnswers: (next: Record<string, string>) => void;
-  onLoaded: (questions: { id: string; prompt: string }[]) => void;
-  onStatus: (status: "idle" | "loading" | "ready" | "error") => void;
+  onPrompt: (id: string, prompt: string) => void;
 }) {
-  useEffect(() => {
-    if (status === "ready" || status === "loading") return;
-    let cancelled = false;
-    onStatus("loading");
-    void fetch("/api/trips/clarify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        destination,
-        startDate: form.startDate,
-        travelers: form.travelers,
-        budget: form.budget ? Number(form.budget) : null,
-        interests: form.interests,
-        intensity: form.intensity,
-        transport: form.transport,
-        dietary: form.dietary,
-        accessibility: form.accessibility,
-        mustSee: splitList(form.mustSee),
-        avoid: splitList(form.avoid),
-        idealTrip: form.idealTrip,
-        cities,
-      }),
-    })
-      .then(async (res) => {
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Could not prepare questions");
-        return data.questions as { id: string; prompt: string }[];
-      })
-      .then((next) => {
-        if (!cancelled) onLoaded(next);
-      })
-      .catch(() => {
-        if (!cancelled) onStatus("error");
+  const [summary, setSummary] = useState("");
+  const [question, setQuestion] = useState<{ id: string; prompt: string } | null>(null);
+  const [why, setWhy] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [answeredIds, setAnsweredIds] = useState<string[]>([]);
+  const [log, setLog] = useState<{ role: "agent" | "you"; text: string }[]>([]);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+
+  async function load(ids: string[]) {
+    setStatus("loading");
+    try {
+      const res = await fetch("/api/trips/clarify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          destination,
+          startDate: form.startDate,
+          travelers: form.travelers,
+          budget: form.budget ? Number(form.budget) : null,
+          interests: form.interests,
+          intensity: form.intensity,
+          transport: form.transport,
+          dietary: form.dietary,
+          accessibility: form.accessibility,
+          mustSee: splitList(form.mustSee),
+          avoid: splitList(form.avoid),
+          idealTrip: form.idealTrip,
+          cities,
+          answeredIds: ids,
+        }),
       });
-    return () => {
-      cancelled = true;
-    };
-    // Load once when this step opens.
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not prepare a question");
+      setSummary(data.summary ?? "");
+      setQuestion(data.question ?? null);
+      setWhy(data.why ?? null);
+      setStatus("ready");
+      if (ids.length === 0 && data.summary) {
+        setLog([{ role: "agent", text: data.summary }]);
+      }
+    } catch {
+      setStatus("error");
+    }
+  }
+
+  useEffect(() => {
+    void load([]);
+    // One brief when this step opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function commit(text: string) {
+    if (!question) return;
+    onPrompt(question.id, question.prompt);
+    const nextAnswers = { ...answers, [question.id]: text };
+    onAnswers(nextAnswers);
+    const nextIds = [...answeredIds, question.id];
+    setAnsweredIds(nextIds);
+    setLog((prev) => [
+      ...prev,
+      { role: "you", text: text || "Skip" },
+    ]);
+    setDraft("");
+    void load(nextIds).then(() => {
+      setLog((prev) => prev);
+    });
+  }
 
   return (
     <div className="space-y-4">
       <h2 className="text-[20px] font-semibold text-[#080B3A]">
-        A few questions before planning
+        A question before planning
       </h2>
-      <p className="text-sm text-[#6B7280]">
-        The planner reads what you already entered
-        {destination ? ` for ${destination}` : ""} and asks only what it still
-        needs for a personal itinerary. Skip any question.
-      </p>
-      {status === "loading" || status === "idle" ? (
-        <p className="text-sm text-[#0400FF]">Reading your trip details…</p>
-      ) : null}
-      {status === "error" ? (
-        <p className="text-sm text-[#DC2626]">
-          Could not load questions. You can continue and plan with the details
-          you already gave.
-        </p>
-      ) : null}
-      {questions.map((q) => (
-        <div key={q.id}>
-          <Label>{q.prompt}</Label>
-          <textarea
-            rows={2}
-            className="mt-1 w-full rounded-lg border border-[#D1D7E5] px-3 py-2 text-sm"
-            value={answers[q.id] ?? ""}
-            onChange={(e) =>
-              onAnswers({ ...answers, [q.id]: e.target.value })
-            }
-          />
+      <div className="space-y-2">
+        {log.map((line, index) => (
+          <p
+            key={`${line.role}-${index}`}
+            className={`rounded-[12px] px-3 py-2 text-sm ${
+              line.role === "agent"
+                ? "bg-[#F5F7FF] text-[#1F2937]"
+                : "bg-white text-[#1F2937]"
+            }`}
+          >
+            {line.text}
+          </p>
+        ))}
+        {status === "loading" ? (
+          <p className="text-sm text-[#0400FF]">Reading what you already entered…</p>
+        ) : null}
+        {status === "error" ? (
+          <p className="text-sm text-[#DC2626]">
+            The question could not be prepared. You can continue with the details you already gave.
+          </p>
+        ) : null}
+        {question ? (
+          <div className="rounded-[12px] border border-[#E1E5F0] bg-white p-3">
+            <p className="text-sm font-medium text-[#1F2937]">{question.prompt}</p>
+            {why ? <p className="mt-1 text-xs text-[#6B7280]">{why}</p> : null}
+            <textarea
+              rows={2}
+              className="mt-2 w-full rounded-lg border border-[#D1D7E5] px-3 py-2 text-sm"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Your answer"
+            />
+            <div className="mt-2 flex gap-2">
+              <Button type="button" onClick={() => commit(draft.trim())} disabled={!draft.trim()}>
+                Answer
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => commit("")}>
+                Skip
+              </Button>
+            </div>
+          </div>
+        ) : status === "ready" ? (
+          <p className="text-sm text-[#6B7280]">
+            {summary} That is enough to review the trip.
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+const PRICE_POINTS: { value: PricePoint; label: string }[] = [
+  { value: "any", label: "Any" },
+  { value: "budget", label: "Budget" },
+  { value: "standard", label: "Standard" },
+  { value: "premium", label: "Premium" },
+];
+
+function FlightRestrictions({
+  airlines,
+  preferred,
+  pricePoint,
+  chosen,
+  onPreferred,
+  onPricePoint,
+  onChoose,
+}: {
+  airlines: AirlineOption[];
+  preferred: string;
+  pricePoint: PricePoint;
+  chosen: string;
+  onPreferred: (value: string) => void;
+  onPricePoint: (value: PricePoint) => void;
+  onChoose: (value: string) => void;
+}) {
+  const matches = filterAirlines(airlines, { airlines: preferred, pricePoint });
+  return (
+    <div className="space-y-3 rounded-[12px] border border-[#E1E5F0] bg-[#F5F7FF] p-3">
+      <div>
+        <Label>Airlines</Label>
+        <Input
+          value={preferred}
+          onChange={(e) => onPreferred(e.target.value)}
+          className="mt-1 bg-white"
+          placeholder="Delta, ANA, or leave blank"
+        />
+      </div>
+      <div>
+        <Label>Price point</Label>
+        <div className="mt-1 flex flex-wrap gap-1.5">
+          {PRICE_POINTS.map((point) => (
+            <button
+              key={point.value}
+              type="button"
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                pricePoint === point.value
+                  ? "bg-[#0400FF] text-white"
+                  : "bg-white text-[#0400FF]"
+              }`}
+              onClick={() => onPricePoint(point.value)}
+            >
+              {point.label}
+            </button>
+          ))}
         </div>
-      ))}
+        <p className="mt-1 text-[11px] leading-snug text-[#6B7280]">
+          Budget, standard, and premium keep airlines of that kind on the
+          published route. No fare is shown.
+        </p>
+      </div>
+      {matches.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {matches.slice(0, 6).map((airline) => {
+            const selected = chosen === airline.name;
+            return (
+              <button
+                key={airline.code}
+                type="button"
+                className={`rounded-[10px] border px-2.5 py-1 text-left text-xs ${
+                  selected
+                    ? "border-[#0400FF] bg-white font-semibold text-[#080B3A]"
+                    : "border-[#E1E5F0] bg-white text-[#1F2937]"
+                }`}
+                onClick={() => onChoose(selected ? "" : airline.name)}
+              >
+                {airline.name}
+              </button>
+            );
+          })}
+        </div>
+      ) : airlines.length ? (
+        <p className="text-[11px] text-[#6B7280]">
+          No airline on this route matches those restrictions.
+        </p>
+      ) : (
+        <p className="text-[11px] text-[#6B7280]">
+          Enter both airports to see airlines that fly the route.
+        </p>
+      )}
     </div>
   );
 }

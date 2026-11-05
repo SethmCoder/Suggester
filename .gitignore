@@ -42,3 +42,6 @@ next-env.d.ts
 
 # Local HotelRec aggregate (rebuild with scripts/build-hotelrec-subset.py)
 /data/hotelrec/*.json
+
+# Imported hotel catalog (rebuilt by hotel search / scripts/import-hotels.mjs)
+/data/hotels/*.json

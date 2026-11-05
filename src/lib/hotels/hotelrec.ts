@@ -130,24 +130,32 @@ function placeCount(hotel: HotelRecord, place: HotelPlacePreference): number {
   return hotel[place] ?? 0;
 }
 
+function matchesBrand(name: string, brand: string | undefined) {
+  const needle = brand?.trim().toLowerCase() ?? "";
+  if (needle.length < 2) return true;
+  return name.toLowerCase().includes(needle);
+}
+
 export function suggestFromHotels(
   hotels: HotelRecord[],
   input: {
     city: string;
     minRating?: number;
     place?: HotelPlacePreference;
+    brand?: string;
     limit?: number;
   },
 ): HotelSuggestion[] {
   const minRating = input.minRating ?? 0;
   const place = input.place ?? "any";
-  const limit = input.limit ?? 4;
+  const limit = input.limit ?? (input.brand?.trim() ? 3 : 4);
   return dedupeHotels(hotels)
     .filter(
       (hotel) =>
         hotel.rating >= minRating &&
         cityMatchesLocation(hotel.location, input.city) &&
-        hotel.quotes?.length,
+        hotel.quotes?.length &&
+        matchesBrand(hotel.name, input.brand),
     )
     .map((hotel) => {
       const mentions = placeCount(hotel, place);
@@ -182,6 +190,7 @@ export function suggestionNote(input: {
   count: number;
   minRating: number;
   place: HotelPlacePreference;
+  brand?: string;
 }): string {
   const placeLabel: Record<HotelPlacePreference, string> = {
     any: "overall rating and location sub-ratings",
@@ -190,10 +199,16 @@ export function suggestionNote(input: {
     sights: "sight mentions and location sub-ratings",
     transit: "transit mentions in the reviews",
   };
+  const brand = input.brand?.trim();
   if (!input.count) {
-    return `No hotels in this HotelRec sample match ${input.city} at ${input.minRating.toFixed(1)} stars or higher. Waypoint does not invent hotels or reviews.`;
+    return brand
+      ? `No hotels in ${input.city} match “${brand}”. Try another brand, or enter a hotel you already booked.`
+      : `No hotels in ${input.city} match ${input.minRating.toFixed(1)} stars or higher. Try a lower rating, or enter a hotel you already booked.`;
   }
-  return `${input.count} HotelRec hotels match ${input.city} at ${input.minRating.toFixed(1)}+ stars, ranked by ${placeLabel[input.place]}. Names and quotes are copied from the dataset.`;
+  if (brand) {
+    return `${input.count} ${brand} hotels in ${input.city}. Pick one and the days are built around it.`;
+  }
+  return `${input.count} hotels in ${input.city} at ${input.minRating.toFixed(1)}+ stars, ranked by ${placeLabel[input.place]}. Pick one and the days are built around it.`;
 }
 
 /** Fill an empty unbooked leg with the top HotelRec hotel for that city. */
@@ -205,6 +220,7 @@ export function anchorUnbookedLegs<
     hotelBooked?: boolean;
     hotelMinRating?: number;
     hotelPlace?: HotelPlacePreference;
+    hotelBrand?: string;
   },
 >(legs: T[]): Array<T & { hotel?: string; hotelAddress?: string }> {
   return legs.map((leg) => {
@@ -214,6 +230,7 @@ export function anchorUnbookedLegs<
       city: leg.city,
       minRating: leg.hotelMinRating,
       place: leg.hotelPlace,
+      brand: leg.hotelBrand,
       limit: 1,
     }).hotels[0];
     if (!top) return leg;
@@ -229,6 +246,7 @@ export function suggestHotels(input: {
   city: string;
   minRating?: number;
   place?: HotelPlacePreference;
+  brand?: string;
   limit?: number;
 }): { citation: string; hotels: HotelSuggestion[] } {
   const { hotels, citation } = loadHotelRec();

@@ -44,7 +44,7 @@ export async function GET(req: Request) {
       });
       if (!estimate) {
         return NextResponse.json(
-          { error: "Could not resolve one or both airports in OpenFlights data" },
+          { error: "Couldn’t find one of those airports. Try another code or city." },
           { status: 404 },
         );
       }

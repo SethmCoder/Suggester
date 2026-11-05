@@ -1,52 +1,48 @@
 import { NextResponse } from "next/server";
-import { discoverPlacesFromOsm } from "@/lib/places/osm-discover";
+import { searchHotels } from "@/lib/hotels/catalog";
 
 /**
- * Nearby hotel suggestions via OpenStreetMap Overpass (no API key).
- * GET ?lat=&lng=&q=hilton&limit=8
+ * Hotel search. OpenStreetMap catalog, with Google left to the places routes
+ * when a Google key is configured.
+ * GET ?lat=&lng=&q=westin&limit=8
  */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const lat = Number(searchParams.get("lat"));
   const lng = Number(searchParams.get("lng"));
-  const q = (searchParams.get("q") ?? "").trim().toLowerCase();
+  const q = (searchParams.get("q") ?? "").trim();
   const limit = Math.min(12, Math.max(1, Number(searchParams.get("limit") ?? 8)));
+  const city = searchParams.get("city") ?? "";
 
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+  if (!q && (!Number.isFinite(lat) || !Number.isFinite(lng)) && city.length < 2) {
     return NextResponse.json(
-      { error: "lat and lng are required", hotels: [] },
+      { error: "Provide a hotel name, a city, or a location.", hotels: [] },
       { status: 400 },
     );
   }
 
   try {
-    const places = await discoverPlacesFromOsm({
-      destination: `hotels@${lat.toFixed(3)},${lng.toFixed(3)}`,
-      lat,
-      lng,
-      radiusMeters: q ? 12000 : 8000,
-      categories: ["hotel"],
-      limit: 48,
+    const result = await searchHotels({
+      q: q || undefined,
+      city: city || undefined,
+      lat: Number.isFinite(lat) ? lat : undefined,
+      lng: Number.isFinite(lng) ? lng : undefined,
+      limit,
     });
-
-    const filtered = (q
-      ? places.filter(
-          (p) =>
-            p.name.toLowerCase().includes(q) ||
-            (p.address?.toLowerCase().includes(q) ?? false),
-        )
-      : places
-    ).slice(0, limit);
-
     return NextResponse.json({
-      hotels: filtered.map((p) => ({
-        placeId: p.placeId,
-        name: p.name,
-        address: p.address,
-        lat: p.lat,
-        lng: p.lng,
-        label: p.address ? `${p.name} · ${p.address}` : p.name,
+      hotels: result.hotels.map((hotel) => ({
+        placeId: hotel.id,
+        name: hotel.name,
+        address: hotel.address,
+        lat: hotel.latitude,
+        lng: hotel.longitude,
+        propertyType: hotel.propertyType,
+        website: hotel.website,
+        phone: hotel.phone,
+        starRating: hotel.starRating,
+        label: hotel.address ? `${hotel.name} · ${hotel.address}` : hotel.name,
       })),
+      attribution: "© OpenStreetMap contributors",
     });
   } catch {
     return NextResponse.json({ hotels: [] });

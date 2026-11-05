@@ -1,4 +1,13 @@
 import Groq from "groq-sdk";
+import {
+  AI_MONTH_COOKIE,
+  AI_USED_COOKIE,
+  currentMonthKey,
+  gateFeature,
+  isAdvancedRequest,
+  PRO_REQUIRED_MESSAGE,
+} from "@/lib/billing/entitlements";
+import { plannerModel } from "@/lib/billing/model";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -30,6 +39,14 @@ export async function POST(
   const { id: tripId } = await params;
   const { message } = bodySchema.parse(await req.json());
   const cookieStore = await cookies();
+  const feature = isAdvancedRequest(message) ? "advanced" : "basic";
+  const gate = gateFeature(feature, (name) => cookieStore.get(name)?.value);
+  if (!gate.allowed) {
+    return NextResponse.json(
+      { error: PRO_REQUIRED_MESSAGE, code: "pro_required" },
+      { status: 402 },
+    );
+  }
   const demo = isDemoCookie(cookieStore.get(DEMO_COOKIE)?.value);
 
   if (demo && isDemoTripId(tripId)) {
@@ -42,7 +59,22 @@ export async function POST(
       transport: payload.preferences.transport ?? "walking",
       destination: payload.trip.destination,
     });
-    return NextResponse.json({ patch, mode: "demo" });
+    const response = NextResponse.json({ patch, mode: "demo" });
+    if (gate.consumes) {
+      response.cookies.set(AI_USED_COOKIE, String(gate.used + 1), {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 60 * 60 * 24 * 40,
+      });
+      response.cookies.set(AI_MONTH_COOKIE, currentMonthKey(), {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 60 * 60 * 24 * 40,
+      });
+    }
+    return response;
   }
 
   let userId: string | null = null;
@@ -85,7 +117,7 @@ export async function POST(
   } else if (apiKey) {
     try {
       const client = new Groq({ apiKey });
-      const model = process.env.GROQ_MODEL ?? "openai/gpt-oss-120b";
+      const model = await plannerModel();
       const completion = await client.chat.completions.create({
         model,
         temperature: 0.3,
@@ -199,8 +231,23 @@ export async function POST(
     ]);
   }
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     patch,
     mode: apiKey ? "ai" : "local",
   });
+  if (gate.consumes) {
+    response.cookies.set(AI_USED_COOKIE, String(gate.used + 1), {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 40,
+    });
+    response.cookies.set(AI_MONTH_COOKIE, currentMonthKey(), {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 40,
+    });
+  }
+  return response;
 }

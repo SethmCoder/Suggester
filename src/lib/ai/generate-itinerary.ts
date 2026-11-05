@@ -1,4 +1,5 @@
 import Groq from "groq-sdk";
+import { plannerModel } from "@/lib/billing/model";
 import { getPopularityConfig } from "../config/popularity";
 import {
   formatDestinationContextForPrompt,
@@ -68,6 +69,7 @@ export interface TripPreferencesInput {
     durationMinutes?: number;
     lat?: number;
     lng?: number;
+    note?: string;
   };
 }
 
@@ -149,10 +151,12 @@ async function callGroq(
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return null;
   const client = new Groq({ apiKey });
-  const model = process.env.GROQ_MODEL ?? "openai/gpt-oss-120b";
+  const model = await plannerModel();
   const popConfig = getPopularityConfig();
 
-  const completion = await client.chat.completions.create({
+  let completion;
+  try {
+    completion = await client.chat.completions.create({
     model,
     temperature: 0.4,
     response_format: {
@@ -163,7 +167,7 @@ async function callGroq(
         schema: {
           type: "object",
           additionalProperties: false,
-          required: ["days"],
+          required: ["days", "warnings"],
           properties: {
             days: {
               type: "array",
@@ -183,6 +187,7 @@ async function callGroq(
                         "startTime",
                         "durationMinutes",
                         "priority",
+                        "planningNote",
                       ],
                       properties: {
                         placeId: { type: "string" },
@@ -228,11 +233,9 @@ async function callGroq(
     ],
   });
 
-  const raw = completion.choices[0]?.message?.content;
-  if (!raw) return null;
-  try {
-    const parsed = itineraryGenerationSchema.parse(JSON.parse(raw));
-    return parsed;
+    const raw = completion.choices[0]?.message?.content;
+    if (!raw) return null;
+    return itineraryGenerationSchema.parse(JSON.parse(raw));
   } catch (err) {
     logger.error("itinerary_schema_invalid", {
       error: err instanceof Error ? err.message : "parse",
@@ -334,7 +337,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
     const fallback = await geocodeDestination(prefs.destination);
     if (!fallback) {
       throw new Error(
-        "Could not geocode destination. OpenStreetMap Nominatim may be rate-limited — try again.",
+        "We couldn’t place that destination. Try the city again in a moment.",
       );
     }
     geo.lat = fallback.lat;
@@ -649,10 +652,10 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
         startTime: arr,
         durationMinutes: 60,
         priority: "must_see",
-        planningNote: `Estimated landing ~${arr} local (${prefs.inboundFlight.durationMinutes ?? "?"} min block). OpenFlights estimate — not a live schedule. First sightseeing after baggage/customs (~${cursorTime}).`,
+        planningNote: `Estimated landing around ${arr} local. Plan on about ${prefs.inboundFlight.durationMinutes ?? "a few hours"} in the air, then baggage and customs. First stop around ${cursorTime}. ${prefs.inboundFlight.note ?? ""}`.trim(),
         hoursVerified: false,
         scheduleWarnings: [
-          "Flight times are OpenFlights estimates, not live airline schedules.",
+          "Flight times are estimates. Check your airline before you travel.",
         ],
         travelMinutesFromPrev: 0,
       });
@@ -673,6 +676,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
         toHotel: leg.hotel,
         preferredLocalTransport: prefs.transport,
         preferredMode: leg.transitFromPrevious ?? "auto",
+        model: await plannerModel(),
       });
       activities.push({
         placeId: transit.placeId,

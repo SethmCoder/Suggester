@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { PlaceBrief } from "@/lib/places/place-brief";
+import { savePlace } from "@/lib/places/saved-places";
 
 export type SelectedPlace = {
   name: string;
@@ -110,6 +111,20 @@ export function PlaceCard({
           ) : (
             <p className="mt-1.5 text-[11px] text-[#6B7280]">On this day</p>
           )}
+          <button
+            type="button"
+            className="mt-1 block text-xs font-semibold text-[#0400FF]"
+            onClick={() =>
+              savePlace({
+                name: place.name,
+                lat: place.lat,
+                lng: place.lng,
+                address: place.address ?? null,
+              })
+            }
+          >
+            Save place
+          </button>
         </div>
       </div>
       <div className="flex border-b border-[#E1E5F0] text-xs font-semibold">
@@ -136,11 +151,6 @@ export function PlaceCard({
         {brief && tab === "description" ? (
           <div className="space-y-2">
             <p className="text-[13px] leading-relaxed">{brief.paragraph}</p>
-            <p className="text-[11px] text-[#6B7280]">
-              {brief.paragraphSource === "wikipedia"
-                ? `From Wikipedia${brief.articleTitle ? `: ${brief.articleTitle}` : ""}.`
-                : "Written just now by the planner — no article was available for this place."}
-            </p>
           </div>
         ) : null}
         {brief && tab === "book" ? (
@@ -179,7 +189,7 @@ export function PlaceCard({
                       {review.rating != null ? ` · ${review.rating}/5` : ""}
                       <span className="font-normal text-[#6B7280]">
                         {" "}
-                        · {review.source}
+                        · Guest review
                       </span>
                     </p>
                     {review.title ? (

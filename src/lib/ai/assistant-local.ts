@@ -36,7 +36,7 @@ export function buildLocalAssistantPatch(input: {
     const dayActs = activitiesForDay(input.activities, input.days, dayIndex);
     if (!dayActs.length) {
       return {
-        summary: `I understood a ~${minutes}-minute delay, but day ${dayIndex + 1} has no activities to adjust.`,
+        summary: `I've noted a delay of about ${minutes} minutes, but day ${dayIndex + 1} has no stops to adjust.`,
         operations: [],
         suggestions: [
           "Try: “My flight is delayed by 2 hours on day 1”",
@@ -66,7 +66,7 @@ export function buildLocalAssistantPatch(input: {
     const act = findActivity(input.activities, fromHint);
     if (act) {
       return {
-        summary: `Replace “${act.name}” with “${toName}” (suggested change — verify the place when you have Maps connected).`,
+        summary: `I'd recommend replacing “${act.name}” with “${toName}”. Please confirm the place before you visit. I haven't verified hours or tickets.`,
         operations: [
           {
             op: "replace",
@@ -93,7 +93,7 @@ export function buildLocalAssistantPatch(input: {
     const toDay = parseDayToken(moveMatch[2], input.days);
     if (act && toDay != null) {
       return {
-        summary: `Move “${act.name}” to day ${toDay + 1}.`,
+        summary: `I've prepared a move of “${act.name}” to day ${toDay + 1}. Review the stops around it so the day still flows.`,
         operations: [
           {
             op: "move",
@@ -115,7 +115,7 @@ export function buildLocalAssistantPatch(input: {
     const act = findActivity(input.activities, removeMatch[1]);
     if (act) {
       return {
-        summary: `Remove “${act.name}” from the itinerary.`,
+        summary: `I've prepared the removal of “${act.name}”, as you requested. Approve it if you'd like that stop taken off the plan.`,
         operations: [{ op: "delete", activityId: act.id }],
         suggestions: ["I can suggest a nearby replacement if you ask."],
       };
@@ -132,7 +132,7 @@ export function buildLocalAssistantPatch(input: {
     const target = optional[optional.length - 1] ?? dayActs[dayActs.length - 1];
     if (target) {
       return {
-        summary: `To lighten day ${dayIndex + 1}, remove or shorten “${target.name}”. Here is a proposed removal — approve to apply.`,
+        summary: `I've reviewed day ${dayIndex + 1}. “${target.name}” is the most practical stop to drop if you'd like a lighter day. Approve this if that suits you.`,
         operations: [{ op: "delete", activityId: target.id }],
         suggestions: [
           "Replace it with a café break near your other stops.",
@@ -144,7 +144,7 @@ export function buildLocalAssistantPatch(input: {
 
   return {
     summary:
-      "I can adjust this itinerary for you. Try a specific request — for example a flight delay, food near your stops, swapping a place, or moving an activity.",
+      "I'm Trip Wizard. Tell me what you'd like to adjust — a delayed flight, meals near your stops, a place you'd rather swap, or a lighter day — and I'll prepare a change for you to approve.",
     operations: [],
     suggestions: [
       "Best places to eat near our stops",
@@ -287,11 +287,11 @@ function buildSyncDelayPatch(input: {
   });
 
   return {
-    summary: `Reshuffled day ${input.dayIndex + 1} for a ${input.minutes}-minute delay (new start ~${newStart}). ${
+    summary: `I've reviewed day ${input.dayIndex + 1} after a ${input.minutes}-minute delay. The day would now start around ${newStart}. ${
       drop.length
-        ? `Dropped or moved ${drop.length} stop(s) that no longer fit.`
-        : "All stops still fit after retiming."
-    } Remaining activities were re-spaced with travel buffers.`,
+        ? `I reshuffled ${drop.length} stop(s) that no longer fit.`
+        : "Every stop still fits after retiming."
+    } The remaining stops include travel time between them.`,
     operations,
     suggestions: [
       "Restore a removed stop on another day",

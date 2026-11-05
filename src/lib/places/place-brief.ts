@@ -4,6 +4,7 @@
  */
 
 import Groq from "groq-sdk";
+import { plannerModel } from "@/lib/billing/model";
 import { quotesForHotelName } from "@/lib/hotels/hotelrec";
 import {
   accountlessFetch,
@@ -176,7 +177,7 @@ async function plannerParagraph(input: {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return null;
   const client = new Groq({ apiKey });
-  const model = process.env.GROQ_MODEL ?? "openai/gpt-oss-120b";
+  const model = await plannerModel();
   const completion = await client.chat.completions.create({
     model,
     temperature: 0.3,
@@ -297,7 +298,7 @@ export async function getPlaceBrief(input: {
   }
   if (wiki?.pageUrl) {
     links.push({
-      label: `Wikipedia — ${wiki.title}`,
+      label: "Read more",
       url: wiki.pageUrl,
       kind: "article",
     });
@@ -318,7 +319,7 @@ export async function getPlaceBrief(input: {
         text: quote.text,
         title: quote.title || undefined,
         rating: quote.rating,
-        source: "HotelRec",
+        source: "Guest review",
         url: "https://github.com/diegoantognini/HotelRec",
       }))
     : [];
@@ -330,11 +331,13 @@ export async function getPlaceBrief(input: {
       : "none";
   const reviewsNote = useHotelRec
     ? hotelReviews.length
-      ? `Reviews are quoted from HotelRec (Antognini & Faltings, LREC 2020), a TripAdvisor-derived dataset${hotelHit ? ` — ${hotelHit.rating.toFixed(1)}/5 across ${hotelHit.reviewCount} reviews in this sample` : ""}. Waypoint does not write reviews.`
-      : "No HotelRec reviews are available for this hotel. Waypoint does not invent reviews."
+      ? hotelHit
+        ? `${hotelHit.rating.toFixed(1)} out of 5 from ${hotelHit.reviewCount} guest reviews.`
+        : "Guest reviews for this stay."
+      : "No guest reviews yet for this hotel."
     : reviews.length
-      ? "Reviews are copied from Google. Waypoint does not write reviews."
-      : "No published reviews were returned for this place. Waypoint does not invent reviews.";
+      ? "Guest reviews for this place."
+      : "No guest reviews yet.";
 
   const brief: PlaceBrief = {
     name,

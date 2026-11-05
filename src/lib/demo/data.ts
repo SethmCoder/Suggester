@@ -5,10 +5,10 @@ import { expandLegsToDays, type DayCityAssignment } from "@/lib/trips/legs";
 export const DEMO_TRIP_ID = "demo-paris";
 export const DEMO_DUBAI_ID = "demo-dubai";
 /** Bump when demo payloads change so stale localStorage copies are ignored. */
-export const DEMO_CONTENT_VERSION = 5;
+export const DEMO_CONTENT_VERSION = 6;
 
 export const DEMO_BANNER =
-  "Demo mode — sample data only. Place facts here are illustrative, not live-verified.";
+  "You’re exploring a sample trip. Plan your own from Create a trip — it stays on this device.";
 
 export const demoTrip = {
   id: DEMO_TRIP_ID,
@@ -26,7 +26,7 @@ export const demoDubaiLegs: TripLeg[] = [
   {
     city: "Dubai",
     days: 3,
-    hotel: "Marina area (demo hotel)",
+    hotel: "Dubai Marina",
     lat: 25.0805,
     lng: 55.1403,
     countryCode: "AE",
@@ -34,7 +34,7 @@ export const demoDubaiLegs: TripLeg[] = [
   {
     city: "Abu Dhabi",
     days: 2,
-    hotel: "Corniche area (demo hotel)",
+    hotel: "Abu Dhabi Corniche",
     lat: 24.4764,
     lng: 54.3705,
     countryCode: "AE",
@@ -74,7 +74,7 @@ function act(
     duration_minutes: 90,
     travel_minutes_from_prev: 0,
     priority: "preferred",
-    planning_note: "Demo activity — illustrative only.",
+    planning_note: null,
     hours_verified: false,
     opening_hours: null,
     website_uri: null,
@@ -83,7 +83,7 @@ function act(
     popularity_label: null,
     popularity_sources: null,
     popularity_attribution_urls: null,
-    schedule_warnings: ["Demo data — hours and travel times are illustrative"],
+    schedule_warnings: null,
     user_locked: false,
     completed: false,
     source: "demo",
@@ -95,7 +95,7 @@ export const demoActivities: ActivityRow[] = [
   act({
     id: "demo-a1",
     day_id: "demo-day-0",
-    name: "Île de la Cité stroll (demo)",
+    name: "Île de la Cité stroll",
     address: "Île de la Cité, Paris",
     lat: 48.855,
     lng: 2.348,
@@ -108,7 +108,7 @@ export const demoActivities: ActivityRow[] = [
   act({
     id: "demo-a2",
     day_id: "demo-day-0",
-    name: "Lunch near Saint-Michel (demo)",
+    name: "Lunch near Saint-Michel",
     address: "Place Saint-Michel, Paris",
     lat: 48.8534,
     lng: 2.3437,
@@ -121,7 +121,7 @@ export const demoActivities: ActivityRow[] = [
   act({
     id: "demo-a3",
     day_id: "demo-day-1",
-    name: "Louvre Museum area (demo)",
+    name: "Louvre Museum area",
     address: "Rue de Rivoli, Paris",
     lat: 48.8606,
     lng: 2.3376,
@@ -131,12 +131,12 @@ export const demoActivities: ActivityRow[] = [
     priority: "must_see",
     popularity_label: "Frequently featured by travelers",
     popularity_sources: ["demo_sample"],
-    planning_note: "Sample must-see — book tickets in a real trip.",
+    planning_note: "Book tickets ahead if you want timed entry.",
   }),
   act({
     id: "demo-a4",
     day_id: "demo-day-1",
-    name: "Tuileries Garden break (demo)",
+    name: "Tuileries Garden break",
     address: "Jardin des Tuileries, Paris",
     lat: 48.8634,
     lng: 2.3275,
@@ -149,7 +149,7 @@ export const demoActivities: ActivityRow[] = [
   act({
     id: "demo-a5",
     day_id: "demo-day-1",
-    name: "Musée d'Orsay exterior walk (demo)",
+    name: "Musée d'Orsay exterior walk",
     address: "1 Rue de la Légion d'Honneur, Paris",
     lat: 48.86,
     lng: 2.3266,
@@ -162,7 +162,7 @@ export const demoActivities: ActivityRow[] = [
   act({
     id: "demo-a6",
     day_id: "demo-day-2",
-    name: "Eiffel Tower viewpoint (demo)",
+    name: "Eiffel Tower viewpoint",
     address: "Champ de Mars, Paris",
     lat: 48.8584,
     lng: 2.2945,
@@ -179,7 +179,7 @@ export const demoActivities: ActivityRow[] = [
   act({
     id: "demo-a7",
     day_id: "demo-day-2",
-    name: "Seine riverside walk (demo)",
+    name: "Seine riverside walk",
     address: "Quai Branly, Paris",
     lat: 48.8606,
     lng: 2.297,
@@ -192,7 +192,7 @@ export const demoActivities: ActivityRow[] = [
   act({
     id: "demo-a8",
     day_id: "demo-day-2",
-    name: "Trocadéro photos (demo)",
+    name: "Trocadéro photos",
     address: "Place du Trocadéro, Paris",
     lat: 48.8629,
     lng: 2.2875,
@@ -205,7 +205,7 @@ export const demoActivities: ActivityRow[] = [
   act({
     id: "demo-a9",
     day_id: "demo-day-3",
-    name: "Montmartre & Sacré-Cœur area (demo)",
+    name: "Montmartre & Sacré-Cœur area",
     address: "Montmartre, Paris",
     lat: 48.8867,
     lng: 2.3431,
@@ -217,7 +217,7 @@ export const demoActivities: ActivityRow[] = [
   act({
     id: "demo-a10",
     day_id: "demo-day-3",
-    name: "Departure buffer / café (demo)",
+    name: "Departure buffer / café",
     address: "Near Gare du Nord area, Paris",
     lat: 48.8809,
     lng: 2.3553,
@@ -246,7 +246,7 @@ export const demoDubaiActivities: ActivityRow[] = [
   act({
     id: "demo-dxb-a1",
     day_id: "demo-dxb-day-0",
-    name: "Dubai Marina waterfront walk (demo)",
+    name: "Dubai Marina waterfront walk",
     address: "Dubai Marina, Dubai",
     lat: 25.0805,
     lng: 55.1403,
@@ -254,12 +254,12 @@ export const demoDubaiActivities: ActivityRow[] = [
     duration_minutes: 90,
     sort_order: 0,
     priority: "must_see",
-    planning_note: "city=Dubai · Arrival-day stroll — cooler late afternoon.",
+    planning_note: "Arrival-day stroll — cooler late afternoon.",
   }),
   act({
     id: "demo-dxb-a2",
     day_id: "demo-dxb-day-0",
-    name: "JBR beach sunset (demo)",
+    name: "JBR beach sunset",
     address: "Jumeirah Beach Residence, Dubai",
     lat: 25.0772,
     lng: 55.1335,
@@ -268,12 +268,12 @@ export const demoDubaiActivities: ActivityRow[] = [
     travel_minutes_from_prev: 15,
     sort_order: 1,
     priority: "preferred",
-    planning_note: "city=Dubai",
+    planning_note: null,
   }),
   act({
     id: "demo-dxb-a3",
     day_id: "demo-dxb-day-1",
-    name: "Burj Khalifa area & Downtown (demo)",
+    name: "Burj Khalifa area & Downtown",
     address: "Downtown Dubai",
     lat: 25.1972,
     lng: 55.2744,
@@ -287,12 +287,12 @@ export const demoDubaiActivities: ActivityRow[] = [
       "https://en.wikipedia.org/wiki/Burj_Khalifa",
     ],
     planning_note:
-      "city=Dubai · Sample must-see — book observation deck tickets in a real trip.",
+      "Book the observation deck ahead if you want a timed visit.",
   }),
   act({
     id: "demo-dxb-a4",
     day_id: "demo-dxb-day-1",
-    name: "Dubai Fountain boardwalk (demo)",
+    name: "Dubai Fountain boardwalk",
     address: "The Dubai Fountain, Dubai",
     lat: 25.1952,
     lng: 55.274,
@@ -301,12 +301,12 @@ export const demoDubaiActivities: ActivityRow[] = [
     travel_minutes_from_prev: 10,
     sort_order: 1,
     priority: "preferred",
-    planning_note: "city=Dubai",
+    planning_note: null,
   }),
   act({
     id: "demo-dxb-a5",
     day_id: "demo-dxb-day-1",
-    name: "Dubai Mall exterior / Souk Al Bahar (demo)",
+    name: "Dubai Mall exterior / Souk Al Bahar",
     address: "Downtown Dubai",
     lat: 25.1985,
     lng: 55.2796,
@@ -315,12 +315,12 @@ export const demoDubaiActivities: ActivityRow[] = [
     travel_minutes_from_prev: 8,
     sort_order: 2,
     priority: "optional",
-    planning_note: "city=Dubai",
+    planning_note: null,
   }),
   act({
     id: "demo-dxb-a6",
     day_id: "demo-dxb-day-2",
-    name: "Old Dubai — Al Fahidi / Creek (demo)",
+    name: "Old Dubai — Al Fahidi / Creek",
     address: "Al Fahidi Historical Neighbourhood, Dubai",
     lat: 25.2631,
     lng: 55.2972,
@@ -328,12 +328,12 @@ export const demoDubaiActivities: ActivityRow[] = [
     duration_minutes: 120,
     sort_order: 0,
     priority: "must_see",
-    planning_note: "city=Dubai",
+    planning_note: null,
   }),
   act({
     id: "demo-dxb-a7",
     day_id: "demo-dxb-day-2",
-    name: "Abra crossing & spice souk stroll (demo)",
+    name: "Abra crossing & spice souk stroll",
     address: "Dubai Creek, Dubai",
     lat: 25.265,
     lng: 55.296,
@@ -342,12 +342,12 @@ export const demoDubaiActivities: ActivityRow[] = [
     travel_minutes_from_prev: 12,
     sort_order: 1,
     priority: "preferred",
-    planning_note: "city=Dubai",
+    planning_note: null,
   }),
   act({
     id: "demo-dxb-a8",
     day_id: "demo-dxb-day-2",
-    name: "Gold Souk browse (demo)",
+    name: "Gold Souk browse",
     address: "Deira Gold Souk, Dubai",
     lat: 25.2697,
     lng: 55.298,
@@ -356,13 +356,13 @@ export const demoDubaiActivities: ActivityRow[] = [
     travel_minutes_from_prev: 15,
     sort_order: 2,
     priority: "optional",
-    planning_note: "city=Dubai · Last Dubai day before the Abu Dhabi leg.",
+    planning_note: "Last Dubai day before the Abu Dhabi leg.",
   }),
   // —— Transit + Abu Dhabi days 4–5 ——
   act({
     id: "demo-dxb-a9",
     day_id: "demo-dxb-day-3",
-    name: "Coach / bus · Marina area → Corniche area (demo)",
+    name: "Coach / bus · Marina area → Corniche area",
     address: "Dubai hotel → Abu Dhabi hotel · ~140 km · ~2h 0m",
     lat: 24.85,
     lng: 54.7,
@@ -372,7 +372,7 @@ export const demoDubaiActivities: ActivityRow[] = [
     priority: "must_see",
     place_id: "transit:coach:Dubai:Abu Dhabi",
     planning_note:
-      "city=Abu Dhabi · Hotel-to-hotel: Marina area (demo hotel) (Dubai) → Corniche area (demo hotel) (Abu Dhabi). Coach / bus for ~140 km. Depart ~08:45, arrive ~10:45 local (estimate). Usually no long-distance reservation required. Not a live timetable — verify schedules when booking.",
+      "Coach from Dubai Marina to Abu Dhabi Corniche, about 140 km. Leave around 08:45 and arrive around 10:45. Check the timetable before you travel.",
     schedule_warnings: [
       "Transit times are planned windows, not live booked tickets.",
     ],
@@ -380,7 +380,7 @@ export const demoDubaiActivities: ActivityRow[] = [
   act({
     id: "demo-dxb-a10",
     day_id: "demo-dxb-day-3",
-    name: "Sheikh Zayed Grand Mosque exterior (demo)",
+    name: "Sheikh Zayed Grand Mosque exterior",
     address: "Sheikh Zayed Grand Mosque, Abu Dhabi",
     lat: 24.4128,
     lng: 54.475,
@@ -390,12 +390,12 @@ export const demoDubaiActivities: ActivityRow[] = [
     sort_order: 1,
     priority: "must_see",
     planning_note:
-      "city=Abu Dhabi · First stop after the city change — dress code applies in a real visit.",
+      "First stop after the city change. Modest dress is required.",
   }),
   act({
     id: "demo-dxb-a11",
     day_id: "demo-dxb-day-3",
-    name: "Corniche waterfront stroll (demo)",
+    name: "Corniche waterfront stroll",
     address: "Abu Dhabi Corniche",
     lat: 24.4764,
     lng: 54.3205,
@@ -404,12 +404,12 @@ export const demoDubaiActivities: ActivityRow[] = [
     travel_minutes_from_prev: 25,
     sort_order: 2,
     priority: "preferred",
-    planning_note: "city=Abu Dhabi",
+    planning_note: null,
   }),
   act({
     id: "demo-dxb-a12",
     day_id: "demo-dxb-day-4",
-    name: "Louvre Abu Dhabi area (demo)",
+    name: "Louvre Abu Dhabi area",
     address: "Saadiyat Island, Abu Dhabi",
     lat: 24.5337,
     lng: 54.398,
@@ -422,12 +422,12 @@ export const demoDubaiActivities: ActivityRow[] = [
     popularity_attribution_urls: [
       "https://en.wikipedia.org/wiki/Louvre_Abu_Dhabi",
     ],
-    planning_note: "city=Abu Dhabi · Final city day on this multi-city sample.",
+    planning_note: "Last full day in Abu Dhabi.",
   }),
   act({
     id: "demo-dxb-a13",
     day_id: "demo-dxb-day-4",
-    name: "Qasr Al Watan exterior / departure buffer (demo)",
+    name: "Qasr Al Watan exterior / departure buffer",
     address: "Qasr Al Watan, Abu Dhabi",
     lat: 24.4647,
     lng: 54.3258,
@@ -436,7 +436,7 @@ export const demoDubaiActivities: ActivityRow[] = [
     travel_minutes_from_prev: 30,
     sort_order: 1,
     priority: "optional",
-    planning_note: "city=Abu Dhabi · Light end-of-trip block.",
+    planning_note: "Light end-of-trip block.",
   }),
 ];
 
@@ -475,7 +475,7 @@ export function getDemoTripPayload(id: string = DEMO_TRIP_ID) {
       {
         city: "Paris",
         days: 4,
-        hotel: "Demo hotel",
+        hotel: "Central Paris",
         lat: 48.86,
         lng: 2.35,
         countryCode: "FR",
@@ -485,7 +485,7 @@ export function getDemoTripPayload(id: string = DEMO_TRIP_ID) {
       {
         city: "Paris",
         days: 4,
-        hotel: "Demo hotel",
+        hotel: "Central Paris",
         lat: 48.86,
         lng: 2.35,
         countryCode: "FR",

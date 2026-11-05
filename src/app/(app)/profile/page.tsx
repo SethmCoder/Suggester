@@ -62,7 +62,7 @@ export default function ProfilePage() {
           Profile
         </h1>
         <p className="mt-1 text-sm text-[#6B7280]">
-          Account details for your Waypoint workspace.
+          Your name and account details.
         </p>
       </div>
       <div className="rounded-[16px] border border-[#E1E5F0] bg-white p-6 shadow-[0_4px_20px_rgba(8,11,58,0.05)]">

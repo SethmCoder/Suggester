@@ -8,6 +8,7 @@ const PROTECTED = [
   "/settings",
   "/saved-places",
   "/help",
+  "/plan",
   "/trips/new",
 ];
 const PROTECTED_PREFIX = "/trips/";
@@ -17,6 +18,10 @@ const DEMO_TRIP_PATHS = new Set(["/trips/demo-paris", "/trips/demo-dubai"]);
 
 function isDemoTripPath(path: string) {
   return DEMO_TRIP_PATHS.has(path);
+}
+
+function isDemoCreatedTrip(path: string) {
+  return path.startsWith("/trips/offline-");
 }
 
 export async function middleware(request: NextRequest) {
@@ -29,12 +34,12 @@ export async function middleware(request: NextRequest) {
       !path.startsWith("/trips/preview") &&
       path !== "/trips/new");
 
-  // Demo cookie unlocks dashboard + demo trips + create-trip preview
+  // Demo cookie unlocks dashboard, sample trips, the planner, and trips it creates.
   if (demo && isProtected) {
-    // /trips/new is allowed as an interactive preview (submit still requires signup)
     if (
       path.startsWith("/trips/") &&
       !isDemoTripPath(path) &&
+      !isDemoCreatedTrip(path) &&
       path !== "/trips/new"
     ) {
       return NextResponse.redirect(new URL("/trips/demo-paris", request.url));
@@ -95,6 +100,7 @@ export const config = {
     "/settings/:path*",
     "/saved-places/:path*",
     "/help/:path*",
+    "/plan/:path*",
     "/trips/:path*",
     "/login",
     "/signup",

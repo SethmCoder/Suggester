@@ -1,8 +1,17 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { generateItinerary } from "@/lib/ai/generate-itinerary";
+import {
+  PLAN_COOKIE,
+  PLAN_LIMIT_MESSAGE,
+  USED_COOKIE,
+  canCreateTrip,
+  readPlan,
+} from "@/lib/billing/plans";
 import { anchorUnbookedLegs } from "@/lib/hotels/hotelrec";
 import { createTripRecord, saveGeneratedItinerary } from "@/lib/db/trips";
+import { filterAirlines, flightRestrictionNote } from "@/lib/flights/airline-class";
 import { estimateFlight } from "@/lib/flights/openflights";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -32,6 +41,9 @@ const bodySchema = z.object({
   optional: z.array(z.string()).default([]),
   avoid: z.array(z.string()).default([]),
   idealTrip: z.string().default(""),
+  preferredAirlines: z.string().optional(),
+  flightPricePoint: z.enum(["any", "budget", "standard", "premium"]).optional(),
+  chosenAirline: z.string().optional(),
   legs: z
     .array(
       z.object({
@@ -51,6 +63,7 @@ const bodySchema = z.object({
         hotelPlace: z
           .enum(["any", "center", "beach", "sights", "transit"])
           .optional(),
+        hotelBrand: z.string().optional(),
         transitFromPrevious: z
           .enum([
             "auto",
@@ -69,6 +82,25 @@ const bodySchema = z.object({
 
 export async function POST(req: Request) {
   try {
+    const jar = await cookies();
+    const billing = readPlan((name) => jar.get(name)?.value);
+    if (!canCreateTrip(billing)) {
+      return NextResponse.json(
+        { error: PLAN_LIMIT_MESSAGE, code: "plan_limit" },
+        { status: 402 },
+      );
+    }
+    const { gateFeature, PRO_REQUIRED_MESSAGE } = await import(
+      "@/lib/billing/entitlements"
+    );
+    const gate = gateFeature("generate", (name) => jar.get(name)?.value);
+    if (!gate.allowed) {
+      return NextResponse.json(
+        { error: PRO_REQUIRED_MESSAGE, code: "pro_required" },
+        { status: 402 },
+      );
+    }
+
     const parsed = bodySchema.parse(await req.json());
     const legs = parsed.legs?.length
       ? anchorUnbookedLegs(parsed.legs)
@@ -115,7 +147,20 @@ export async function POST(req: Request) {
             arrivalDayOffset: est.arrivalDayOffset,
             suggestedDayStart: est.suggestedDayStart,
             routeKnown: est.routeKnown,
-            note: est.note,
+            note: [
+              est.note,
+              flightRestrictionNote({
+                chosen: body.chosenAirline,
+                preferred: body.preferredAirlines,
+                pricePoint: body.flightPricePoint,
+                matches: filterAirlines(est.airlines, {
+                  airlines: body.preferredAirlines,
+                  pricePoint: body.flightPricePoint,
+                }),
+              }),
+            ]
+              .filter(Boolean)
+              .join(" "),
           };
         }
       } catch {
@@ -233,7 +278,17 @@ export async function POST(req: Request) {
       response: { warnings: generated.warnings, popularityUsed: generated.popularityUsed },
     });
 
-    return NextResponse.json({ tripId, warnings: generated.warnings });
+    const res = NextResponse.json({ tripId, warnings: generated.warnings });
+    const options = {
+      httpOnly: true,
+      sameSite: "lax" as const,
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
+    };
+    res.cookies.set(PLAN_COOKIE, billing.plan, options);
+    res.cookies.set(USED_COOKIE, String(billing.used + 1), options);
+    return res;
   } catch (err) {
     const message = err instanceof Error ? err.message : "Create failed";
     return NextResponse.json({ error: message }, { status: 400 });

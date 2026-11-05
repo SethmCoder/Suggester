@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { Button } from "@/components/ui/Button";
 import { IconArrowRight, IconPlane, IconSearch } from "@/components/ui/Icons";
+import { PlanSummary } from "@/components/billing/PlanSummary";
 import { LocalHeroBackground } from "@/components/home/LocalHero";
 import {
   countryFromDestination,
@@ -78,7 +79,7 @@ export default function DashboardPage() {
         const remote = (d.trips ?? []) as TripListItem[];
         setIsDemo(Boolean(d.isDemo));
         if (d.isDemo) {
-          setName("DEMO");
+          setName("traveler");
           try {
             seedDemoOffline();
           } catch {
@@ -129,11 +130,14 @@ export default function DashboardPage() {
             Build personalized itineraries, refine them with AI, and keep every
             stop geographically smart.
           </p>
+          <div className="mt-3">
+            <PlanSummary tone="light" />
+          </div>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link href="/trips/new" className="inline-flex">
               <Button>
                 <IconPlane size={16} />
-                {isDemo ? "Preview create trip" : "Create a Trip"}
+                Create a Trip
               </Button>
             </Link>
             {isDemo ? (
@@ -184,7 +188,7 @@ export default function DashboardPage() {
           </p>
           <Link href="/trips/new" className="mt-6 inline-flex">
             <Button>
-              {isDemo ? "Preview create trip" : "Create a Trip"}
+              Create a Trip
             </Button>
           </Link>
         </div>
@@ -211,7 +215,7 @@ function CreateTripPreviewCard() {
           <IconPlane size={26} />
         </div>
         <span className="absolute right-3 top-3 rounded-md bg-[#080B3A] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-          Try the form
+          New trip
         </span>
       </div>
       <div className="flex flex-1 flex-col space-y-1.5 p-4">
@@ -219,8 +223,7 @@ function CreateTripPreviewCard() {
           Create a trip
         </h3>
         <p className="text-sm text-[#6B7280]">
-          Preview cities, dates, hotels, and interests — the same flow you use
-          after signup.
+          Plan cities, dates, and hotels. The itinerary is saved on this device.
         </p>
         <span className="inline-flex items-center gap-1 pt-2 text-sm font-semibold text-[#0400FF] group-hover:gap-2">
           Open planner <IconArrowRight size={14} />
@@ -258,7 +261,7 @@ function TripCard({ trip }: { trip: TripListItem }) {
         <div className="absolute inset-0 bg-gradient-to-t from-[#080B3A]/50 to-transparent" />
         {trip.id.startsWith("demo-") ? (
           <span className="absolute right-3 top-3 rounded-md bg-[#0400FF] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-            {trip.id === "demo-dubai" ? "Multi-city demo" : "Demo"}
+            {trip.id === "demo-dubai" ? "Two cities" : "Sample"}
           </span>
         ) : null}
       </div>
@@ -268,7 +271,7 @@ function TripCard({ trip }: { trip: TripListItem }) {
         </h3>
         <p className="text-sm text-[#6B7280]">
           {trip.id === "demo-dubai"
-            ? "UAE · sample multi-city legs"
+            ? "Dubai and Abu Dhabi"
             : countryFromDestination(trip.destination)}
         </p>
         <p className="text-sm text-[#6B7280]">

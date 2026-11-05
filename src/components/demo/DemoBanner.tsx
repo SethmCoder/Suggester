@@ -20,7 +20,7 @@ export function DemoBanner() {
         onClick={exitDemo}
         className="shrink-0 font-semibold text-[#0400FF] underline hover:text-[#0A0080]"
       >
-        Exit demo
+        Back to start
       </button>
     </div>
   );

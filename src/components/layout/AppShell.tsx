@@ -24,6 +24,7 @@ const NAV = [
   { href: "/dashboard", label: "My Trips", icon: IconMap, hash: "trips" },
   { href: "/saved-places", label: "Saved Places", icon: IconPin },
   { href: "/profile", label: "Profile", icon: IconUser },
+  { href: "/plan", label: "Plans", icon: IconPlane },
   { href: "/help", label: "Help & Support", icon: IconHelp },
   { href: "/settings", label: "Settings", icon: IconSettings },
 ];

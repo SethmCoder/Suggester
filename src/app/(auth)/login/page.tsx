@@ -21,8 +21,8 @@ function LoginForm() {
     return (
       <div className="space-y-4">
         <p className="text-sm text-[#6B7280]">
-          Supabase is not configured yet. Explore the product with demo mode, or
-          add your keys to enable sign-in.
+          Sign-in isn’t available yet. Try the demo to plan a trip on this
+          device.
         </p>
         <TryDemoButton className="w-full" variant="primary" />
       </div>

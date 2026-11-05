@@ -15,7 +15,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AssistantPatch } from "@/lib/ai/patch";
 import { shiftActivityStartTime } from "@/lib/ai/scheduler";
 import {
@@ -41,8 +41,9 @@ import {
 import { CityHotelField } from "./CityHotelField";
 import { AddStopSearch, PlaceCard, type SelectedPlace } from "./PlaceCard";
 import { PopularityBadge } from "./PopularityBadge";
-import { TripMap } from "./TripMap";
+import { TripMap, type HotelMapPin } from "./TripMap";
 import { AssistantPanel } from "./AssistantPanel";
+import { TripIntelligence } from "./TripIntelligence";
 import type { ActivityRow, LegTransitMode, TripLeg } from "@/lib/types/trip";
 
 const LEG_CARD_COLORS = [
@@ -270,7 +271,7 @@ export function ItineraryEditor({
               ...a,
               name: `${formatIntercityModeLabel(labelMode)} · ${fromHotel} → ${toHotel}`,
               address: `${from.city} hotel → ${to.city} hotel`,
-              planning_note: `city=${to.city} · Hotel-to-hotel: ${fromHotel} (${from.city}) → ${toHotel} (${to.city}). ${rest}`,
+              planning_note: `city=${to.city} · From ${fromHotel} in ${from.city} to ${toHotel} in ${to.city}. ${rest}`,
               place_id:
                 modeOverride && modeOverride !== "auto"
                   ? `transit:${modeOverride}:${from.city}:${to.city}`
@@ -335,7 +336,7 @@ export function ItineraryEditor({
                       hours_verified: false,
                       planning_note:
                         op.planningNote ??
-                        "Replaced by itinerary maker — verify before visiting",
+                        "Suggested by Trip Wizard — confirm details before you visit",
                       user_locked: true,
                     }
                   : a,
@@ -580,6 +581,57 @@ export function ItineraryEditor({
     });
   }
 
+  const [hotelPins, setHotelPins] = useState<HotelMapPin[]>([]);
+  const hotelRequest = useRef(0);
+
+  const loadMapHotels = useCallback((params: URLSearchParams) => {
+    const requestId = ++hotelRequest.current;
+    void fetch(`/api/hotels/catalog?${params}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (requestId !== hotelRequest.current) return;
+        const hotels = (data.hotels ?? []) as {
+          id: string;
+          name: string;
+          propertyType: string;
+          latitude: number;
+          longitude: number;
+          address?: string | null;
+          phone?: string | null;
+          website?: string | null;
+          starRating?: number | null;
+        }[];
+        setHotelPins(
+          hotels.map((hotel) => ({
+            id: hotel.id,
+            lat: hotel.latitude,
+            lng: hotel.longitude,
+            name: hotel.name,
+            propertyType: hotel.propertyType,
+            address: hotel.address,
+            phone: hotel.phone,
+            website: hotel.website,
+            starRating: hotel.starRating,
+          })),
+        );
+      })
+      .catch(() => {
+        /* keep the hotels already on the map */
+      });
+  }, []);
+
+  useEffect(() => {
+    if (view === "schedule") return;
+    const day = dayCities?.[selectedDay];
+    if (!day?.city) return;
+    const params = new URLSearchParams({ city: day.city, limit: "40" });
+    if (day.anchorLat && day.anchorLng) {
+      params.set("lat", String(day.anchorLat));
+      params.set("lng", String(day.anchorLng));
+    }
+    loadMapHotels(params);
+  }, [view, selectedDay, dayCities, loadMapHotels]);
+
   const dayPins = days[selectedDay]?.activities
     .filter((a) => a.lat != null && a.lng != null)
     .map((a, i) => ({
@@ -649,6 +701,12 @@ export function ItineraryEditor({
           </div>
         </div>
       </section>
+      <TripIntelligence
+        activities={days[selectedDay]?.activities ?? []}
+        onApplyStart={(activityId, start) =>
+          updateActivity(selectedDay, activityId, { start_time: start })
+        }
+      />
 
       <div
         className={`grid gap-4 ${view === "split" ? "lg:grid-cols-2 lg:items-start" : "grid-cols-1"}`}
@@ -736,8 +794,8 @@ export function ItineraryEditor({
                           <CityHotelField
                             city={leg.city}
                             value={leg.hotel ?? ""}
-                            lat={leg.hotelLat ?? leg.lat}
-                            lng={leg.hotelLng ?? leg.lng}
+                            lat={leg.lat}
+                            lng={leg.lng}
                             onChange={(next) => updateLeg(i, next)}
                           />
                         </label>
@@ -889,8 +947,8 @@ export function ItineraryEditor({
                       />
                     ) : (
                       <p className="mt-2 border-t border-[#E1E5F0] pt-2 text-[11px] text-[#6B7280]">
-                        Day regenerate is available after you sign up for a real
-                        trip.
+                        Regenerating a day is available once the trip is saved to
+                        your account.
                       </p>
                     )}
                   </div>
@@ -912,6 +970,30 @@ export function ItineraryEditor({
             <div className="h-full min-h-[280px] overflow-hidden rounded-[14px] border border-[#E1E5F0] bg-white lg:min-h-0">
               <TripMap
                 pins={dayPins ?? []}
+                hotelPins={hotelPins}
+                onSelectHotel={(pin) =>
+                  setSelectedPlace({
+                    name: pin.name,
+                    lat: pin.lat,
+                    lng: pin.lng,
+                    address: pin.address,
+                    dayIndex: selectedDay,
+                  })
+                }
+                onBounds={(box) => {
+                  const params = new URLSearchParams({
+                    south: String(box.south),
+                    west: String(box.west),
+                    north: String(box.north),
+                    east: String(box.east),
+                    lat: String((box.south + box.north) / 2),
+                    lng: String((box.west + box.east) / 2),
+                    limit: "40",
+                  });
+                  const city = dayCities?.[selectedDay]?.city;
+                  if (city) params.set("city", city);
+                  loadMapHotels(params);
+                }}
                 onSelectPin={(pin) =>
                   setSelectedPlace({
                     name: pin.label,
@@ -966,7 +1048,7 @@ function TransitBlock({ minutes }: { minutes: number | null }) {
     >
       <div className="h-px flex-1 border-t border-dashed border-[#C5CAE5]" />
       <p className="shrink-0 text-[10px] font-medium text-[#6B7280]">
-        {minutes != null ? `${minutes} min · OSM` : "Transit · OSM"}
+        {minutes != null ? `${minutes} min` : "Between stops"}
       </p>
       <div className="h-px flex-1 border-t border-dashed border-[#C5CAE5]" />
     </div>

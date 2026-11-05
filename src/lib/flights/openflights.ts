@@ -40,6 +40,8 @@ export type FlightEstimate = {
   durationMinutes: number;
   routeKnown: boolean;
   sampleAirlines: string[];
+  /** Airlines OpenFlights lists on this route. Not a live schedule. */
+  airlines: { code: string; name: string }[];
   /** Assumed local departure at origin (HH:MM). */
   assumedDepartureLocal: string;
   /** Estimated local arrival at destination (HH:MM), may roll past midnight. */
@@ -383,9 +385,11 @@ export async function estimateFlight(input: {
   }
 
   const routeKnown = airlineCodes.length > 0;
-  const sampleAirlines = airlineCodes
-    .slice(0, 5)
-    .map((c) => cache.airlineNames.get(c) ?? c);
+  const airlines = airlineCodes.slice(0, 24).map((code) => ({
+    code,
+    name: cache.airlineNames.get(code) ?? code,
+  }));
+  const sampleAirlines = airlines.slice(0, 5).map((airline) => airline.name);
 
   // Still no route — refuse to invent a fake commercial flight
   if (!routeKnown) {
@@ -396,11 +400,12 @@ export async function estimateFlight(input: {
       durationMinutes: 0,
       routeKnown: false,
       sampleAirlines: [],
+      airlines: [],
       assumedDepartureLocal: input.departureLocal ?? "10:00",
       estimatedArrivalLocal: "—",
       arrivalDayOffset: 0,
       suggestedDayStart: "12:00",
-      note: `${reroutedNote}No published OpenFlights airline route ${from.iata}→${to.iata}. Pick a commercial airport pair (e.g. HND→CDG) — we do not invent flight times for unpublished routes.`,
+      note: `${reroutedNote}No scheduled airline route from ${from.iata} to ${to.iata}. Choose a pair with regular flights, such as HND to CDG.`,
     };
   }
 
@@ -432,7 +437,7 @@ export async function estimateFlight(input: {
   // If buffer crosses midnight, fold into day offset note only for dayStart same calendar arrival day.
   const suggestedDayStart = ready.time;
 
-  const note = `${reroutedNote}OpenFlights lists ${airlineCodes.length} airline route(s) ${from.iata}→${to.iata}. Times are estimates (no live schedules).`;
+  const note = `${reroutedNote}${airlineCodes.length} airline${airlineCodes.length === 1 ? " flies" : "s fly"} ${from.iata} to ${to.iata}. Times are estimates, not a live schedule.`;
 
   return {
     from,
@@ -441,6 +446,7 @@ export async function estimateFlight(input: {
     durationMinutes,
     routeKnown,
     sampleAirlines,
+    airlines,
     assumedDepartureLocal,
     estimatedArrivalLocal,
     arrivalDayOffset,
