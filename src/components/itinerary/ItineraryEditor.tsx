@@ -38,6 +38,7 @@ import {
   intercityModeFromPlaceId,
   type IntercityMode,
 } from "@/lib/trips/intercity-transit";
+import { CityHotelField } from "./CityHotelField";
 import { AddStopSearch, PlaceCard, type SelectedPlace } from "./PlaceCard";
 import { PopularityBadge } from "./PopularityBadge";
 import { TripMap } from "./TripMap";
@@ -732,13 +733,12 @@ export function ItineraryEditor({
                         </div>
                         <label className="block text-[11px] font-medium text-[#080B3A]">
                           Hotel in {leg.city}
-                          <input
-                            className="mt-1 w-full rounded-lg border border-[#D1D7E5] bg-white px-2.5 py-1.5 text-sm"
+                          <CityHotelField
+                            city={leg.city}
                             value={leg.hotel ?? ""}
-                            placeholder={`Hotel name in ${leg.city}`}
-                            onChange={(e) =>
-                              updateLeg(i, { hotel: e.target.value })
-                            }
+                            lat={leg.hotelLat ?? leg.lat}
+                            lng={leg.hotelLng ?? leg.lng}
+                            onChange={(next) => updateLeg(i, next)}
                           />
                         </label>
                       </div>

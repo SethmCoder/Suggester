@@ -116,7 +116,7 @@ export function locationStartsWithCity(location: string, city: string): boolean 
   return hay === needle || hay.startsWith(`${needle} `);
 }
 
-function dedupeHotels(hotels: HotelRecord[]): HotelRecord[] {
+export function dedupeHotels(hotels: HotelRecord[]): HotelRecord[] {
   const byId = new Map<string, HotelRecord>();
   for (const hotel of hotels) {
     const prev = byId.get(hotel.id);
@@ -206,7 +206,7 @@ export function anchorUnbookedLegs<
     hotelMinRating?: number;
     hotelPlace?: HotelPlacePreference;
   },
->(legs: T[]): T[] {
+>(legs: T[]): Array<T & { hotel?: string; hotelAddress?: string }> {
   return legs.map((leg) => {
     if (leg.hotelBooked !== false) return leg;
     if (leg.hotel?.trim()) return leg;

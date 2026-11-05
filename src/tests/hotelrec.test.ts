@@ -6,6 +6,10 @@ import {
   suggestHotels,
   type HotelRecord,
 } from "@/lib/hotels/hotelrec";
+import {
+  hotelNameMatchScore,
+  searchHotelsByName,
+} from "@/lib/hotels/name-match";
 
 const hotels: HotelRecord[] = [
   {
@@ -154,11 +158,23 @@ describe("HotelRec subset", () => {
     expect(quote.text).not.toMatch(/as an ai|waypoint does not/i);
   });
 
+  it("ranks typed hotel names inside the city", () => {
+    expect(hotelNameMatchScore("beach", "Beach House")).toBeGreaterThan(
+      hotelNameMatchScore("beach", "Center Inn"),
+    );
+    const picks = searchHotelsByName(hotels, {
+      city: "Paris",
+      query: "center",
+    });
+    expect(picks.map((h) => h.name)).toEqual(["Center Inn"]);
+  });
+
   it("fills an empty unbooked leg from the top suggestion", () => {
     const [leg] = anchorUnbookedLegs([
       {
         city: "Dubai",
         hotel: "",
+        hotelAddress: undefined as string | undefined,
         hotelBooked: false,
         hotelMinRating: 4,
         hotelPlace: "beach" as const,
