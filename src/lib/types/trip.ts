@@ -38,6 +38,10 @@ export interface TripLeg {
   hotelLng?: number;
   hotelPlaceId?: string;
   hotelAddress?: string;
+  /** True when the traveler already booked this hotel. False means a HotelRec suggestion. */
+  hotelBooked?: boolean;
+  hotelMinRating?: number;
+  hotelPlace?: "any" | "center" | "beach" | "sights" | "transit";
   /**
    * Transport from the previous city's hotel → this city's hotel.
    * Ignored on the first leg. "auto" lets the planner choose.

@@ -8,6 +8,8 @@ import {
   createOfflineTripId,
   saveOfflineTrip,
 } from "@/lib/offline/trips";
+import { HotelChoice } from "@/components/trips/HotelChoice";
+import type { HotelPlacePreference } from "@/lib/hotels/hotelrec";
 import type { ActivityRow, LegTransitMode } from "@/lib/types/trip";
 
 const INTERCITY_MODES: { value: LegTransitMode; label: string }[] = [
@@ -52,8 +54,12 @@ type LegDraft = {
   hotelLat?: number;
   hotelLng?: number;
   hotelPlaceId?: string;
+  hotelAddress?: string;
   /** How you travel from the previous city's hotel to this hotel */
   transitFromPrevious: LegTransitMode;
+  hotelBooked: boolean;
+  hotelMinRating: number;
+  hotelPlace: HotelPlacePreference;
 };
 
 type CitySuggestion = {
@@ -118,6 +124,15 @@ export function CreateTripWizard({
 }) {
   const router = useRouter();
   const [step, setStep] = useState(0);
+  const [clarifyQuestions, setClarifyQuestions] = useState<
+    { id: string; prompt: string }[]
+  >([]);
+  const [clarifyAnswers, setClarifyAnswers] = useState<Record<string, string>>(
+    {},
+  );
+  const [clarifyState, setClarifyState] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState("");
@@ -146,13 +161,24 @@ export function CreateTripWizard({
     prefersHiddenGems: false,
   });
   const [legs, setLegs] = useState<LegDraft[]>([
-    { city: "", days: 3, hotel: "", transitFromPrevious: "auto" },
+    {
+      city: "",
+      days: 3,
+      hotel: "",
+      transitFromPrevious: "auto",
+      hotelBooked: true,
+      hotelMinRating: 4,
+      hotelPlace: "center",
+    },
   ]);
   const [citySuggestions, setCitySuggestions] = useState<
     Record<number, CitySuggestion[]>
   >({});
   const [hotelSuggestions, setHotelSuggestions] = useState<
     Record<number, HotelSuggestion[]>
+  >({});
+  const [recLists, setRecLists] = useState<
+    Record<number, { id: string; name: string; rating: number; location: string }[]>
   >({});
   const [departureSuggestions, setDepartureSuggestions] = useState<
     CitySuggestion[]
@@ -448,7 +474,18 @@ export function CreateTripWizard({
       preferred: splitList(form.preferred),
       optional: splitList(form.optional),
       avoid: splitList(form.avoid),
-      idealTrip: form.idealTrip,
+      idealTrip: [
+        form.idealTrip.trim(),
+        clarifyQuestions
+          .map((q) => {
+            const answer = clarifyAnswers[q.id]?.trim();
+            return answer ? `Q: ${q.prompt}\nA: ${answer}` : "";
+          })
+          .filter(Boolean)
+          .join("\n"),
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
       legs: legs
         .filter((l) => l.city.trim())
         .map((l, i) => ({
@@ -462,6 +499,10 @@ export function CreateTripWizard({
           hotelLat: l.hotelLat,
           hotelLng: l.hotelLng,
           hotelPlaceId: l.hotelPlaceId,
+          hotelBooked: l.hotelBooked,
+          hotelMinRating: l.hotelMinRating,
+          hotelPlace: l.hotelPlace,
+          hotelAddress: l.hotelAddress,
           transitFromPrevious:
             i === 0 ? undefined : l.transitFromPrevious || "auto",
         })),
@@ -540,6 +581,10 @@ export function CreateTripWizard({
           hotelLat: l.hotelLat,
           hotelLng: l.hotelLng,
           hotelPlaceId: l.hotelPlaceId,
+          hotelAddress: l.hotelAddress,
+          hotelBooked: l.hotelBooked,
+          hotelMinRating: l.hotelMinRating,
+          hotelPlace: l.hotelPlace,
           transitFromPrevious: l.transitFromPrevious,
         })),
       });
@@ -625,8 +670,8 @@ export function CreateTripWizard({
           A guided planning flow — skip optional fields anytime.
         </p>
       </div>
-      <div className="mb-6 mt-5 flex gap-2">
-        {["Basics", "Style", "Priorities", "Review"].map((label, i) => (
+      <div className="mb-6 mt-5 flex gap-1.5">
+        {["Basics", "Style", "Priorities", "Questions", "Review"].map((label, i) => (
           <div
             key={label}
             className={`flex-1 rounded-[12px] py-2.5 text-center text-xs font-semibold ${
@@ -662,6 +707,9 @@ export function CreateTripWizard({
                         days: 2,
                         hotel: "",
                         transitFromPrevious: "auto",
+                        hotelBooked: true,
+                        hotelMinRating: 4,
+                        hotelPlace: "center",
                       },
                     ])
                   }
@@ -848,56 +896,112 @@ export function CreateTripWizard({
                         </div>
                       </div>
                       <div className="relative rounded-[10px] border border-white/80 bg-white/90 p-3">
-                        <Label>
-                          Hotel in{" "}
-                          {leg.city.trim() || `city ${i + 1}`}
-                        </Label>
-                        <Input
-                          value={leg.hotel}
-                          onChange={(e) => {
-                            const hotel = e.target.value;
+                        <HotelChoice
+                          city={leg.city}
+                          booked={leg.hotelBooked}
+                          minRating={leg.hotelMinRating}
+                          place={leg.hotelPlace}
+                          selectedName={leg.hotel}
+                          onBooked={(hotelBooked) =>
+                            setLegs((prevLegs) =>
+                              prevLegs.map((l, j) =>
+                                j === i ? { ...l, hotelBooked } : l,
+                              ),
+                            )
+                          }
+                          onMinRating={(hotelMinRating) =>
+                            setLegs((prevLegs) =>
+                              prevLegs.map((l, j) =>
+                                j === i ? { ...l, hotelMinRating } : l,
+                              ),
+                            )
+                          }
+                          onPlace={(hotelPlace) =>
+                            setLegs((prevLegs) =>
+                              prevLegs.map((l, j) =>
+                                j === i ? { ...l, hotelPlace } : l,
+                              ),
+                            )
+                          }
+                          onPick={(hotel) =>
                             setLegs((prevLegs) =>
                               prevLegs.map((l, j) =>
                                 j === i
                                   ? {
                                       ...l,
-                                      hotel,
+                                      hotel: hotel.name,
+                                      hotelAddress: hotel.location,
+                                      hotelBooked: false,
                                       hotelLat: undefined,
                                       hotelLng: undefined,
                                       hotelPlaceId: undefined,
                                     }
                                   : l,
                               ),
-                            );
-                            void searchHotels(i, hotel);
-                          }}
-                          onFocus={() => {
-                            if (leg.lat != null && leg.lng != null) {
-                              void searchHotels(i, leg.hotel, true);
-                            }
-                          }}
-                          className="mt-1"
-                          placeholder={
-                            leg.lat != null
-                              ? "Search hotels in this city"
-                              : "Pick a city first"
+                            )
                           }
-                          autoComplete="off"
-                          disabled={leg.lat == null}
-                        />
-                        <SuggestionList
-                          items={(hotelSuggestions[i] ?? []).map((h) => ({
-                            key: h.placeId,
-                            label: h.label,
-                          }))}
-                          onPick={(idx) =>
-                            pickHotel(i, hotelSuggestions[i][idx])
+                          onResults={(hotels) =>
+                            setRecLists((prev) => ({ ...prev, [i]: hotels }))
                           }
                         />
-                        {leg.lat != null && !(hotelSuggestions[i]?.length) ? (
-                          <p className="mt-1 text-[11px] text-[#6B7280]">
-                            Focus or type to list nearby hotels from
-                            OpenStreetMap.
+                        {leg.hotelBooked ? (
+                          <>
+                            <Label>
+                              Hotel in {leg.city.trim() || `city ${i + 1}`}
+                            </Label>
+                            <Input
+                              value={leg.hotel}
+                              onChange={(e) => {
+                                const hotel = e.target.value;
+                                setLegs((prevLegs) =>
+                                  prevLegs.map((l, j) =>
+                                    j === i
+                                      ? {
+                                          ...l,
+                                          hotel,
+                                          hotelLat: undefined,
+                                          hotelLng: undefined,
+                                          hotelPlaceId: undefined,
+                                        }
+                                      : l,
+                                  ),
+                                );
+                                void searchHotels(i, hotel);
+                              }}
+                              onFocus={() => {
+                                if (leg.lat != null && leg.lng != null) {
+                                  void searchHotels(i, leg.hotel, true);
+                                }
+                              }}
+                              className="mt-1"
+                              placeholder={
+                                leg.lat != null
+                                  ? "Search hotels in this city"
+                                  : "Pick a city first"
+                              }
+                              autoComplete="off"
+                              disabled={leg.lat == null}
+                            />
+                            <SuggestionList
+                              items={(hotelSuggestions[i] ?? []).map((h) => ({
+                                key: h.placeId,
+                                label: h.label,
+                              }))}
+                              onPick={(idx) =>
+                                pickHotel(i, hotelSuggestions[i][idx])
+                              }
+                            />
+                            {leg.lat != null && !hotelSuggestions[i]?.length ? (
+                              <p className="mt-1 text-[11px] text-[#6B7280]">
+                                Focus or type to list nearby hotels from
+                                OpenStreetMap.
+                              </p>
+                            ) : null}
+                          </>
+                        ) : leg.hotel ? (
+                          <p className="text-[12px] text-[#080B3A]">
+                            Planning around{" "}
+                            <span className="font-semibold">{leg.hotel}</span>
                           </p>
                         ) : null}
                       </div>
@@ -1225,6 +1329,23 @@ export function CreateTripWizard({
         )}
 
         {step === 3 && (
+          <ClarifyStep
+            destination={legs.map((l) => l.city).filter(Boolean).join(" → ")}
+            cities={legs.map((l) => l.city.trim()).filter(Boolean)}
+            form={form}
+            questions={clarifyQuestions}
+            answers={clarifyAnswers}
+            status={clarifyState}
+            onAnswers={setClarifyAnswers}
+            onLoaded={(questions) => {
+              setClarifyQuestions(questions);
+              setClarifyState("ready");
+            }}
+            onStatus={setClarifyState}
+          />
+        )}
+
+        {step === 4 && (
           <div className="space-y-3 text-sm">
             <h2 className="text-[20px] font-semibold text-[#080B3A]">Review</h2>
             <div className="space-y-2">
@@ -1251,8 +1372,28 @@ export function CreateTripWizard({
                         ) : null}
                         <p className="font-medium text-[#080B3A]">
                           City {i + 1}: {l.city} · {l.days}d
-                          {l.hotel ? ` · Hotel: ${l.hotel}` : " · (no hotel yet)"}
+                          {l.hotel
+                            ? ` · ${l.hotelBooked ? "Booked" : "Suggested"} hotel: ${l.hotel}`
+                            : " · (no hotel yet)"}
                         </p>
+                        {!l.hotelBooked ? (
+                          <ul className="mt-1 space-y-0.5 text-[11px] text-[#6B7280]">
+                            <li>
+                              Hotel booked? No · rating {l.hotelMinRating.toFixed(1)}+ · places {l.hotelPlace}
+                            </li>
+                            {(recLists[legs.indexOf(l)] ?? []).map((hotel) => (
+                              <li key={hotel.id}>
+                                {hotel.name === l.hotel ? "Anchor · " : ""}
+                                {hotel.name} · {hotel.rating.toFixed(1)}/5 · {hotel.location}
+                              </li>
+                            ))}
+                            {!(recLists[legs.indexOf(l)] ?? []).length ? (
+                              <li>
+                                No HotelRec suggestions for these filters. Generation uses the city center if you leave the hotel empty.
+                              </li>
+                            ) : null}
+                          </ul>
+                        ) : null}
                       </li>
                     );
                   })}
@@ -1266,6 +1407,21 @@ export function CreateTripWizard({
               <span className="text-[#6B7280]">Interests:</span>{" "}
               {form.interests.join(", ") || "General"}
             </p>
+            {clarifyQuestions.some((q) => clarifyAnswers[q.id]?.trim()) ? (
+              <div className="space-y-1">
+                <span className="text-[#6B7280]">Personalized answers:</span>
+                <ul className="space-y-1">
+                  {clarifyQuestions.map((q) =>
+                    clarifyAnswers[q.id]?.trim() ? (
+                      <li key={q.id}>
+                        <span className="text-[#6B7280]">{q.prompt}</span>{" "}
+                        {clarifyAnswers[q.id].trim()}
+                      </li>
+                    ) : null,
+                  )}
+                </ul>
+              </div>
+            ) : null}
             {progress ? (
               <p className="text-[#0400FF]">{progress}</p>
             ) : null}
@@ -1282,10 +1438,16 @@ export function CreateTripWizard({
           >
             Back
           </Button>
-          {step < 3 ? (
+          {step < 4 ? (
             <Button
               type="button"
-              onClick={() => setStep((s) => s + 1)}
+              onClick={() => {
+                if (step === 2) {
+                  setClarifyState("idle");
+                  setClarifyQuestions([]);
+                }
+                setStep((s) => s + 1);
+              }}
               disabled={
                 step === 0 &&
                 (!legs.some((l) => l.city.trim()) || !form.startDate)
@@ -1304,6 +1466,116 @@ export function CreateTripWizard({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ClarifyStep({
+  destination,
+  cities,
+  form,
+  questions,
+  answers,
+  status,
+  onAnswers,
+  onLoaded,
+  onStatus,
+}: {
+  destination: string;
+  cities: string[];
+  form: {
+    startDate: string;
+    travelers: number;
+    budget: string;
+    interests: string[];
+    intensity: string;
+    transport: string;
+    dietary: string;
+    accessibility: string;
+    mustSee: string;
+    avoid: string;
+    idealTrip: string;
+  };
+  questions: { id: string; prompt: string }[];
+  answers: Record<string, string>;
+  status: "idle" | "loading" | "ready" | "error";
+  onAnswers: (next: Record<string, string>) => void;
+  onLoaded: (questions: { id: string; prompt: string }[]) => void;
+  onStatus: (status: "idle" | "loading" | "ready" | "error") => void;
+}) {
+  useEffect(() => {
+    if (status === "ready" || status === "loading") return;
+    let cancelled = false;
+    onStatus("loading");
+    void fetch("/api/trips/clarify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        destination,
+        startDate: form.startDate,
+        travelers: form.travelers,
+        budget: form.budget ? Number(form.budget) : null,
+        interests: form.interests,
+        intensity: form.intensity,
+        transport: form.transport,
+        dietary: form.dietary,
+        accessibility: form.accessibility,
+        mustSee: splitList(form.mustSee),
+        avoid: splitList(form.avoid),
+        idealTrip: form.idealTrip,
+        cities,
+      }),
+    })
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Could not prepare questions");
+        return data.questions as { id: string; prompt: string }[];
+      })
+      .then((next) => {
+        if (!cancelled) onLoaded(next);
+      })
+      .catch(() => {
+        if (!cancelled) onStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Load once when this step opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-[20px] font-semibold text-[#080B3A]">
+        A few questions before planning
+      </h2>
+      <p className="text-sm text-[#6B7280]">
+        The planner reads what you already entered
+        {destination ? ` for ${destination}` : ""} and asks only what it still
+        needs for a personal itinerary. Skip any question.
+      </p>
+      {status === "loading" || status === "idle" ? (
+        <p className="text-sm text-[#0400FF]">Reading your trip details…</p>
+      ) : null}
+      {status === "error" ? (
+        <p className="text-sm text-[#DC2626]">
+          Could not load questions. You can continue and plan with the details
+          you already gave.
+        </p>
+      ) : null}
+      {questions.map((q) => (
+        <div key={q.id}>
+          <Label>{q.prompt}</Label>
+          <textarea
+            rows={2}
+            className="mt-1 w-full rounded-lg border border-[#D1D7E5] px-3 py-2 text-sm"
+            value={answers[q.id] ?? ""}
+            onChange={(e) =>
+              onAnswers({ ...answers, [q.id]: e.target.value })
+            }
+          />
+        </div>
+      ))}
     </div>
   );
 }

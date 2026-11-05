@@ -38,6 +38,7 @@ import {
   intercityModeFromPlaceId,
   type IntercityMode,
 } from "@/lib/trips/intercity-transit";
+import { AddStopSearch, PlaceCard, type SelectedPlace } from "./PlaceCard";
 import { PopularityBadge } from "./PopularityBadge";
 import { TripMap } from "./TripMap";
 import { AssistantPanel } from "./AssistantPanel";
@@ -141,6 +142,7 @@ export function ItineraryEditor({
   );
   const [offlineSaved, setOfflineSaved] = useState(false);
   const [legs, setLegs] = useState<TripLeg[]>(() => initialLegs ?? []);
+  const [selectedPlace, setSelectedPlace] = useState<SelectedPlace | null>(null);
 
   // Prefer locally saved edits (works offline / after reload).
   // Demo trips ignore stale snapshots (e.g. old Paris data under demo-dubai).
@@ -524,6 +526,47 @@ export function ItineraryEditor({
     });
   }
 
+  function addStop(dayIndex: number, place: SelectedPlace) {
+    const id = `stop-${crypto.randomUUID()}`;
+    setDays((prev) => {
+      const copy = prev.map((d) => ({ ...d, activities: [...d.activities] }));
+      const day = copy[dayIndex];
+      if (!day) return prev;
+      day.activities.push({
+        id,
+        day_id: day.dayId,
+        name: place.name,
+        place_id: null,
+        address: place.address ?? null,
+        lat: place.lat,
+        lng: place.lng,
+        start_time: "12:00:00",
+        end_time: null,
+        duration_minutes: 60,
+        travel_minutes_from_prev: 0,
+        priority: "preferred",
+        planning_note: null,
+        hours_verified: false,
+        opening_hours: null,
+        website_uri: null,
+        google_maps_uri: null,
+        photo_name: null,
+        popularity_label: null,
+        popularity_sources: null,
+        popularity_attribution_urls: null,
+        schedule_warnings: null,
+        sort_order: day.activities.length,
+        user_locked: true,
+        completed: false,
+        source: "user",
+      });
+      void persist(copy);
+      return copy;
+    });
+    setSelectedPlace({ ...place, activityId: id, dayIndex });
+    setSelectedDay(dayIndex);
+  }
+
   function deleteActivity(dayIndex: number, activityId: string) {
     setDays((prev) => {
       const copy = prev.map((d, i) =>
@@ -542,6 +585,8 @@ export function ItineraryEditor({
       lat: a.lat!,
       lng: a.lng!,
       label: a.name,
+      address: a.address,
+      activityId: a.id,
       order: i + 1,
       starred:
         a.source === "food_recommend" ||
@@ -814,6 +859,29 @@ export function ItineraryEditor({
                         </ul>
                       </SortableContext>
                     </DndContext>
+                    <AddStopSearch
+                      near={(() => {
+                        const anchored = day.activities.find(
+                          (a) => a.lat != null && a.lng != null,
+                        );
+                        return anchored
+                          ? { lat: anchored.lat!, lng: anchored.lng! }
+                          : null;
+                      })()}
+                      onPick={(hit) => {
+                        setSelectedDay(dayIndex);
+                        setSelectedPlace({
+                          name: hit.name,
+                          lat: hit.lat,
+                          lng: hit.lng,
+                          address: hit.address,
+                          dayIndex,
+                        });
+                        setView((current) =>
+                          current === "schedule" ? "split" : current,
+                        );
+                      }}
+                    />
                     {!isDemo ? (
                       <RegenerateDayButton
                         tripId={tripId}
@@ -842,7 +910,36 @@ export function ItineraryEditor({
             }
           >
             <div className="h-full min-h-[280px] overflow-hidden rounded-[14px] border border-[#E1E5F0] bg-white lg:min-h-0">
-              <TripMap pins={dayPins ?? []} />
+              <TripMap
+                pins={dayPins ?? []}
+                onSelectPin={(pin) =>
+                  setSelectedPlace({
+                    name: pin.label,
+                    lat: pin.lat,
+                    lng: pin.lng,
+                    address: pin.address,
+                    activityId: pin.activityId,
+                    dayIndex: selectedDay,
+                  })
+                }
+                overlay={
+                  selectedPlace ? (
+                    <PlaceCard
+                      place={selectedPlace}
+                      onClose={() => setSelectedPlace(null)}
+                      onAdd={
+                        selectedPlace.activityId
+                          ? undefined
+                          : () =>
+                              addStop(
+                                selectedPlace.dayIndex ?? selectedDay,
+                                selectedPlace,
+                              )
+                      }
+                    />
+                  ) : null
+                }
+              />
             </div>
           </div>
         )}

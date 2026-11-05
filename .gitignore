@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local HotelRec aggregate (rebuild with scripts/build-hotelrec-subset.py)
+/data/hotelrec/*.json

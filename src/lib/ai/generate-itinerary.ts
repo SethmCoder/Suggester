@@ -34,6 +34,7 @@ import {
   haversineKm,
   orderByRoutedNeighbor,
 } from "./scheduler";
+import { anchorUnbookedLegs } from "../hotels/hotelrec";
 import type { TripLeg } from "../types/trip";
 import { expandLegsToDays, legsLabel } from "../trips/legs";
 import { planIntercityTransit } from "../trips/intercity-transit";
@@ -313,6 +314,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
             hotel: prefs.hotel,
           },
         ];
+  legs = anchorUnbookedLegs(legs);
   legs = await resolveTripLegs(legs);
   if (!legs.length) {
     throw new Error("Could not resolve any trip cities.");
@@ -549,7 +551,14 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
 
   const hotelNotes = legs
     .map((l) => {
-      if (!l.hotel) return `• ${l.city}: no hotel set — using city center`;
+      if (!l.hotel) {
+        return l.hotelBooked === false
+          ? `• ${l.city}: hotel not booked and no HotelRec match — using city center`
+          : `• ${l.city}: no hotel set — using city center`;
+      }
+      if (l.hotelBooked === false) {
+        return `• ${l.city}: hotel not booked — anchored on HotelRec suggestion "${l.hotel}"${l.hotelAddress ? ` (${l.hotelAddress})` : ""}. Do not invent a different hotel or any review quotes.`;
+      }
       const pinned =
         l.hotelLat != null
           ? `resolved near ${l.hotelAddress ?? "coordinates"}`

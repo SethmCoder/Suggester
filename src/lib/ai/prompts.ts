@@ -8,6 +8,7 @@ NEVER invent vague relative stops such as "a bakery near your hotel", "lunch nea
 Every activity must use an exact placeId from the candidate list (a real named place).
 Online-interest / popularity scores are SECONDARY ranking hints only — traveler interests, geography, pace, and budget matter more.
 When a hotel anchor is provided for a day, prefer candidates close to that hotel.
+Never invent hotel names or review quotes. Use only the hotel anchor name that was provided.
 For multi-city trips, only schedule places that belong to that day's city (candidates are tagged with city=).
 The system inserts intercity transit blocks (flight, major train, ferry, coach, car) with departure windows — do not invent generic "transfer" stops.
 Major train means long-distance / high-speed rail that typically needs booking; regional rail is local/commuter.

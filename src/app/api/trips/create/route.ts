@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { generateItinerary } from "@/lib/ai/generate-itinerary";
+import { anchorUnbookedLegs } from "@/lib/hotels/hotelrec";
 import { createTripRecord, saveGeneratedItinerary } from "@/lib/db/trips";
 import { estimateFlight } from "@/lib/flights/openflights";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -44,6 +45,12 @@ const bodySchema = z.object({
         hotelLat: z.number().optional(),
         hotelLng: z.number().optional(),
         hotelPlaceId: z.string().optional(),
+        hotelAddress: z.string().optional(),
+        hotelBooked: z.boolean().optional(),
+        hotelMinRating: z.number().optional(),
+        hotelPlace: z
+          .enum(["any", "center", "beach", "sights", "transit"])
+          .optional(),
         transitFromPrevious: z
           .enum([
             "auto",
@@ -62,7 +69,15 @@ const bodySchema = z.object({
 
 export async function POST(req: Request) {
   try {
-    const body = bodySchema.parse(await req.json());
+    const parsed = bodySchema.parse(await req.json());
+    const legs = parsed.legs?.length
+      ? anchorUnbookedLegs(parsed.legs)
+      : parsed.legs;
+    const body = {
+      ...parsed,
+      legs,
+      hotel: legs?.[0]?.hotel || parsed.hotel,
+    };
     const supabase = await createSupabaseServerClient();
     const {
       data: { user },

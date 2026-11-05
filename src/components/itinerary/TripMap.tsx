@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { getMapsProviderPreference } from "@/lib/maps/settings";
 import type { MapsProviderId } from "@/lib/maps/types";
 
@@ -11,24 +11,32 @@ declare global {
   }
 }
 
-interface Pin {
+export interface MapPin {
   lat: number;
   lng: number;
   label: string;
   order: number;
   /** Day's starred restaurant / top recommendation */
   starred?: boolean;
+  address?: string | null;
+  activityId?: string;
 }
 
 export function TripMap({
   pins,
   polyline,
+  onSelectPin,
+  overlay,
 }: {
-  pins: Pin[];
+  pins: MapPin[];
   polyline?: string;
+  onSelectPin?: (pin: MapPin) => void;
+  overlay?: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
+  const onSelectRef = useRef(onSelectPin);
+  onSelectRef.current = onSelectPin;
   const [mounted, setMounted] = useState(false);
   const [provider, setProvider] = useState<MapsProviderId>("openstreetmap");
   const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY;
@@ -109,11 +117,7 @@ export function TripMap({
           iconAnchor: [14, 14],
         });
         const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
-        marker.bindPopup(
-          `<strong>${p.starred ? "★ " : ""}${p.order}. ${p.label}</strong>${
-            p.starred ? "<br/><em>Recommended for this day</em>" : ""
-          }`,
-        );
+        marker.on("click", () => onSelectRef.current?.(p));
         bounds.extend([p.lat, p.lng]);
       });
       if (pins.length > 1) {
@@ -139,12 +143,13 @@ export function TripMap({
         const bounds = new window.google.maps.LatLngBounds();
         pins.forEach((p) => {
           bounds.extend({ lat: p.lat, lng: p.lng });
-          new window.google.maps.Marker({
+          const marker = new window.google.maps.Marker({
             map,
             position: { lat: p.lat, lng: p.lng },
             label: p.starred ? "★" : String(p.order),
             title: p.starred ? `★ ${p.label} (recommended)` : p.label,
           });
+          marker.addListener("click", () => onSelectRef.current?.(p));
         });
         map.fitBounds(bounds);
         if (polyline && window.google.maps.geometry?.encoding) {
@@ -215,6 +220,7 @@ export function TripMap({
   return (
     <div className="relative h-full min-h-[240px] w-full overflow-hidden rounded-xl bg-[#F7F8FC]">
       <div ref={ref} className="absolute inset-0 h-full w-full" />
+      {overlay}
       <span className="pointer-events-none absolute bottom-2 left-2 z-[400] rounded bg-white/90 px-2 py-0.5 text-[10px] text-[#6B7280] shadow">
         {usingGoogle ? "Google hybrid" : "Satellite + labels"}
       </span>
