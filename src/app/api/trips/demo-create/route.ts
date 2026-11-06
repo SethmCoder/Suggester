@@ -13,6 +13,7 @@ import { DEMO_COOKIE, isDemoCookie } from "@/lib/demo/session";
 import { filterAirlines, flightRestrictionNote } from "@/lib/flights/airline-class";
 import { estimateFlight } from "@/lib/flights/openflights";
 import { anchorUnbookedLegs } from "@/lib/hotels/hotelrec";
+import { budgetFromConversation } from "@/lib/trips/budget";
 import type { InboundFlightPrefs } from "@/lib/types/trip";
 
 const bodySchema = z.object({
@@ -24,6 +25,10 @@ const bodySchema = z.object({
   endDate: z.string(),
   travelers: z.number().optional(),
   budget: z.number().optional(),
+  budgetAllocation: z.enum(["sights", "food", "getting-around", "mostly-free"]).optional(),
+  restaurantStyle: z.enum(["street", "casual", "sit-down", "mix"]).optional(),
+  rejectedPlaceIds: z.array(z.string().max(120)).max(40).optional(),
+  keptPlaceIds: z.array(z.string().max(120)).max(40).optional(),
   currency: z.string().optional(),
   interests: z.array(z.string()).default([]),
   intensity: z.enum(["relaxed", "balanced", "packed"]),
@@ -194,7 +199,13 @@ export async function POST(req: Request) {
       avoid: body.avoid,
       idealTrip: body.idealTrip,
       prefersHiddenGems: body.prefersHiddenGems,
-      budget: body.budget,
+      budget: body.budget ?? budgetFromConversation(body.idealTrip).total,
+      budgetAllocation:
+        body.budgetAllocation ?? budgetFromConversation(body.idealTrip).allocation,
+      restaurantStyle:
+        body.restaurantStyle ?? budgetFromConversation(body.idealTrip).restaurantStyle,
+      rejectedPlaceIds: body.rejectedPlaceIds,
+      keptPlaceIds: body.keptPlaceIds,
       dayStart,
       dayEnd: body.dayEnd,
       hotel: body.hotel,

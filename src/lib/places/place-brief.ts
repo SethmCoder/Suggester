@@ -3,7 +3,7 @@
  * one exists. Booking links are real URLs only. Reviews are never written here.
  */
 
-import Groq from "groq-sdk";
+import { groqChat } from "@/lib/ai/groq";
 import { quotesForHotelName } from "@/lib/hotels/hotelrec";
 import {
   accountlessFetch,
@@ -167,20 +167,18 @@ async function osmWebsite(
   return site;
 }
 
-async function plannerParagraph(input: {
+export async function plannerParagraph(input: {
   name: string;
   address?: string | null;
   lat: number;
   lng: number;
   sourceText?: string | null;
 }): Promise<string | null> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) return null;
-  const client = new Groq({ apiKey });
-  const model = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
-  const completion = await client.chat.completions.create({
-    model,
+  if (!process.env.GROQ_API_KEY) return null;
+  return groqChat({
     temperature: 0.3,
+    effort: "low",
+    optional: true,
     messages: [
       {
         role: "system",
@@ -196,8 +194,6 @@ Reference text: ${input.sourceText?.trim() || "none"}`,
       },
     ],
   });
-  const text = completion.choices[0]?.message?.content?.trim();
-  return text || null;
 }
 
 async function googleReviews(input: {

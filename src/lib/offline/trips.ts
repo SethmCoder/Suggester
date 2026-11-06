@@ -21,6 +21,12 @@ export type OfflineTripSnapshot = {
   contentVersion?: number;
   /** Multi-city stays with hotels + place-to-place transit. */
   legs?: TripLeg[];
+  budget?: {
+    total?: number;
+    currency?: string;
+    allocation?: "sights" | "food" | "getting-around" | "mostly-free";
+    restaurantStyle?: "street" | "casual" | "sit-down" | "mix";
+  };
 };
 
 function readIndex(): string[] {
@@ -139,6 +145,7 @@ export function saveOfflineDayGroups(
     offlineOnly: existing?.offlineOnly,
     contentVersion: existing?.contentVersion,
     legs: existing?.legs,
+    budget: existing?.budget,
   });
 }
 

@@ -1,4 +1,4 @@
-import Groq from "groq-sdk";
+import { groqChat } from "@/lib/ai/groq";
 import type { ExplorerCategory, ExplorerPlace, ExplorerPreferences } from "./types";
 import { keepKnownPlaces, keepKnownPlan, mergePreferences } from "./validate";
 
@@ -52,14 +52,14 @@ export async function understandRequest(input: {
     budget: input.budget || "any",
     preferences: input.preferences,
   };
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) return fallback;
+  if (!process.env.GROQ_API_KEY) return fallback;
   try {
-    const client = new Groq({ apiKey });
-    const completion = await client.chat.completions.create({
+    const raw = await groqChat({
       model: input.model,
       temperature: 0.2,
-      response_format: { type: "json_object" },
+      effort: "low",
+      optional: true,
+      responseFormat: { type: "json_object" },
       messages: [
         { role: "system", content: BRIEF_SYSTEM },
         {
@@ -76,7 +76,7 @@ export async function understandRequest(input: {
         },
       ],
     });
-    const parsed = JSON.parse(completion.choices[0]?.message?.content || "{}") as {
+    const parsed = JSON.parse(raw || "{}") as {
       city?: unknown;
       ask?: unknown;
       searches?: { query?: unknown; category?: unknown }[];
@@ -132,8 +132,7 @@ export async function rankPlaces(input: {
     ...place,
     why: `Returned for this search in ${input.city}.`,
   }));
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) {
+  if (!process.env.GROQ_API_KEY) {
     return {
       reply: `I found ${fallbackPlaces.length} places in ${input.city}. The planner is offline, so these are the search results without an extra ranking.`,
       places: fallbackPlaces,
@@ -142,11 +141,12 @@ export async function rankPlaces(input: {
     };
   }
   try {
-    const client = new Groq({ apiKey });
-    const completion = await client.chat.completions.create({
+    const raw = await groqChat({
       model: input.model,
       temperature: 0.3,
-      response_format: { type: "json_object" },
+      effort: "low",
+      optional: true,
+      responseFormat: { type: "json_object" },
       messages: [
         { role: "system", content: RANK_SYSTEM },
         {
@@ -162,7 +162,7 @@ export async function rankPlaces(input: {
         },
       ],
     });
-    const parsed = JSON.parse(completion.choices[0]?.message?.content || "{}") as {
+    const parsed = JSON.parse(raw || "{}") as {
       reply?: unknown;
       picks?: { id?: unknown; why?: unknown }[];
       plan?: { title?: unknown; stops?: { placeId?: unknown; startTime?: unknown; durationMinutes?: unknown; note?: unknown }[] }[];

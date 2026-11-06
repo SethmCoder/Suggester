@@ -95,6 +95,9 @@ export function scoreRestaurantNearDay(input: {
       geography: 0.5,
       quality: 0.3,
       onlineInterest: 0,
+      budget: 0,
+      pace: 0,
+      variety: 0,
     },
   });
 

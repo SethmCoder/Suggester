@@ -1,5 +1,6 @@
 /**
- * GeoNames city subset extracted from allCountries (PPLC/PPLA/PPLA2 + PPL≥50k).
+ * GeoNames city subset extracted from allCountries (PPLC/PPLA/PPLA2 + PPL≥50k),
+ * plus districts (PPLX/PPLA3/PPLA4, population ≥ 30,000) from cities5000.
  * Source: https://download.geonames.org/export/dump/ — CC BY 4.0 attribution.
  */
 
@@ -24,21 +25,22 @@ function dataPath() {
   return path.join(process.cwd(), "data", "geonames-cities.tsv");
 }
 
-export function loadGeonameCities(): GeonameCity[] {
-  if (cache) return cache;
-  const file = dataPath();
-  if (!fs.existsSync(file)) {
-    cache = [];
-    return cache;
-  }
+function districtsPath() {
+  return path.join(process.cwd(), "data", "geonames-districts.tsv");
+}
+
+function readCityFile(file: string, seen: Set<number>, rows: GeonameCity[]) {
+  if (!fs.existsSync(file)) return;
   const text = fs.readFileSync(file, "utf8");
-  const rows: GeonameCity[] = [];
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
     const f = line.split("\t");
     if (f.length < 9) continue;
+    const id = Number(f[0]);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
     rows.push({
-      id: Number(f[0]),
+      id,
       name: f[1],
       asciiName: f[2] || f[1],
       lat: Number(f[3]),
@@ -49,6 +51,14 @@ export function loadGeonameCities(): GeonameCity[] {
       featureCode: f[8] || "",
     });
   }
+}
+
+export function loadGeonameCities(): GeonameCity[] {
+  if (cache) return cache;
+  const rows: GeonameCity[] = [];
+  const seen = new Set<number>();
+  readCityFile(dataPath(), seen, rows);
+  readCityFile(districtsPath(), seen, rows);
   cache = rows;
   return rows;
 }

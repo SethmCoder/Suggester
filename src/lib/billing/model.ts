@@ -1,13 +1,13 @@
 import { cookies } from "next/headers";
+import { groqModel, proGroqModel } from "@/lib/ai/groq";
 import { ENTITLEMENT_COOKIE } from "@/lib/billing/entitlements";
-import { FREE_MODEL, proModel } from "@/lib/billing/plans";
 
-/** Free stays on the smaller model. The old plan cookie does not select Pro. */
+/** Free and Pro use GROQ_MODEL, defaulting to openai/gpt-oss-120b. Pro can set GROQ_PRO_MODEL. */
 export async function plannerModel(): Promise<string> {
   try {
     const jar = await cookies();
-    return jar.get(ENTITLEMENT_COOKIE)?.value === "pro" ? proModel() : FREE_MODEL;
+    return jar.get(ENTITLEMENT_COOKIE)?.value === "pro" ? proGroqModel() : groqModel();
   } catch {
-    return FREE_MODEL;
+    return groqModel();
   }
 }

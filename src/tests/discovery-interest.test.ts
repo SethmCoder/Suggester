@@ -40,7 +40,8 @@ describe("discovery rank weights", () => {
   it("redistributes online-interest weight when missing", () => {
     const w = effectiveWeights(DEFAULT_DISCOVERY_WEIGHTS, false);
     expect(w.onlineInterest).toBe(0);
-    const sum = w.relevance + w.geography + w.quality;
+    const sum =
+      w.relevance + w.geography + w.quality + w.budget + w.pace + w.variety;
     expect(sum).toBeCloseTo(1, 5);
   });
 

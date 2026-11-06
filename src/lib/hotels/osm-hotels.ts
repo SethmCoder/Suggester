@@ -1,4 +1,4 @@
-import Groq from "groq-sdk";
+import { groqChat } from "@/lib/ai/groq";
 import { plannerModel } from "@/lib/billing/model";
 import {
   accountlessFetch,
@@ -173,15 +173,15 @@ export async function chooseOsmHotel(
 ): Promise<{ id: string | null; by: "ai" | "ranking" | null }> {
   const fallback = heuristicHotelPick(hotels);
   if (!fallback) return { id: null, by: null };
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) return { id: fallback, by: "ranking" };
+  if (!process.env.GROQ_API_KEY) return { id: fallback, by: "ranking" };
   try {
-    const client = new Groq({ apiKey });
     const model = await plannerModel();
-    const completion = await client.chat.completions.create({
+    const raw = await groqChat({
       model,
       temperature: 0.2,
-      response_format: {
+      effort: "low",
+      optional: true,
+      responseFormat: {
         type: "json_schema",
         json_schema: {
           name: "HotelPick",
@@ -214,7 +214,7 @@ export async function chooseOsmHotel(
         },
       ],
     });
-    const raw = completion.choices[0]?.message?.content ?? "";
+    if (!raw) return { id: fallback, by: "ranking" };
     const parsed = JSON.parse(raw) as { id?: string };
     if (parsed.id && hotels.some((hotel) => hotel.id === parsed.id)) {
       return { id: parsed.id, by: "ai" };

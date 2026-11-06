@@ -2,6 +2,24 @@ import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { ItineraryEditor } from "@/components/itinerary/ItineraryEditor";
+import type { BudgetPlan } from "@/lib/trips/budget";
+
+function budgetPlanFrom(preferences: unknown): BudgetPlan | undefined {
+  if (!preferences || typeof preferences !== "object") return undefined;
+  const prefs = preferences as {
+    budget?: number;
+    currency?: string;
+    budgetAllocation?: BudgetPlan["allocation"];
+    restaurantStyle?: BudgetPlan["restaurantStyle"];
+  };
+  if (!prefs.budget && !prefs.budgetAllocation && !prefs.restaurantStyle) return undefined;
+  return {
+    total: prefs.budget,
+    currency: prefs.currency,
+    allocation: prefs.budgetAllocation,
+    restaurantStyle: prefs.restaurantStyle,
+  };
+}
 import { OfflineTripLoader } from "@/components/trips/OfflineTripLoader";
 import {
   DEMO_TRIP_ID,
@@ -38,6 +56,7 @@ export default async function TripItineraryPage({
           endDate={data.trip.end_date}
           dayCities={data.dayCities}
           initialLegs={data.legs}
+          interests={data.preferences.interests}
         />
       </>
     );
@@ -100,6 +119,12 @@ export default async function TripItineraryPage({
             data.preferences as { title?: string } | undefined
           )?.title
         }
+        interests={
+          (
+            data.preferences as { interests?: string[] } | undefined
+          )?.interests
+        }
+        budgetPlan={budgetPlanFrom(data.preferences)}
       />
     );
   } catch {

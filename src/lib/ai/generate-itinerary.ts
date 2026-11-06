@@ -1,5 +1,5 @@
-import Groq from "groq-sdk";
 import { plannerModel } from "@/lib/billing/model";
+import { groqChat } from "@/lib/ai/groq";
 import { getPopularityConfig } from "../config/popularity";
 import {
   formatDestinationContextForPrompt,
@@ -18,7 +18,9 @@ import {
   discoverPlacesFromOsm,
 } from "../places/osm-discover";
 import {
+  budgetFitScore,
   combineDiscoveryRank,
+  paceFitScore,
   placeQualityScore,
 } from "../places/rank";
 import type { OnlineInterestSignal } from "../places/types";
@@ -32,9 +34,16 @@ import { logger } from "../logger";
 import { fitVisit } from "./hours";
 import {
   addMinutes,
+  fitDayClock,
   haversineKm,
   orderByRoutedNeighbor,
 } from "./scheduler";
+import {
+  dropRepeatedExperiences,
+  expandInterestQueries,
+  explainStop,
+  noteIsGeneric,
+} from "./validate-day";
 import { anchorUnbookedLegs } from "../hotels/hotelrec";
 import type { TripLeg } from "../types/trip";
 import { expandLegsToDays, legsLabel } from "../trips/legs";
@@ -56,6 +65,10 @@ export interface TripPreferencesInput {
   idealTrip: string;
   prefersHiddenGems?: boolean;
   budget?: number;
+  budgetAllocation?: "sights" | "food" | "getting-around" | "mostly-free";
+  restaurantStyle?: "street" | "casual" | "sit-down" | "mix";
+  rejectedPlaceIds?: string[];
+  keptPlaceIds?: string[];
   dayStart?: string;
   dayEnd?: string;
   hotel?: string;
@@ -166,18 +179,16 @@ async function callGroq(
     hotelNotes?: string;
   },
 ): Promise<ItineraryGeneration | null> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) return null;
-  const client = new Groq({ apiKey });
+  if (!process.env.GROQ_API_KEY) return null;
   const model = await plannerModel();
   const popConfig = getPopularityConfig();
 
-  let completion;
   try {
-    completion = await client.chat.completions.create({
+    const raw = await groqChat({
     model,
     temperature: 0.4,
-    response_format: {
+    effort: "medium",
+    responseFormat: {
       type: "json_schema",
       json_schema: {
         name: "ItineraryGeneration",
@@ -251,7 +262,6 @@ async function callGroq(
     ],
   });
 
-    const raw = completion.choices[0]?.message?.content;
     if (!raw) return null;
     return itineraryGenerationSchema.parse(JSON.parse(raw));
   } catch (err) {
@@ -434,9 +444,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
         destination: city,
         centerLat,
         centerLng,
-        interests: prefs.interests.length
-          ? prefs.interests
-          : ["tourist attraction"],
+        interests: expandInterestQueries(prefs.interests),
       });
       for (const h of interestHits) {
         byId.set(h.placeId, { ...h, city });
@@ -527,14 +535,30 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       tagCount: c.types.length,
     });
     const interest = onlineInterest.get(c.placeId) ?? null;
-    const discoveryRank =
+    const rejected = new Set(
+      (prefs.rejectedPlaceIds ?? []).map((id) => id.toLowerCase()),
+    );
+    const kept = new Set((prefs.keptPlaceIds ?? []).map((id) => id.toLowerCase()));
+    let discoveryRank =
       combineDiscoveryRank({
         relevance: rel,
         geography: geoFit,
         quality,
         interest,
         prefersHiddenGems: Boolean(prefs.prefersHiddenGems),
+        budget: budgetFitScore({
+          types: c.types,
+          allocation: prefs.budgetAllocation,
+          restaurantStyle: prefs.restaurantStyle,
+        }),
+        pace: paceFitScore({ types: c.types, intensity: prefs.intensity }),
       }) + (c.openingHours ? 0.04 : 0);
+    if (rejected.has(c.placeId.toLowerCase()) || rejected.has(c.displayName.toLowerCase())) {
+      discoveryRank *= 0.2;
+    }
+    if (kept.has(c.placeId.toLowerCase()) || kept.has(c.displayName.toLowerCase())) {
+      discoveryRank += 0.35;
+    }
     return {
       placeId: c.placeId,
       displayName: c.displayName,
@@ -603,11 +627,18 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
     destinationContextBlock || undefined,
     { dayPlan, hotelNotes },
   );
+  let modelUnavailable = false;
   if (!ai) {
     ai = fallbackScheduleMultiCity(prefs, filtered, dayPlan);
+    modelUnavailable = true;
   }
 
   const warnings = ai.warnings ?? [];
+  if (modelUnavailable) {
+    warnings.push(
+      "The model was unavailable, so this plan was built from the researched places.",
+    );
+  }
   const detailsCache = new Map<string, Awaited<ReturnType<typeof getPlaceDetails>>>();
 
   const routeMode =
@@ -818,8 +849,13 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       );
     }
 
-    const target =
-      prefs.intensity === "relaxed" ? 3 : prefs.intensity === "packed" ? 5 : 4;
+    const tightBudget =
+      prefs.budgetAllocation === "mostly-free" ||
+      (typeof prefs.budget === "number" && prefs.budget > 0 && prefs.budget < 800);
+    const target = Math.min(
+      prefs.intensity === "relaxed" ? 3 : prefs.intensity === "packed" ? 5 : 4,
+      tightBudget || prefs.intensity === "relaxed" ? 3 : 5,
+    );
     const sightseeing = () =>
       activities.filter(
         (item) =>
@@ -900,16 +936,60 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
             ];
           }
         }
-        activities[i].startTime = addMinutes(
-          activities[i - 1].startTime,
-          activities[i - 1].durationMinutes + travel,
-        );
       }
     }
 
+    const clocked = fitDayClock(
+      activities.map((activity) => ({
+        ...activity,
+        hoursWindow: typeof activity.openingHours === "string" ? activity.openingHours : null,
+        types: byId.get(activity.placeId)?.types ?? [],
+      })),
+      {
+        dayEnd,
+        mealGapMinutes: 60,
+        isMeal: (item) => isSitDown(item.types),
+        anchored: (item) =>
+          item.placeId.startsWith("flight:") || item.placeId.startsWith("transit:"),
+      },
+    );
+    for (const drop of clocked.dropped) warnings.push(drop.reason);
+    const varied = dropRepeatedExperiences(clocked.kept);
+    if (varied.dropped.length) {
+      warnings.push("A repeated kind of stop was left off so the day is not two of the same experience.");
+    }
+    const scheduled = varied.kept.map((activity, index) => {
+      const previous = [...varied.kept.slice(0, index)]
+        .reverse()
+        .find(
+          (item) =>
+            !item.placeId.startsWith("flight:") && !item.placeId.startsWith("transit:"),
+        );
+      if (
+        activity.placeId.startsWith("flight:") ||
+        activity.placeId.startsWith("transit:") ||
+        !noteIsGeneric(activity.planningNote)
+      ) {
+        return activity;
+      }
+      const hoursWindow =
+        typeof activity.openingHours === "string" ? activity.openingHours : undefined;
+      return {
+        ...activity,
+        planningNote: explainStop({
+          name: activity.name,
+          types: activity.types,
+          city: assignment.city,
+          previousName: previous?.name,
+          hours: activity.hoursVerified ? "open" : "unknown",
+          hoursWindow,
+        }),
+      };
+    });
+
     days.push({
       dayIndex: assignment.dayIndex,
-      activities,
+      activities: scheduled,
       totalTravelMinutes: route?.totalDurationMinutes,
       totalWalkMeters:
         routeMode === "WALK" ? route?.totalDistanceMeters : undefined,

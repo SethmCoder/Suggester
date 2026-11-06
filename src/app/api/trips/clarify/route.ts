@@ -1,15 +1,36 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { emptyTraveler, type TravelerProfile } from "@/lib/profile/traveler";
+import { budgetQuestionsPending, repeatsBudgetTopic } from "@/lib/trips/budget";
 import {
   localClarifyReply,
   replyIgnoresTraveler,
+  replyRepeats,
+  tripCities,
   type ChatLine,
+  type ClarifyChoice,
+  type ClarifyTurn,
 } from "@/lib/trips/clarify-chat";
 import type { ClarifyInput } from "@/lib/trips/clarify";
 
 const lineSchema = z.object({
   role: z.enum(["user", "assistant"]),
   text: z.string().max(2000),
+});
+
+const travelerSchema = z.object({
+  completed: z.boolean().optional(),
+  age: z.string().max(40).optional(),
+  dream: z.string().max(160).optional(),
+  answers: z
+    .array(
+      z.object({
+        question: z.string().max(300),
+        answer: z.string().max(300),
+      }),
+    )
+    .max(8)
+    .optional(),
 });
 
 const bodySchema = z.object({
@@ -30,18 +51,24 @@ const bodySchema = z.object({
   tripTitle: z.string().optional(),
   history: z.array(lineSchema).max(16).optional(),
   message: z.string().max(2000).optional(),
+  traveler: travelerSchema.nullable().optional(),
 });
 
-const SYSTEM = `You are Trip Wizard, a travel agent writing this chat for one specific trip. Be warm and concrete. Do not quote their sentence back.
+const SYSTEM = `You are Trip Wizard, writing this chat for one specific trip. Be warm and concrete. Do not quote their sentence back.
 
-Write the questions yourself for this destination. Do not walk through a fixed list such as hotel, food, then budget.
+The trip may include several cities. Talk about the whole trip. If more than one city is listed, do not ask only about the first city. Bring in a city that has not been discussed yet.
 
-When the history is empty, open with a short orientation of a few real neighborhoods or areas in their city, then one or two questions you invent for these dates. Ask what they want to do, what a dream version of the trip would feel like, and how they like to travel. If past trip names are provided, ask whether this trip should feel like one of those. If the past-trip list is empty, do not invent one.
+Never repeat a question that is already in the history. Read their latest answer and ask one new question that follows from it.
 
-If they ask you something, answer it, then ask at most one follow-up. Use their words.
+Every question is multiple choice. Write 3 or 4 short options a traveler can tap. Do not include an Other option; the app adds that. The reply is one or two sentences: acknowledge what they just said, then ask the question.
+
+Do not ask how many days, the dates, or which cities they are visiting. Those are already chosen. Ask about the kind of days they want, using their latest answer and every city on the trip.
+
+Before you set done, the history must already include three budget questions: how much is set aside for the whole trip, how that money should be used, and what kind of restaurants the days should lean toward. Ask any of those that are missing, as multiple choice. Use ranges for the total, and let a typed amount arrive through Other.
+If a saved traveler profile is provided, use only those facts. If past trip names are provided, you may ask whether this trip should feel like one of those. If that list is empty, do not invent a past trip.
 Do not invent hotel names, fares, opening hours, ratings, populations, or reservations.
-When four useful answers are already in the history, you may set done to true.
-Return JSON only: {"reply":"...","done":false}`;
+When those budget answers and the pace of the days are already in the history, you may set done to true and offer no choices.
+Return JSON only: {"reply":"...","done":false,"choices":[{"id":"a","label":"..."}]}`;
 
 export async function POST(req: Request) {
   const body = bodySchema.parse(await req.json());
@@ -59,24 +86,78 @@ export async function POST(req: Request) {
     mustSee: body.mustSee,
     avoid: body.avoid,
     idealTrip: body.idealTrip,
-    cities: body.cities,
+    cities: tripCities({
+      destination: body.destination,
+      interests: body.interests,
+      cities: body.cities,
+    }),
   };
   const history = (body.history ?? []) as ChatLine[];
   const message = body.message?.trim() ?? "";
-  const pastTrips = await recentTripNames();
+  const [pastTrips, savedTraveler] = await Promise.all([recentTripNames(), loadTraveler()]);
+  const traveler = mergeTraveler(savedTraveler, body.traveler);
   const local = localClarifyReply(input, history, message);
-  const modeled = await modelReply(input, history, message, pastTrips, body.tripTitle);
-  const reply =
-    modeled && !replyIgnoresTraveler(message, modeled.reply) ? modeled : local;
+  const opening = history.every((line) => line.role !== "assistant");
+  const modeled = opening
+    ? null
+    : await modelReply(input, history, message, pastTrips, traveler, body.tripTitle);
+  const previous = [...history].reverse().find((line) => line.role === "assistant")?.text;
+  const modelOk =
+    modeled &&
+    !replyIgnoresTraveler(message, modeled.reply) &&
+    !replyRepeats(previous, modeled.reply) &&
+    (modeled.done || modeled.choices.length >= 2) &&
+    !(modeled.done && budgetQuestionsPending(history)) &&
+    !repeatsBudgetTopic(history, modeled.reply);
+  const reply = modelOk && modeled ? modeled : local;
   return NextResponse.json({
     reply: reply.reply,
     done: reply.done,
+    choices: reply.choices,
+    allowOther: !reply.done,
     summary: reply.reply,
     question: reply.done ? null : { id: "chat", prompt: reply.reply },
     why: null,
     questions: [],
-    source: modeled && reply === modeled ? "model" : "rules",
+    source: modelOk ? "model" : "rules",
   });
+}
+
+function mergeTraveler(
+  saved: TravelerProfile | null,
+  sent: z.infer<typeof travelerSchema> | null | undefined,
+): TravelerProfile | null {
+  const answers = sent?.answers ?? saved?.answers ?? [];
+  const profile: TravelerProfile = {
+    completed: Boolean(sent?.completed || saved?.completed),
+    age: sent?.age || saved?.age,
+    dream: sent?.dream || saved?.dream,
+    answers,
+  };
+  if (!profile.completed && !profile.age && !profile.dream && answers.length === 0) return null;
+  return profile;
+}
+
+async function loadTraveler(): Promise<TravelerProfile | null> {
+  try {
+    const { createSupabaseServerClient } = await import("@/lib/supabase/server");
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("traveler_profile")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (error || !data) return null;
+    const raw = (data as { traveler_profile?: TravelerProfile | null }).traveler_profile;
+    if (!raw || typeof raw !== "object") return null;
+    return { ...emptyTraveler(), ...raw, answers: raw.answers ?? [] };
+  } catch {
+    return null;
+  }
 }
 
 async function recentTripNames(): Promise<string[]> {
@@ -106,26 +187,25 @@ async function modelReply(
   history: ChatLine[],
   message: string,
   pastTrips: string[],
+  traveler: TravelerProfile | null,
   tripTitle?: string,
-): Promise<{ reply: string; done: boolean } | null> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) return null;
+): Promise<ClarifyTurn | null> {
+  if (!process.env.GROQ_API_KEY) return null;
   try {
-    const Groq = (await import("groq-sdk")).default;
-    const client = new Groq({ apiKey });
-    const completion = await client.chat.completions.create({
-      model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
+    const { groqChat } = await import("@/lib/ai/groq");
+    const raw = await groqChat({
       temperature: 0.4,
-      response_format: { type: "json_object" },
+      effort: "low",
+      responseFormat: { type: "json_object" },
       messages: [
         { role: "system", content: SYSTEM },
         {
           role: "user",
           content: JSON.stringify({
-            destination: input.destination,
-            cities: input.cities,
+            cities: tripCities(input),
             tripTitle: tripTitle || "",
             pastTrips,
+            traveler,
             travelers: input.travelers,
             interests: input.interests,
             intensity: input.intensity,
@@ -137,12 +217,33 @@ async function modelReply(
         },
       ],
     });
-    const raw = completion.choices[0]?.message?.content;
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as { reply?: unknown; done?: unknown };
-    if (typeof parsed.reply !== "string" || !parsed.reply.trim()) return null;
-    return { reply: parsed.reply.trim(), done: parsed.done === true };
+    return parseTurn(raw);
   } catch {
     return null;
   }
+}
+
+function parseTurn(raw: string): ClarifyTurn | null {
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+  let parsed: { reply?: unknown; done?: unknown; choices?: unknown };
+  try {
+    parsed = JSON.parse(match[0]) as { reply?: unknown; done?: unknown; choices?: unknown };
+  } catch {
+    return null;
+  }
+  if (typeof parsed.reply !== "string" || !parsed.reply.trim()) return null;
+  const choices: ClarifyChoice[] = [];
+  if (Array.isArray(parsed.choices)) {
+    for (const choice of parsed.choices) {
+      if (!choice || typeof choice !== "object") continue;
+      const label = "label" in choice && typeof choice.label === "string" ? choice.label.trim() : "";
+      const id = "id" in choice && typeof choice.id === "string" ? choice.id.trim() : label;
+      if (!label || choices.some((item) => item.label.toLowerCase() === label.toLowerCase())) continue;
+      choices.push({ id: id.slice(0, 40) || `c${choices.length}`, label: label.slice(0, 80) });
+      if (choices.length >= 4) break;
+    }
+  }
+  return { reply: parsed.reply.trim(), done: parsed.done === true, choices };
 }

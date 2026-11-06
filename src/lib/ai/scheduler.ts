@@ -97,6 +97,89 @@ export async function orderByRoutedNeighbor<
   return ordered;
 }
 
+export type ClockStop = {
+  placeId: string;
+  startTime: string;
+  durationMinutes: number;
+  travelMinutesFromPrev?: number;
+  hoursWindow?: string | null;
+};
+
+function clockMinutes(value: string): number {
+  const [h, m] = value.slice(0, 5).split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+function clockFrom(total: number): string {
+  const minutes = ((total % (24 * 60)) + 24 * 60) % (24 * 60);
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+function parseWindow(value: string | null | undefined): { open: number; close: number } | null {
+  if (!value) return null;
+  const match = value.match(/(\d{2}:\d{2})\s*[-–]\s*(\d{2}:\d{2})/);
+  if (!match) return null;
+  return { open: clockMinutes(match[1]), close: clockMinutes(match[2]) };
+}
+
+/**
+ * Move each later stop by its routed travel time, leave one meal gap, and drop
+ * anything that would pass the end of the day or a published hours window.
+ */
+export function fitDayClock<T extends ClockStop>(
+  activities: T[],
+  options: {
+    dayEnd: string;
+    mealGapMinutes: number;
+    isMeal: (item: T) => boolean;
+    anchored: (item: T) => boolean;
+  },
+): { kept: T[]; dropped: { item: T; reason: string }[] } {
+  const dayEnd = clockMinutes(options.dayEnd || "21:00");
+  let mealUsed = activities.some((item) => options.isMeal(item));
+  const kept: T[] = [];
+  const dropped: { item: T; reason: string }[] = [];
+  let cursor = 9 * 60;
+
+  for (const item of activities) {
+    if (options.anchored(item)) {
+      const start = clockMinutes(item.startTime);
+      kept.push(item);
+      cursor = start + item.durationMinutes;
+      continue;
+    }
+    const travel =
+      item.travelMinutesFromPrev && item.travelMinutesFromPrev > 0
+        ? item.travelMinutesFromPrev
+        : kept.length
+          ? 15
+          : 0;
+    let start = kept.length ? cursor + travel : clockMinutes(item.startTime);
+    if (!mealUsed && kept.length > 0 && start >= 12 * 60 && cursor <= 14 * 60) {
+      start += options.mealGapMinutes;
+      mealUsed = true;
+    }
+    const window = parseWindow(item.hoursWindow);
+    if (window && (start < window.open || start + item.durationMinutes > window.close)) {
+      dropped.push({
+        item,
+        reason: "A stop was dropped because travel time pushed it outside published hours.",
+      });
+      continue;
+    }
+    if (start + item.durationMinutes > dayEnd) {
+      dropped.push({
+        item,
+        reason: `A stop was dropped because it would run past ${options.dayEnd.slice(0, 5)} after travel time.`,
+      });
+      continue;
+    }
+    kept.push({ ...item, startTime: clockFrom(start) });
+    cursor = start + item.durationMinutes;
+  }
+  return { kept, dropped };
+}
+
 export function addMinutes(time: string, minutes: number): string {
   const [h, m] = time.split(":").map(Number);
   let total = h * 60 + m + minutes;

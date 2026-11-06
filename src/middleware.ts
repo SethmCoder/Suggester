@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { DEMO_COOKIE, isDemoCookie } from "@/lib/demo/session";
+import { INTRO_COOKIE } from "@/lib/profile/traveler";
 
 const PROTECTED = [
   "/dashboard",
@@ -8,9 +9,11 @@ const PROTECTED = [
   "/settings",
   "/saved-places",
   "/explore",
+  "/things",
   "/help",
   "/plan",
   "/trips/new",
+  "/welcome",
 ];
 const PROTECTED_PREFIX = "/trips/";
 
@@ -93,12 +96,24 @@ export async function middleware(request: NextRequest) {
         maxAge: 0,
       });
     }
+    const introDone = request.cookies.get(INTRO_COOKIE)?.value === "1";
     if (path === "/login" || path === "/signup") {
-      const redirect = NextResponse.redirect(new URL("/dashboard", request.url));
+      const redirect = NextResponse.redirect(
+        new URL(introDone ? "/dashboard" : "/welcome", request.url),
+      );
       response.cookies.getAll().forEach((cookie) => {
         redirect.cookies.set(cookie);
       });
       return redirect;
+    }
+    if (!introDone && path !== "/welcome" && isProtected) {
+      const welcomeUrl = new URL("/welcome", request.url);
+      welcomeUrl.searchParams.set("next", path);
+      const welcome = NextResponse.redirect(welcomeUrl);
+      response.cookies.getAll().forEach((cookie) => {
+        welcome.cookies.set(cookie);
+      });
+      return welcome;
     }
     return response;
   }
@@ -133,11 +148,14 @@ export const config = {
     "/saved-places/:path*",
     "/explore",
     "/explore/:path*",
+    "/things",
+    "/things/:path*",
     "/help/:path*",
     "/plan",
     "/plan/:path*",
     "/trips/:path*",
     "/login",
     "/signup",
+    "/welcome",
   ],
 };

@@ -7,7 +7,7 @@ export const FREE_TRIP_LIMIT = 3;
 /** Monthly Pro price in euros. Frankfurter converts this into the local currency. */
 export const PRO_PRICE_EUR = 9;
 
-/** Smaller Groq model used on the free plan. */
+/** Default Groq model. Free and Pro both use it unless GROQ_MODEL or GROQ_PRO_MODEL is set. */
 export const FREE_MODEL = "openai/gpt-oss-120b";
 
 export type PlanId = "free" | "pro";
@@ -20,7 +20,8 @@ export type BillingSnapshot = {
 };
 
 export function proModel(): string {
-  return process.env.GROQ_PRO_MODEL || process.env.GROQ_MODEL || "openai/gpt-oss-120b";
+  const configured = process.env.GROQ_PRO_MODEL?.trim() || process.env.GROQ_MODEL?.trim();
+  return configured || FREE_MODEL;
 }
 
 export function readPlan(get: (name: string) => string | undefined): BillingSnapshot {

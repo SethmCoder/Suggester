@@ -25,6 +25,7 @@ export function offlineSnapshotFromGenerated(input: {
   days: GeneratedDay[];
   legs?: TripLeg[];
   title?: string;
+  budget?: OfflineTripSnapshot["budget"];
 }): OfflineTripSnapshot {
   const days = input.days.map((day) => ({
     id: `${input.tripId}-day-${day.dayIndex}`,
@@ -77,5 +78,6 @@ export function offlineSnapshotFromGenerated(input: {
     updatedAt: new Date().toISOString(),
     offlineOnly: true,
     legs: input.legs,
+    budget: input.budget,
   };
 }

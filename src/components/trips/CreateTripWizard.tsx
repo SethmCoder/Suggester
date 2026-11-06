@@ -12,6 +12,8 @@ import {
 } from "@/lib/offline/trips";
 import { PLAN_LIMIT_MESSAGE } from "@/lib/billing/plans";
 import { offlineSnapshotFromGenerated } from "@/lib/trips/offline-from-generated";
+import { budgetFromConversation } from "@/lib/trips/budget";
+import { readPlaceFeedback } from "@/lib/trips/place-feedback";
 import type { GeneratedDay } from "@/lib/ai/generate-itinerary";
 import { CityHotelField } from "@/components/itinerary/CityHotelField";
 import { HotelChoice } from "@/components/trips/HotelChoice";
@@ -444,6 +446,8 @@ export function CreateTripWizard({
       /* the create route still enforces the cap */
     }
     const destination = legs.map((l) => l.city).filter(Boolean).join(" → ");
+    const talked = budgetFromConversation(Object.values(clarifyAnswers).join("\n"));
+    const feedback = readPlaceFeedback();
     const body = {
       destination,
       departureCity: form.departureCity,
@@ -452,7 +456,11 @@ export function CreateTripWizard({
       startDate: form.startDate,
       endDate,
       travelers: form.travelers,
-      budget: form.budget ? Number(form.budget) : undefined,
+      budget: form.budget ? Number(form.budget) : talked.total,
+      budgetAllocation: talked.allocation,
+      restaurantStyle: talked.restaurantStyle,
+      rejectedPlaceIds: feedback.removed,
+      keptPlaceIds: feedback.added,
       currency: form.currency,
       interests: [
         ...form.interests,
@@ -547,6 +555,12 @@ export function CreateTripWizard({
             days: (data.days ?? []) as GeneratedDay[],
             legs: body.legs,
             title: form.tripTitle.trim() || undefined,
+            budget: {
+              total: body.budget,
+              currency: body.currency,
+              allocation: body.budgetAllocation,
+              restaurantStyle: body.restaurantStyle,
+            },
           }),
         );
         router.push(`/trips/${tripId}`);

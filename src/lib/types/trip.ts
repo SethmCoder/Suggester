@@ -64,6 +64,10 @@ export interface TripPreferencesPayload {
   inboundFlight?: InboundFlightPrefs;
   travelers?: number;
   budget?: number;
+  budgetAllocation?: "sights" | "food" | "getting-around" | "mostly-free";
+  restaurantStyle?: "street" | "casual" | "sit-down" | "mix";
+  rejectedPlaceIds?: string[];
+  keptPlaceIds?: string[];
   currency?: string;
   interests: string[];
   intensity: "relaxed" | "balanced" | "packed";

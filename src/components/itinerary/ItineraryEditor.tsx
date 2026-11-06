@@ -15,7 +15,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AssistantPatch } from "@/lib/ai/patch";
 import { shiftActivityStartTime } from "@/lib/ai/scheduler";
@@ -38,12 +38,17 @@ import {
   type IntercityMode,
 } from "@/lib/trips/intercity-transit";
 import { CityCard } from "./CityCard";
+import { DistrictCard } from "./DistrictCard";
+import { StopBlurb } from "./StopBlurb";
 import { CityHotelField } from "./CityHotelField";
 import { AddStopSearch, PlaceCard, type SelectedPlace } from "./PlaceCard";
 import { PopularityBadge } from "./PopularityBadge";
-import { TripMap, type HotelMapPin } from "./TripMap";
+import { TripMap, type MapPin } from "./TripMap";
 import { AssistantPanel } from "./AssistantPanel";
+import { BudgetPanel } from "./BudgetPanel";
 import { TripIntelligence } from "./TripIntelligence";
+import type { BudgetPlan } from "@/lib/trips/budget";
+import { rememberAddedPlace, rememberRemovedPlace } from "@/lib/trips/place-feedback";
 import type { ActivityRow, LegTransitMode, TripLeg } from "@/lib/types/trip";
 
 const LEG_CARD_COLORS = [
@@ -114,6 +119,8 @@ export function ItineraryEditor({
   dayCities,
   initialLegs,
   tripTitle,
+  interests = [],
+  budgetPlan,
 }: {
   tripId: string;
   destination: string;
@@ -125,6 +132,8 @@ export function ItineraryEditor({
   dayCities?: DayCityAssignment[];
   initialLegs?: TripLeg[];
   tripTitle?: string;
+  interests?: string[];
+  budgetPlan?: BudgetPlan;
 }) {
   const [days, setDays] = useState<DayGroup[]>(() =>
     initialDays
@@ -148,6 +157,8 @@ export function ItineraryEditor({
   const [legs, setLegs] = useState<TripLeg[]>(() => initialLegs ?? []);
   const [selectedPlace, setSelectedPlace] = useState<SelectedPlace | null>(null);
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
+  const [selectedDistrict, setSelectedDistrict] = useState<MapPin | null>(null);
+  const [cityPins, setCityPins] = useState<MapPin[]>([]);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const router = useRouter();
@@ -586,6 +597,7 @@ export function ItineraryEditor({
       void persist(copy);
       return copy;
     });
+    rememberAddedPlace(place.name);
     setSelectedPlace({ ...place, activityId: id, dayIndex });
     setSelectedDay(dayIndex);
   }
@@ -597,78 +609,77 @@ export function ItineraryEditor({
           ? { ...d, activities: d.activities.filter((a) => a.id !== activityId) }
           : d,
       );
+      const removed = prev[dayIndex]?.activities.find((activity) => activity.id === activityId);
+      rememberRemovedPlace(removed?.place_id || removed?.name);
       void persist(copy);
       return copy;
     });
   }
 
-  const [hotelPins, setHotelPins] = useState<HotelMapPin[]>([]);
-  const hotelRequest = useRef(0);
-
-  const loadMapHotels = useCallback((params: URLSearchParams) => {
-    const requestId = ++hotelRequest.current;
-    void fetch(`/api/hotels/catalog?${params}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (requestId !== hotelRequest.current) return;
-        const hotels = (data.hotels ?? []) as {
-          id: string;
-          name: string;
-          propertyType: string;
-          latitude: number;
-          longitude: number;
-          address?: string | null;
-          phone?: string | null;
-          website?: string | null;
-          starRating?: number | null;
-        }[];
-        setHotelPins(
-          hotels.map((hotel) => ({
-            id: hotel.id,
-            lat: hotel.latitude,
-            lng: hotel.longitude,
-            name: hotel.name,
-            propertyType: hotel.propertyType,
-            address: hotel.address,
-            phone: hotel.phone,
-            website: hotel.website,
-            starRating: hotel.starRating,
-          })),
-        );
-      })
-      .catch(() => {
-        /* keep the hotels already on the map */
-      });
-  }, []);
+  const destName = destination.replace(/\s*\(Demo\)\s*/i, "").trim();
+  const areaKey = useMemo(() => {
+    const names = [
+      destName,
+      ...(initialLegs ?? []).map((leg) => leg.city),
+      ...(dayCities ?? []).map((day) => day.city),
+    ];
+    const seen = new Set<string>();
+    const unique: string[] = [];
+    for (const name of names) {
+      const clean = name.replace(/\s*\(Demo\)\s*/i, "").split(",")[0]?.trim() ?? "";
+      const key = clean.toLowerCase();
+      if (!clean || seen.has(key)) continue;
+      seen.add(key);
+      unique.push(clean);
+    }
+    return unique.join("|");
+  }, [destName, initialLegs, dayCities]);
 
   useEffect(() => {
-    if (view === "schedule") return;
-    const day = dayCities?.[selectedDay];
-    if (!day?.city) return;
-    const params = new URLSearchParams({ city: day.city, limit: "40" });
-    if (day.anchorLat && day.anchorLng) {
-      params.set("lat", String(day.anchorLat));
-      params.set("lng", String(day.anchorLng));
+    const names = areaKey.split("|").filter(Boolean);
+    if (!names.length) {
+      setCityPins([]);
+      return;
     }
-    loadMapHotels(params);
-  }, [view, selectedDay, dayCities, loadMapHotels]);
-
-  const dayPins = days[selectedDay]?.activities
-    .filter((a) => a.lat != null && a.lng != null)
-    .map((a, i) => ({
-      lat: a.lat!,
-      lng: a.lng!,
-      label: a.name,
-      address: a.address,
-      activityId: a.id,
-      order: i + 1,
-      starred:
-        a.source === "food_recommend" ||
-        Boolean(a.popularity_label?.includes("★")) ||
-        Boolean(a.planning_note?.startsWith("★")),
-    }));
-
-  const destName = destination.replace(/\s*\(Demo\)\s*/i, "").trim();
+    let cancelled = false;
+    void Promise.all(
+      names.map(async (city) => {
+        const res = await fetch(`/api/places/districts?city=${encodeURIComponent(city)}`);
+        const data = (await res.json()) as {
+          cities?: {
+            id: number;
+            name: string;
+            lat: number;
+            lng: number;
+          }[];
+        };
+        return data.cities ?? [];
+      }),
+    )
+      .then((groups) => {
+        if (cancelled) return;
+        const seen = new Set<number>();
+        const pins: MapPin[] = [];
+        for (const city of groups.flat()) {
+          if (seen.has(city.id) || !Number.isFinite(city.lat) || !Number.isFinite(city.lng)) continue;
+          seen.add(city.id);
+          pins.push({
+            lat: city.lat,
+            lng: city.lng,
+            label: city.name,
+            order: 0,
+            kind: "city",
+          });
+        }
+        setCityPins(pins.slice(0, 10));
+      })
+      .catch(() => {
+        if (!cancelled) setCityPins([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [areaKey]);
 
   return (
     <div className="space-y-5" data-tour="tour-itinerary">
@@ -733,6 +744,13 @@ export function ItineraryEditor({
         </div>
         </div>
       </section>
+      <BudgetPanel
+        plan={budgetPlan}
+        stops={(days[selectedDay]?.activities ?? []).map((activity) => ({
+          id: activity.id,
+          name: activity.name,
+        }))}
+      />
       <TripIntelligence
         activities={days[selectedDay]?.activities ?? []}
         onApplyStart={(activityId, start) =>
@@ -1018,43 +1036,22 @@ export function ItineraryEditor({
           >
             <div className="h-full min-h-[280px] overflow-hidden rounded-[14px] border border-[#E1E5F0] bg-white lg:min-h-0">
               <TripMap
-                pins={dayPins ?? []}
-                hotelPins={hotelPins}
-                onSelectHotel={(pin) =>
-                  setSelectedPlace({
-                    name: pin.name,
-                    lat: pin.lat,
-                    lng: pin.lng,
-                    address: pin.address,
-                    dayIndex: selectedDay,
-                  })
-                }
-                onBounds={(box) => {
-                  const params = new URLSearchParams({
-                    south: String(box.south),
-                    west: String(box.west),
-                    north: String(box.north),
-                    east: String(box.east),
-                    lat: String((box.south + box.north) / 2),
-                    lng: String((box.west + box.east) / 2),
-                    limit: "40",
-                  });
-                  const city = dayCities?.[selectedDay]?.city;
-                  if (city) params.set("city", city);
-                  loadMapHotels(params);
+                pins={cityPins}
+                connect={false}
+                onSelectPin={(pin) => {
+                  setSelectedPlace(null);
+                  setSelectedDistrict(pin);
                 }}
-                onSelectPin={(pin) =>
-                  setSelectedPlace({
-                    name: pin.label,
-                    lat: pin.lat,
-                    lng: pin.lng,
-                    address: pin.address,
-                    activityId: pin.activityId,
-                    dayIndex: selectedDay,
-                  })
-                }
                 overlay={
-                  selectedPlace ? (
+                  selectedDistrict ? (
+                    <DistrictCard
+                      name={selectedDistrict.label}
+                      lat={selectedDistrict.lat}
+                      lng={selectedDistrict.lng}
+                      interests={interests}
+                      onClose={() => setSelectedDistrict(null)}
+                    />
+                  ) : selectedPlace ? (
                     <PlaceCard
                       place={selectedPlace}
                       onClose={() => setSelectedPlace(null)}
@@ -1222,11 +1219,13 @@ function SortableActivity({
             sources={activity.popularity_sources ?? undefined}
             attributionUrls={activity.popularity_attribution_urls ?? undefined}
           />
-          {activity.planning_note ? (
-            <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-[#1F2937]">
-              {activity.planning_note}
-            </p>
-          ) : null}
+          <StopBlurb
+            name={activity.name}
+            address={activity.address}
+            lat={activity.lat}
+            lng={activity.lng}
+            planningNote={activity.planning_note}
+          />
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <input
               type="time"

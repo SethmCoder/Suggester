@@ -20,6 +20,8 @@ export interface MapPin {
   starred?: boolean;
   address?: string | null;
   activityId?: string;
+  /** City pins are named population centers. Stop pins stay numbered. */
+  kind?: "stop" | "city";
 }
 
 export type HotelMapPin = {
@@ -79,6 +81,7 @@ export function TripMap({
   hotelPins = [],
   onBounds,
   overlay,
+  connect = true,
 }: {
   pins: MapPin[];
   polyline?: string;
@@ -87,6 +90,8 @@ export function TripMap({
   hotelPins?: HotelMapPin[];
   onBounds?: (bounds: { south: number; west: number; north: number; east: number }) => void;
   overlay?: ReactNode;
+  /** Draw a line through stop pins. City pins stay unconnected. */
+  connect?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -101,7 +106,7 @@ export function TripMap({
   const pinKey = pins
     .map(
       (pin) =>
-        `${pin.activityId ?? ""}:${pin.order}:${pin.lat.toFixed(5)}:${pin.lng.toFixed(5)}:${pin.label}:${pin.starred ? 1 : 0}`,
+        `${pin.kind ?? "stop"}:${pin.activityId ?? ""}:${pin.order}:${pin.lat.toFixed(5)}:${pin.lng.toFixed(5)}:${pin.label}:${pin.starred ? 1 : 0}`,
     )
     .join("|");
   const hotelLayerRef = useRef<any>(null);
@@ -137,13 +142,14 @@ export function TripMap({
       map.invalidateSize({ animate: false, pan: false });
       const size = map.getSize();
       if (size.x < 20 || size.y < 20 || !bounds.isValid()) return false;
+      const cityPins = pins.some((pin) => pin.kind === "city");
       if (pins.length < 2) {
-        map.setView(bounds.getCenter(), 14, { animate: false });
+        map.setView(bounds.getCenter(), cityPins ? 12 : 14, { animate: false });
       } else {
-        map.fitBounds(bounds.pad(0.2), {
+        map.fitBounds(bounds.pad(cityPins ? 0.3 : 0.2), {
           animate: false,
-          maxZoom: 15,
-          padding: [24, 24],
+          maxZoom: cityPins ? 12 : 15,
+          padding: cityPins ? [48, 80] : [24, 24],
         });
       }
       return true;
@@ -195,21 +201,29 @@ export function TripMap({
 
       const bounds = L.latLngBounds([]);
       pins.forEach((p) => {
-        const star = p.starred
-          ? `<span style="position:absolute;top:-8px;right:-6px;font-size:14px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35))">★</span>`
-          : "";
-        const bg = p.starred ? "#C45F00" : "#1616C9";
-        const icon = L.divIcon({
-          className: "waypoint-pin",
-          html: `<div style="position:relative;background:${bg};color:#fff;border-radius:999px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.25)">${p.order}${star}</div>`,
-          iconSize: [28, 28],
-          iconAnchor: [14, 14],
-        });
+        const icon =
+          p.kind === "city"
+            ? L.divIcon({
+                className: "waypoint-city-pin",
+                html: `<div style="display:flex;flex-direction:column;align-items:center"><div style="width:14px;height:14px;border-radius:999px;background:#0400FF;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div><div style="margin-top:2px;background:#080B3A;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:999px;white-space:nowrap">${escapeHtml(p.label)}</div></div>`,
+                iconSize: [120, 36],
+                iconAnchor: [60, 8],
+              })
+            : L.divIcon({
+                className: "waypoint-pin",
+                html: `<div style="position:relative;background:${p.starred ? "#C45F00" : "#1616C9"};color:#fff;border-radius:999px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.25)">${p.order}${
+                  p.starred
+                    ? `<span style="position:absolute;top:-8px;right:-6px;font-size:14px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35))">★</span>`
+                    : ""
+                }</div>`,
+                iconSize: [28, 28],
+                iconAnchor: [14, 14],
+              });
         const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
         marker.on("click", () => onSelectRef.current?.(p));
         bounds.extend([p.lat, p.lng]);
       });
-      if (pins.length > 1) {
+      if (connect && pins.length > 1 && pins.every((p) => p.kind !== "city")) {
         L.polyline(
           pins.map((p) => [p.lat, p.lng] as [number, number]),
           { color: "#1616C9", weight: 4 },
@@ -293,8 +307,8 @@ export function TripMap({
           const marker = new window.google.maps.Marker({
             map,
             position: { lat: p.lat, lng: p.lng },
-            label: p.starred ? "★" : String(p.order),
-            title: p.starred ? `★ ${p.label} (recommended)` : p.label,
+            label: p.kind === "city" ? undefined : p.starred ? "★" : String(p.order),
+            title: p.kind === "city" ? p.label : p.starred ? `★ ${p.label} (recommended)` : p.label,
           });
           marker.addListener("click", () => onSelectRef.current?.(p));
         });
@@ -302,7 +316,7 @@ export function TripMap({
           window.google.maps.event.removeListener(idle);
           map.fitBounds(bounds, 24);
         });
-        if (polyline && window.google.maps.geometry?.encoding) {
+        if (connect && polyline && window.google.maps.geometry?.encoding) {
           const path =
             window.google.maps.geometry.encoding.decodePath(polyline);
           new window.google.maps.Polyline({
@@ -348,7 +362,7 @@ export function TripMap({
         mapRef.current = null;
       }
     };
-  }, [mounted, pinKey, polyline, provider, googleKey]);
+  }, [mounted, pinKey, polyline, provider, googleKey, connect]);
 
   useEffect(() => {
     if (!mapEpoch) return;
@@ -461,6 +475,7 @@ export function TripMap({
       {overlay}
       <span className="pointer-events-none absolute bottom-2 left-2 z-[400] rounded bg-white/90 px-2 py-0.5 text-[10px] text-[#6B7280] shadow">
         {usingGoogle ? "Google hybrid" : "Satellite + labels"}
+        {pins.some((pin) => pin.kind === "city") ? " · City centers © GeoNames" : ""}
         {hotelPins.length ? " · Hotels © OpenStreetMap" : ""}
       </span>
     </div>

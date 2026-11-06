@@ -1,4 +1,4 @@
-import Groq from "groq-sdk";
+import { groqChat } from "@/lib/ai/groq";
 import { resolveGeonameCity } from "@/lib/geonames/cities";
 import { cacheGet, cacheSet } from "@/lib/http/accountless-fetch";
 import { lookupWikipedia } from "@/lib/places/place-brief";
@@ -87,13 +87,11 @@ async function cityParagraph(input: {
   fact: string;
   sourceText: string | null;
 }): Promise<string | null> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) return null;
-  const client = new Groq({ apiKey });
-  const model = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
-  const completion = await client.chat.completions.create({
-    model,
+  if (!process.env.GROQ_API_KEY) return null;
+  const text = await groqChat({
     temperature: 0.3,
+    effort: "low",
+    optional: true,
     messages: [
       {
         role: "system",
@@ -108,5 +106,5 @@ Reference: ${input.sourceText?.trim() || "none"}`,
       },
     ],
   });
-  return completion.choices[0]?.message?.content?.trim() || null;
+  return text;
 }

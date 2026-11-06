@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ChoiceList } from "@/components/chat/ChoiceList";
 import { Button } from "@/components/ui/Button";
+import { TRAVELER_STORAGE_KEY, type TravelerProfile } from "@/lib/profile/traveler";
 import { Input, Label } from "@/components/ui/Input";
 import {
   destinationImageUrl,
@@ -353,6 +355,16 @@ function CityField({
   );
 }
 
+function readTraveler(): TravelerProfile | null {
+  try {
+    const raw = localStorage.getItem(TRAVELER_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as TravelerProfile;
+  } catch {
+    return null;
+  }
+}
+
 function BriefRow({ label, value }: { label: string; value: string }) {
   if (!value.trim()) return null;
   return (
@@ -383,8 +395,10 @@ function AgentThread({
   onExchange: (userText: string, reply: string) => void;
 }) {
   const [log, setLog] = useState<ChatLine[]>([]);
+  const [choices, setChoices] = useState<{ id: string; label: string }[]>([]);
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const box = useRef<HTMLTextAreaElement>(null);
   const onExchangeRef = useRef(onExchange);
   onExchangeRef.current = onExchange;
   const userSpoke = useRef(false);
@@ -407,19 +421,25 @@ function AgentThread({
     tripTitle,
   };
 
+  const cityKey = cities.map((city) => city.trim()).filter(Boolean).join("|");
+
   async function talk(history: { role: "user" | "assistant"; text: string }[], message: string) {
     const res = await fetch("/api/trips/clarify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...payload.current,
+        ...(readTraveler() ? { traveler: readTraveler() } : {}),
         history,
         message,
       }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? "Could not continue");
-    return (data.reply as string) || "Tell me a little more about how you want the days to feel.";
+    return {
+      reply: (data.reply as string) || "Tell me a little more about how you want the days to feel.",
+      choices: (data.choices as { id: string; label: string }[]) ?? [],
+    };
   }
 
   useEffect(() => {
@@ -428,25 +448,26 @@ function AgentThread({
     const handle = window.setTimeout(() => {
       setStatus("loading");
       void talk([], "")
-        .then((reply) => {
+        .then((turn) => {
           if (cancelled || userSpoke.current) return;
-          setLog([{ role: "agent", text: reply }]);
+          setLog([{ role: "agent", text: turn.reply }]);
+          setChoices(turn.choices);
           setStatus("ready");
         })
         .catch(() => {
           if (!cancelled) setStatus("error");
         });
-    }, destination.trim() ? 400 : 0);
+    }, destination.trim() || cityKey ? 400 : 0);
     return () => {
       cancelled = true;
       window.clearTimeout(handle);
     };
-    // Re-greet only before the traveler has spoken, so naming the city updates the opening.
+    // Re-greet only before the traveler has spoken, so naming a city updates the opening.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [destination]);
+  }, [destination, cityKey]);
 
-  async function send() {
-    const said = draft.trim();
+  async function send(text?: string) {
+    const said = (text ?? draft).trim();
     if (!said || status === "loading") return;
     userSpoke.current = true;
     const asked = [...log].reverse().find((line) => line.role === "agent")?.text ?? "";
@@ -456,11 +477,13 @@ function AgentThread({
     }));
     setLog((prev) => [...prev, { role: "you", text: said }]);
     setDraft("");
+    setChoices([]);
     setStatus("loading");
     try {
-      const reply = await talk(history, said);
+      const turn = await talk(history, said);
       onExchangeRef.current(said, asked);
-      setLog((prev) => [...prev, { role: "agent", text: reply }]);
+      setLog((prev) => [...prev, { role: "agent", text: turn.reply }]);
+      setChoices(turn.choices);
       setStatus("ready");
     } catch {
       setStatus("error");
@@ -482,6 +505,13 @@ function AgentThread({
             {line.text}
           </p>
         ))}
+        {status === "ready" ? (
+          <ChoiceList
+            choices={choices}
+            onPick={(label) => void send(label)}
+            onOther={() => box.current?.focus()}
+          />
+        ) : null}
         {status === "loading" ? (
           <p className="text-sm text-[#0400FF]">Thinking about the trip…</p>
         ) : null}
@@ -493,10 +523,11 @@ function AgentThread({
       </div>
       <div className="mt-4 flex items-end gap-2 rounded-[16px] border border-[#D1D7E5] bg-[#F5F7FF] p-2">
         <textarea
+          ref={box}
           rows={2}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="Ask about the days, or describe the trip you want"
+          placeholder={choices.length ? "Other — type your own answer" : "Ask about the days, or describe the trip you want"}
           className="min-h-11 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-[#080B3A] outline-none placeholder:text-[#9299B5]"
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {

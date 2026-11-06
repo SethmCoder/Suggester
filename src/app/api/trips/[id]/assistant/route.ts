@@ -1,4 +1,4 @@
-import Groq from "groq-sdk";
+import { groqChat } from "@/lib/ai/groq";
 import {
   AI_MONTH_COOKIE,
   AI_USED_COOKIE,
@@ -130,12 +130,12 @@ export async function POST(
     patch = await buildLocalAssistantPatchAsync(localArgs);
   } else if (apiKey) {
     try {
-      const client = new Groq({ apiKey });
       const model = await plannerModel();
-      const completion = await client.chat.completions.create({
+      const raw = await groqChat({
         model,
         temperature: 0.3,
-        response_format: {
+        effort: "medium",
+        responseFormat: {
           type: "json_schema",
           json_schema: {
             name: "AssistantPatch",
@@ -222,7 +222,6 @@ export async function POST(
         ],
       });
 
-      const raw = completion.choices[0]?.message?.content;
       if (!raw) throw new Error("Empty AI response");
       patch = assistantPatchSchema.parse(JSON.parse(raw));
     } catch {

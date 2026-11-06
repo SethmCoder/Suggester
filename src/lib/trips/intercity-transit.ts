@@ -6,7 +6,7 @@
  * Not a live booking API — times are illustrative schedule windows.
  */
 
-import { FREE_MODEL } from "@/lib/billing/plans";
+import { groqChat, groqModel } from "@/lib/ai/groq";
 import { estimateFlight, findAirport } from "@/lib/flights/openflights";
 import { haversineKm } from "@/lib/ai/scheduler";
 
@@ -201,16 +201,14 @@ async function maybeAiRefine(input: {
   flightNote?: string;
   model: string;
 }): Promise<{ mode: IntercityMode; departLocal: string; note: string } | null> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) return null;
+  if (!process.env.GROQ_API_KEY) return null;
   try {
-    const Groq = (await import("groq-sdk")).default;
-    const client = new Groq({ apiKey });
-    const model = input.model;
-    const completion = await client.chat.completions.create({
-      model,
+    const raw = await groqChat({
+      model: input.model,
       temperature: 0.2,
-      response_format: {
+      effort: "low",
+      optional: true,
+      responseFormat: {
         type: "json_schema",
         json_schema: {
           name: "IntercityTransit",
@@ -267,7 +265,6 @@ Do not invent live seat inventory. Pick a sensible morning/midday departLocal (H
         },
       ],
     });
-    const raw = completion.choices[0]?.message?.content;
     if (!raw) return null;
     const parsed = JSON.parse(raw) as {
       mode: IntercityMode;
@@ -351,7 +348,7 @@ export async function planIntercityTransit(input: {
         heuristic,
         hasFlightRoute,
         flightNote: flight?.note,
-        model: input.model ?? FREE_MODEL,
+        model: input.model ?? groqModel(),
       });
 
   const mode = forced ?? ai?.mode ?? heuristic;

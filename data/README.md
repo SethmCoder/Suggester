@@ -14,3 +14,8 @@ unzip -p ~/Downloads/allCountries.zip allCountries.txt \
   | awk -F'\t' 'BEGIN{OFS="\t"} $7=="P" && ($8=="PPLC" || $8=="PPLA" || $8=="PPLA2" || ($8=="PPL" && $15+0>=50000)) {print $1,$2,$3,$5,$6,$9,$11,$15,$8}' \
   > data/geonames-cities.tsv
 ```
+
+`geonames-districts.tsv` adds populated districts (PPLX / PPLA3 / PPLA4,
+population ≥ 30,000) from GeoNames `cities5000.zip`, same columns and license.
+Pins for areas such as Shibuya use these coordinates, which are the GeoNames
+population centers.
