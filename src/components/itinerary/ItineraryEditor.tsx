@@ -19,10 +19,6 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import type { AssistantPatch } from "@/lib/ai/patch";
 import { shiftActivityStartTime } from "@/lib/ai/scheduler";
 import {
-  countryFromDestination,
-  destinationImageUrl,
-} from "@/lib/destination-image";
-import {
   DEMO_CONTENT_VERSION,
   getDemoTripPayload,
   isDemoTripId,
@@ -648,57 +644,44 @@ export function ItineraryEditor({
     }));
 
   const destName = destination.replace(/\s*\(Demo\)\s*/i, "").trim();
-  const heroImg = destinationImageUrl(destName);
 
   return (
     <div className="space-y-5" data-tour="tour-itinerary">
-      <section className="relative overflow-hidden rounded-[16px] bg-[#10194A]">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={heroImg}
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover opacity-40"
-        />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#080B3A]/95 via-[#10194A]/75 to-transparent" />
-        <div className="relative flex flex-col gap-3 px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-7">
-          <div>
-            <p className="text-xs text-[#C5CAE5]">
-              {countryFromDestination(destName)}
-            </p>
-            <h1 className="mt-0.5 text-[22px] font-bold tracking-tight text-white sm:text-[26px]">
-              {destName}
-            </h1>
-            <p className="mt-0.5 text-xs text-[#C5CAE5]">
-              {days.length} days · {flatActivities.length} activities ·{" "}
-              {saveState === "saving"
-                ? "Saving…"
-                : saveState === "saved"
-                  ? offlineSaved
+      <section className="flex flex-col gap-3 rounded-[16px] border border-[#E1E5F0] bg-white px-5 py-5 shadow-[0_6px_18px_rgba(8,11,58,0.05)] sm:flex-row sm:items-end sm:justify-between sm:px-7">
+        <div>
+          <h1 className="text-[28px] font-bold tracking-tight text-[#080B3A]">
+            {destName}
+          </h1>
+          <p className="mt-1 text-sm text-[#6B7280]">
+            {days.length} days · {flatActivities.length} activities ·{" "}
+            {saveState === "saving"
+              ? "Saving…"
+              : saveState === "saved"
+                ? offlineSaved
+                  ? "Saved on this device"
+                  : "Saved"
+                : saveState === "error"
+                  ? "Couldn’t save"
+                  : offlineSaved
                     ? "Saved on this device"
-                    : "Saved"
-                  : saveState === "error"
-                    ? "Couldn’t save"
-                    : offlineSaved
-                      ? "Saved on this device"
-                      : "Up to date"}
-            </p>
-          </div>
-          <div className="flex rounded-[12px] border border-[#292F68] bg-[#080B3A]/70 p-1 text-sm backdrop-blur">
-            {(["schedule", "map", "split"] as const).map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setView(v)}
-                className={`rounded-[10px] px-3.5 py-1.5 capitalize ${
-                  view === v
-                    ? "bg-[#0400FF] text-white"
-                    : "text-[#C5CAE5] hover:text-white"
-                }`}
-              >
-                {v}
-              </button>
-            ))}
-          </div>
+                    : "Up to date"}
+          </p>
+        </div>
+        <div className="flex rounded-[12px] border border-[#E1E5F0] bg-[#F5F7FF] p-1 text-sm">
+          {(["schedule", "map", "split"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setView(v)}
+              className={`rounded-[10px] px-3.5 py-1.5 capitalize ${
+                view === v
+                  ? "bg-[#0400FF] text-white"
+                  : "text-[#6B7280] hover:text-[#080B3A]"
+              }`}
+            >
+              {v}
+            </button>
+          ))}
         </div>
       </section>
       <TripIntelligence
@@ -818,7 +801,7 @@ export function ItineraryEditor({
               >
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left"
                   onClick={() => {
                     setSelectedDay(dayIndex);
                     setExpanded((e) => ({
@@ -827,7 +810,7 @@ export function ItineraryEditor({
                     }));
                   }}
                 >
-                  <span className="text-[14px] font-semibold text-[#080B3A]">
+                  <span className="text-[16px] font-semibold text-[#080B3A]">
                     Day {day.dayIndex + 1}
                     {dayCities?.[day.dayIndex] ? (
                       <span className="ml-2 font-normal text-[#0400FF]">
@@ -869,12 +852,12 @@ export function ItineraryEditor({
                       · {day.activities.length} stops
                     </span>
                   </span>
-                  <span className="text-xs text-[#9299B5]">
+                  <span className="rounded-full bg-[#F5F7FF] px-2.5 py-1 text-[11px] font-semibold text-[#0400FF]">
                     {isOpen ? "Hide" : "Show"}
                   </span>
                 </button>
                 {isOpen ? (
-                  <div className="border-t border-[#E1E5F0] px-2.5 pb-2.5">
+                  <div className="border-t border-[#E1E5F0] bg-[#FAFBFF] px-3 pb-3">
                     <DndContext
                       sensors={sensors}
                       collisionDetection={closestCenter}
@@ -884,7 +867,7 @@ export function ItineraryEditor({
                         items={day.activities.map((a) => a.id)}
                         strategy={verticalListSortingStrategy}
                       >
-                        <ul className="space-y-1.5 pt-2">
+                        <ul className="space-y-3 pt-3">
                           {day.activities.map((act, actIndex) => (
                             <Fragment key={act.id}>
                               {actIndex > 0 ? (
@@ -1036,6 +1019,26 @@ export function ItineraryEditor({
   );
 }
 
+function clockMinutes(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const [h, m] = value.slice(0, 5).split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+}
+
+function displayEnd(activity: ActivityRow): string | null {
+  const start = clockMinutes(activity.start_time);
+  const end = clockMinutes(activity.end_time);
+  if (start != null && end != null && end > start) {
+    return activity.end_time!.slice(0, 5);
+  }
+  if (start == null) return null;
+  const total = start + (activity.duration_minutes ?? 0);
+  const h = Math.floor(total / 60) % 24;
+  const m = total % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 function TransitBlock({ minutes }: { minutes: number | null }) {
   return (
     <div
@@ -1077,61 +1080,74 @@ function SortableActivity({
     transform: CSS.Transform.toString(transform),
     transition,
   };
+  const endsAt = displayEnd(activity);
 
   return (
     <li
       ref={setNodeRef}
       style={style}
-      className="rounded-[10px] border border-[#E1E5F0] bg-[#F5F7FF] px-2.5 py-2"
+      className={`overflow-hidden rounded-[16px] border bg-white shadow-[0_6px_18px_rgba(8,11,58,0.05)] ${
+        activity.completed ? "border-[#E1E5F0] opacity-70" : "border-[#E1E5F0]"
+      }`}
     >
-      <div className="flex gap-1.5">
-        <button
-          type="button"
-          className="cursor-grab self-start pt-0.5 text-xs text-[#6B7280]"
-          {...attributes}
-          {...listeners}
-          aria-label="Drag to reorder"
-        >
-          ⋮⋮
-        </button>
-        <div className="min-w-0 flex-1">
+      <div className="flex">
+        <div className="flex w-[4.75rem] shrink-0 flex-col items-center justify-center gap-1 bg-[#F5F7FF] px-2 py-3 text-center">
+          <button
+            type="button"
+            className="cursor-grab text-[10px] tracking-widest text-[#9299B5]"
+            {...attributes}
+            {...listeners}
+            aria-label="Drag to reorder"
+          >
+            ⋮⋮
+          </button>
+          <span className="text-[15px] font-semibold leading-none text-[#080B3A]">
+            {activity.start_time?.slice(0, 5) || "—"}
+          </span>
+          <span className="text-[10px] text-[#6B7280]">
+            {activity.duration_minutes ?? 60} min
+          </span>
+        </div>
+        <div className="min-w-0 flex-1 px-3.5 py-3">
+          {(() => {
+            const transitMode = transitModeFromActivity(activity);
+            return transitMode ? (
+              <div className="mb-1.5">
+                <TransitModeChip mode={transitMode} />
+              </div>
+            ) : null;
+          })()}
           <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              {(() => {
-                const transitMode = transitModeFromActivity(activity);
-                return transitMode ? (
-                  <div className="mb-1">
-                    <TransitModeChip mode={transitMode} />
-                  </div>
-                ) : null;
-              })()}
-              <p
-                className={`text-[13px] font-semibold leading-snug text-[#080B3A] ${activity.completed ? "line-through opacity-60" : ""}`}
-              >
-                {(activity.source === "food_recommend" ||
-                  activity.popularity_label?.includes("★") ||
-                  activity.planning_note?.startsWith("★")) && (
-                  <span className="mr-1 text-[#C45F00]" aria-label="Recommended">
-                    ★
-                  </span>
-                )}
-                {activity.name}
-              </p>
-            </div>
-            <span className="shrink-0 text-[10px] capitalize text-[#6B7280]">
-              {activity.priority?.replace("_", " ")}
-            </span>
+            <p
+              className={`text-[15px] font-semibold leading-snug text-[#080B3A] ${
+                activity.completed ? "line-through" : ""
+              }`}
+            >
+              {activity.name}
+            </p>
+            {activity.priority && activity.priority !== "optional" ? (
+              <span className="shrink-0 rounded-full bg-[#DDE1FF] px-2 py-0.5 text-[10px] font-semibold capitalize text-[#0400FF]">
+                {activity.priority.replace("_", " ")}
+              </span>
+            ) : null}
           </div>
-          <p className="text-[11px] text-[#6B7280]">
-            {activity.start_time?.slice(0, 5)}
-            {activity.end_time
-              ? `–${activity.end_time.slice(0, 5)}`
-              : ""}{" "}
-            · {activity.duration_minutes} min
-            {activity.address ? ` · ${activity.address}` : ""}
-          </p>
+          {activity.address ? (
+            <p className="mt-1 text-xs leading-snug text-[#6B7280]">{activity.address}</p>
+          ) : null}
+          {endsAt ? (
+            <p className="mt-1 text-[11px] text-[#6B7280]">Until {endsAt}</p>
+          ) : null}
+          {activity.place_id?.startsWith("transit:") ||
+          activity.place_id?.startsWith("flight:") ? null : activity.hours_verified &&
+            typeof activity.opening_hours === "string" ? (
+            <p className="mt-1 text-[11px] font-medium text-[#080B3A]">
+              Open {activity.opening_hours}
+            </p>
+          ) : (
+            <p className="mt-1 text-[11px] text-[#6B7280]">Hours unknown</p>
+          )}
           {activity.schedule_warnings?.slice(0, 1).map((w) => (
-            <p key={w} className="text-[10px] text-[#B45309]">
+            <p key={w} className="mt-1 text-[11px] text-[#B45309]">
               {w}
             </p>
           ))}
@@ -1141,21 +1157,23 @@ function SortableActivity({
             attributionUrls={activity.popularity_attribution_urls ?? undefined}
           />
           {activity.planning_note ? (
-            <p className="mt-1 line-clamp-2 text-[11px] text-[#6B7280]">
+            <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-[#1F2937]">
               {activity.planning_note}
             </p>
           ) : null}
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <input
               type="time"
-              className="rounded border border-[#D1D7E5] px-1.5 py-0.5 text-[11px]"
+              aria-label="Start time"
+              className="rounded-[8px] border border-[#D1D7E5] bg-white px-2 py-1 text-xs"
               value={activity.start_time?.slice(0, 5) ?? ""}
               onChange={(e) => onUpdate({ start_time: `${e.target.value}:00` })}
             />
             <input
               type="number"
               min={15}
-              className="w-14 rounded border border-[#D1D7E5] px-1.5 py-0.5 text-[11px]"
+              aria-label="Duration in minutes"
+              className="w-16 rounded-[8px] border border-[#D1D7E5] bg-white px-2 py-1 text-xs"
               value={activity.duration_minutes ?? 60}
               onChange={(e) =>
                 onUpdate({ duration_minutes: Number(e.target.value) })
@@ -1163,21 +1181,22 @@ function SortableActivity({
             />
             <button
               type="button"
-              className="text-[11px] text-[#0400FF]"
+              className="rounded-full bg-[#F5F7FF] px-2.5 py-1 text-[11px] font-semibold text-[#0400FF]"
               onClick={() => onUpdate({ completed: !activity.completed })}
             >
               {activity.completed ? "Undo" : "Done"}
             </button>
             <button
               type="button"
-              className="text-[11px] text-[#DC2626]"
+              className="rounded-full px-2.5 py-1 text-[11px] font-semibold text-[#DC2626]"
               onClick={onDelete}
             >
-              Delete
+              Remove
             </button>
             {dayCount > 1 ? (
               <select
-                className="rounded border border-[#D1D7E5] px-1.5 py-0.5 text-[11px]"
+                aria-label="Move to day"
+                className="rounded-[8px] border border-[#D1D7E5] bg-white px-2 py-1 text-[11px]"
                 value={dayIndex}
                 onChange={(e) => onMoveDay(Number(e.target.value))}
               >

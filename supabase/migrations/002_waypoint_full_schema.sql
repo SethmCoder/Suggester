@@ -87,3 +87,7 @@ create policy shares_owner on trip_shares for all using (
 );
 
 create policy profiles_self on profiles for all using (auth.uid() = id);
+
+alter table profiles enable row level security;
+alter table place_popularity_cache enable row level security;
+alter table popularity_provider_runs enable row level security;

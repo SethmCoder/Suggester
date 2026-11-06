@@ -15,6 +15,7 @@ import { offlineSnapshotFromGenerated } from "@/lib/trips/offline-from-generated
 import type { GeneratedDay } from "@/lib/ai/generate-itinerary";
 import { CityHotelField } from "@/components/itinerary/CityHotelField";
 import { HotelChoice } from "@/components/trips/HotelChoice";
+import { TripAgentDesk } from "@/components/trips/TripAgentDesk";
 import {
   filterAirlines,
   type AirlineOption,
@@ -126,7 +127,6 @@ export function CreateTripWizard({
   previewMode?: boolean;
 }) {
   const router = useRouter();
-  const [step, setStep] = useState(0);
   const [clarifyAnswers, setClarifyAnswers] = useState<Record<string, string>>(
     {},
   );
@@ -137,6 +137,8 @@ export function CreateTripWizard({
   const [error, setError] = useState<string | null>(null);
   const [planLimited, setPlanLimited] = useState(false);
   const [progress, setProgress] = useState("");
+  const [party, setParty] = useState("");
+  const [canGenerate, setCanGenerate] = useState<boolean | null>(null);
 
   const [form, setForm] = useState({
     departureCity: "",
@@ -171,7 +173,7 @@ export function CreateTripWizard({
       days: 3,
       hotel: "",
       transitFromPrevious: "auto",
-      hotelBooked: true,
+      hotelBooked: false,
       hotelMinRating: 4,
       hotelPlace: "center",
       hotelBrand: "",
@@ -369,13 +371,69 @@ export function CreateTripWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional on first-leg coords
   }, [legs[0]?.lat, legs[0]?.lng]);
 
-  function toggleInterest(i: string) {
-    setForm((f) => ({
-      ...f,
-      interests: f.interests.includes(i)
-        ? f.interests.filter((x) => x !== i)
-        : [...f.interests, i],
-    }));
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/billing")
+      .then((res) => res.json())
+      .then((data: { generateAllowed?: boolean }) => {
+        if (!cancelled) setCanGenerate(Boolean(data.generateAllowed));
+      })
+      .catch(() => {
+        if (!cancelled) setCanGenerate(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function noteFromChat(text: string) {
+    if (
+      /\b(kid|kids|child|children|sister|brother|partner|wife|husband|friend|mom|dad|parent|family|solo|alone)\b/i.test(
+        text,
+      )
+    ) {
+      setParty(text.trim());
+    }
+    setForm((current) => {
+      let transport = current.transport;
+      let intensity = current.intensity;
+      const interests = [...current.interests];
+      if (/\bdriv/i.test(text)) transport = "driving";
+      else if (/\b(transit|metro|subway|bus)\b/i.test(text)) transport = "transit";
+      else if (/\bcycl/i.test(text)) transport = "cycling";
+      else if (/\bwalk/i.test(text)) transport = "walking";
+      if (/\b(relax|slow|easy)\b/i.test(text)) intensity = "relaxed";
+      else if (/\b(packed|busy)\b/i.test(text)) intensity = "packed";
+      if (/\b(food|restaurant|meal)\b/i.test(text) && !interests.includes("food")) {
+        interests.push("food");
+      }
+      return { ...current, transport, intensity, interests };
+    });
+  }
+
+  function onExchange(userText: string, asked: string) {
+    const id = `turn-${Object.keys(clarifyAnswers).length + 1}`;
+    setClarifyPrompts((prev) => ({ ...prev, [id]: asked || "Trip notes" }));
+    setClarifyAnswers((prev) => ({ ...prev, [id]: userText }));
+    noteFromChat(userText);
+    const knownBrand = userText.match(
+      /\b(westin|marriott|hilton|hyatt|sheraton|holiday inn|four seasons|ritz(?:-carlton)?|intercontinental|novotel|ibis|kimpton|waldorf|accor|radisson|sofitel|pullman|mercure)\b/i,
+    );
+    const named = userText.match(
+      /\b(?:brand|prefer|like)\s+(?:the\s+)?([A-Za-z][A-Za-z'&.\- ]{1,40})/i,
+    );
+    const brand = (knownBrand?.[1] || named?.[1] || "").trim();
+    if (/\b(already booked|i booked|we booked|have a reservation)\b/i.test(userText)) {
+      setLegs((prev) =>
+        prev.map((leg, index) => (index === 0 ? { ...leg, hotelBooked: true } : leg)),
+      );
+    } else if (brand) {
+      setLegs((prev) =>
+        prev.map((leg, index) =>
+          index === 0 ? { ...leg, hotelBrand: brand, hotelBooked: false } : leg,
+        ),
+      );
+    }
   }
 
   async function submit() {
@@ -659,987 +717,236 @@ export function CreateTripWizard({
     }
   }
 
-  return (
-    <div className="mx-auto max-w-2xl" data-tour="tour-create-wizard">
-      {previewMode ? (
-        <div className="mb-4 rounded-[12px] border border-[#DDE1FF] bg-[#F5F7FF] px-4 py-3 text-sm text-[#080B3A]">
-          <p className="font-semibold">Your trip stays on this device</p>
-          <p className="mt-1 text-[#6B7280]">
-            Generate a full itinerary here. Create an account later if you want
-            it saved when you sign in on another device.
-          </p>
-        </div>
-      ) : null}
-      <div className="mb-2">
-        <h1 className="text-[28px] font-bold tracking-tight text-[#080B3A]">
-          Create a trip
-        </h1>
-        <p className="mt-1 text-sm text-[#6B7280]">
-          A guided planning flow — skip optional fields anytime.
-        </p>
-      </div>
-      <div className="mb-6 mt-5 flex gap-1.5">
-        {["Basics", "Style", "Priorities", "Questions", "Review"].map((label, i) => (
-          <div
-            key={label}
-            className={`flex-1 rounded-[12px] py-2.5 text-center text-xs font-semibold ${
-              i === step
-                ? "bg-[#0400FF] text-white shadow-md shadow-[#0400FF]/25"
-                : i < step
-                  ? "bg-[#DDE1FF] text-[#0400FF]"
-                  : "border border-[#E1E5F0] bg-white text-[#6B7280]"
-            }`}
-          >
-            {label}
-          </div>
-        ))}
-      </div>
+  const firstLeg = legs[0];
 
-      <div className="rounded-[16px] border border-[#E1E5F0] bg-white p-6 shadow-[0_8px_28px_rgba(8,11,58,0.06)] sm:p-8">
-        {step === 0 && (
-          <div className="space-y-4">
-            <h2 className="text-[20px] font-semibold text-[#080B3A]">
-              Trip basics
-            </h2>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <Label>Cities & hotels</Label>
-                <button
-                  type="button"
-                  className="text-xs font-semibold text-[#0400FF]"
-                  onClick={() =>
-                    setLegs((prev) => [
-                      ...prev,
-                      {
-                        city: "",
-                        days: 2,
-                        hotel: "",
-                        transitFromPrevious: "auto",
-                        hotelBooked: true,
-                        hotelMinRating: 4,
-                        hotelPlace: "center",
-                        hotelBrand: "",
-                      },
-                    ])
-                  }
-                >
-                  + Add city
-                </button>
-              </div>
-              <p className="text-xs text-[#6B7280]">
-                Each card is a different city stay with its own hotel. Between
-                cities, choose how you travel hotel → hotel (e.g. Dubai hotel →
-                Abu Dhabi hotel).
+  return (
+    <TripAgentDesk
+      city={firstLeg?.city ?? ""}
+      days={firstLeg?.days ?? 3}
+      startDate={form.startDate}
+      endDate={endDate}
+      suggestions={(citySuggestions[0] ?? []).map((c) => ({
+        key: String(c.id),
+        label: c.label,
+      }))}
+      onCityInput={(value) => {
+        setLegs((prev) =>
+          prev.map((leg, index) => (index === 0 ? { ...leg, city: value } : leg)),
+        );
+        void searchCities(0, value);
+      }}
+      onPickSuggestion={(index) => {
+        const city = citySuggestions[0]?.[index];
+        if (city) pickCity(0, city);
+      }}
+      onDays={(days) =>
+        setLegs((prev) =>
+          prev.map((leg, index) => (index === 0 ? { ...leg, days } : leg)),
+        )
+      }
+      onStartDate={(startDate) => setForm((current) => ({ ...current, startDate }))}
+      travelers={form.travelers}
+      onTravelers={(travelers) => setForm((current) => ({ ...current, travelers }))}
+      intensity={form.intensity}
+      onIntensity={(intensity) => setForm((current) => ({ ...current, intensity }))}
+      transport={form.transport}
+      onTransport={(transport) => setForm((current) => ({ ...current, transport }))}
+      party={party}
+      destination={firstLeg?.city ?? ""}
+      cities={legs.map((leg) => leg.city)}
+      interests={form.interests}
+      idealTrip={form.idealTrip}
+      onExchange={onExchange}
+      canGenerate={canGenerate}
+      loading={loading}
+      progress={progress}
+      error={error}
+      onGenerate={() => void submit()}
+      hotel={
+        firstLeg?.city.trim() ? (
+          <div className="space-y-2 border-t border-[#F0F2F8] pt-3">
+            <HotelChoice
+              city={firstLeg.city}
+              booked={firstLeg.hotelBooked}
+              minRating={firstLeg.hotelMinRating}
+              place={firstLeg.hotelPlace}
+              brand={firstLeg.hotelBrand}
+              selectedName={firstLeg.hotel}
+              onBooked={(hotelBooked) =>
+                setLegs((prev) =>
+                  prev.map((leg, index) => (index === 0 ? { ...leg, hotelBooked } : leg)),
+                )
+              }
+              onBrand={(hotelBrand) =>
+                setLegs((prev) =>
+                  prev.map((leg, index) => (index === 0 ? { ...leg, hotelBrand } : leg)),
+                )
+              }
+              onClear={() =>
+                setLegs((prev) =>
+                  prev.map((leg, index) =>
+                    index === 0
+                      ? {
+                          ...leg,
+                          hotel: "",
+                          hotelAddress: undefined,
+                          hotelLat: undefined,
+                          hotelLng: undefined,
+                          hotelPlaceId: undefined,
+                        }
+                      : leg,
+                  ),
+                )
+              }
+              onMinRating={(hotelMinRating) =>
+                setLegs((prev) =>
+                  prev.map((leg, index) =>
+                    index === 0 ? { ...leg, hotelMinRating } : leg,
+                  ),
+                )
+              }
+              onPlace={(hotelPlace) =>
+                setLegs((prev) =>
+                  prev.map((leg, index) => (index === 0 ? { ...leg, hotelPlace } : leg)),
+                )
+              }
+              onPick={(hotel) =>
+                setLegs((prev) =>
+                  prev.map((leg, index) =>
+                    index === 0
+                      ? {
+                          ...leg,
+                          hotel: hotel.name,
+                          hotelAddress: hotel.location,
+                          hotelBooked: false,
+                          hotelLat: hotel.lat,
+                          hotelLng: hotel.lng,
+                          hotelPlaceId: hotel.id,
+                        }
+                      : leg,
+                  ),
+                )
+              }
+              onResults={(hotels) => setRecLists((prev) => ({ ...prev, 0: hotels }))}
+            />
+            {firstLeg.hotelBooked ? (
+              <CityHotelField
+                city={firstLeg.city}
+                value={firstLeg.hotel}
+                lat={firstLeg.lat}
+                lng={firstLeg.lng}
+                onChange={(next) =>
+                  setLegs((prev) =>
+                    prev.map((leg, index) =>
+                      index === 0
+                        ? {
+                            ...leg,
+                            hotel: next.hotel,
+                            hotelLat: next.hotelLat,
+                            hotelLng: next.hotelLng,
+                            hotelPlaceId: next.hotelPlaceId,
+                            hotelAddress: next.hotelAddress,
+                          }
+                        : leg,
+                    ),
+                  )
+                }
+              />
+            ) : firstLeg.hotel ? (
+              <p className="text-xs text-[#080B3A]">
+                Planning around <span className="font-semibold">{firstLeg.hotel}</span>
               </p>
-              {legs.map((leg, i) => {
-                const palette =
-                  CITY_CARD_COLORS[i % CITY_CARD_COLORS.length];
-                const prev = i > 0 ? legs[i - 1] : null;
-                const fromLabel =
-                  prev?.hotel?.trim() ||
-                  (prev?.city?.trim()
-                    ? `${prev.city.trim()} hotel`
-                    : "Previous hotel");
-                const toLabel =
-                  leg.hotel?.trim() ||
-                  (leg.city?.trim()
-                    ? `${leg.city.trim()} hotel`
-                    : "This hotel");
-                return (
-                  <div key={i} className="space-y-2">
-                    {i > 0 ? (
-                      <div className="relative mx-1 rounded-[12px] border border-dashed border-[#C5CAD8] bg-[#FAFBFF] px-3 py-3">
-                        <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
-                          <span
-                            className={`inline-block h-2 w-2 rounded-full ${CITY_CARD_COLORS[(i - 1) % CITY_CARD_COLORS.length].tag}`}
-                          />
-                          Place to place
-                          <span
-                            className={`inline-block h-2 w-2 rounded-full ${palette.tag}`}
-                          />
-                        </div>
-                        <p className="mb-2 text-sm font-medium text-[#080B3A]">
-                          {fromLabel}
-                          <span className="mx-2 text-[#0400FF]">→</span>
-                          {toLabel}
-                        </p>
-                        <p className="mb-2 text-[11px] text-[#6B7280]">
-                          {(prev?.city || "City A").trim() || "City A"}
-                          {" → "}
-                          {(leg.city || "City B").trim() || "City B"} · leave
-                          one city hotel, arrive at the next
-                        </p>
-                        <Label>Mode of transportation</Label>
-                        <select
-                          className="mt-1 w-full rounded-lg border border-[#D1D7E5] bg-white px-3 py-2 text-sm"
-                          value={leg.transitFromPrevious || "auto"}
-                          onChange={(e) =>
-                            setLegs((prevLegs) =>
-                              prevLegs.map((l, j) =>
-                                j === i
-                                  ? {
-                                      ...l,
-                                      transitFromPrevious: e.target
-                                        .value as LegTransitMode,
-                                    }
-                                  : l,
-                              ),
-                            )
-                          }
-                        >
-                          {INTERCITY_MODES.map((m) => (
-                            <option key={m.value} value={m.value}>
-                              {m.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    ) : null}
-                    <div
-                      className={`relative space-y-3 rounded-[14px] border-2 ${palette.border} ${palette.bg} p-4`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-[11px] font-bold text-white ${palette.tag}`}
-                          >
-                            {i + 1}
-                          </span>
-                          <div>
-                            <p className="text-sm font-semibold text-[#080B3A]">
-                              City {i + 1}
-                              {leg.city.trim() ? ` · ${leg.city.trim()}` : ""}
-                            </p>
-                            <p className="text-[11px] text-[#6B7280]">
-                              Separate stay — set this city’s hotel below
-                            </p>
-                          </div>
-                        </div>
-                        {legs.length > 1 ? (
-                          <button
-                            type="button"
-                            className="text-xs text-[#DC2626]"
-                            onClick={() =>
-                              setLegs((prevLegs) =>
-                                prevLegs.filter((_, j) => j !== i),
-                              )
-                            }
-                          >
-                            Remove
-                          </button>
-                        ) : null}
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-[1fr_88px]">
-                        <div className="relative">
-                          <Label>City name</Label>
-                          <Input
-                            required
-                            value={leg.city}
-                            onChange={(e) => {
-                              const city = e.target.value;
-                              setLegs((prevLegs) =>
-                                prevLegs.map((l, j) =>
-                                  j === i
-                                    ? {
-                                        ...l,
-                                        city,
-                                        geonameId: undefined,
-                                        lat: undefined,
-                                        lng: undefined,
-                                      }
-                                    : l,
-                                ),
-                              );
-                              void searchCities(i, city);
-                            }}
-                            className="mt-1 bg-white"
-                            placeholder={
-                              i === 0
-                                ? "e.g. Dubai"
-                                : i === 1
-                                  ? "e.g. Abu Dhabi"
-                                  : "Next city"
-                            }
-                            autoComplete="off"
-                          />
-                          {(citySuggestions[i]?.length ?? 0) > 0 ? (
-                            <ul className="absolute z-20 mt-1 max-h-40 w-full overflow-auto rounded-[10px] border border-[#E1E5F0] bg-white shadow-lg">
-                              {citySuggestions[i].map((c) => (
-                                <li key={c.id}>
-                                  <button
-                                    type="button"
-                                    className="w-full px-3 py-2 text-left text-sm hover:bg-[#DDE1FF]"
-                                    onClick={() => pickCity(i, c)}
-                                  >
-                                    {c.label}
-                                  </button>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : null}
-                        </div>
-                        <div>
-                          <Label>Days</Label>
-                          <Input
-                            type="number"
-                            min={1}
-                            max={30}
-                            value={leg.days}
-                            onChange={(e) =>
-                              setLegs((prevLegs) =>
-                                prevLegs.map((l, j) =>
-                                  j === i
-                                    ? {
-                                        ...l,
-                                        days: Math.max(
-                                          1,
-                                          Number(e.target.value) || 1,
-                                        ),
-                                      }
-                                    : l,
-                                ),
-                              )
-                            }
-                            className="mt-1 bg-white"
-                          />
-                        </div>
-                      </div>
-                      <div className="relative rounded-[10px] border border-white/80 bg-white/90 p-3">
-                        <HotelChoice
-                          city={leg.city}
-                          booked={leg.hotelBooked}
-                          minRating={leg.hotelMinRating}
-                          place={leg.hotelPlace}
-                          brand={leg.hotelBrand}
-                          selectedName={leg.hotel}
-                          onBooked={(hotelBooked) =>
-                            setLegs((prevLegs) =>
-                              prevLegs.map((l, j) =>
-                                j === i ? { ...l, hotelBooked } : l,
-                              ),
-                            )
-                          }
-                          onBrand={(hotelBrand) =>
-                            setLegs((prevLegs) =>
-                              prevLegs.map((l, j) =>
-                                j === i ? { ...l, hotelBrand } : l,
-                              ),
-                            )
-                          }
-                          onClear={() =>
-                            setLegs((prevLegs) =>
-                              prevLegs.map((l, j) =>
-                                j === i
-                                  ? {
-                                      ...l,
-                                      hotel: "",
-                                      hotelAddress: undefined,
-                                      hotelLat: undefined,
-                                      hotelLng: undefined,
-                                      hotelPlaceId: undefined,
-                                    }
-                                  : l,
-                              ),
-                            )
-                          }
-                          onMinRating={(hotelMinRating) =>
-                            setLegs((prevLegs) =>
-                              prevLegs.map((l, j) =>
-                                j === i ? { ...l, hotelMinRating } : l,
-                              ),
-                            )
-                          }
-                          onPlace={(hotelPlace) =>
-                            setLegs((prevLegs) =>
-                              prevLegs.map((l, j) =>
-                                j === i ? { ...l, hotelPlace } : l,
-                              ),
-                            )
-                          }
-                          onPick={(hotel) =>
-                            setLegs((prevLegs) =>
-                              prevLegs.map((l, j) =>
-                                j === i
-                                  ? {
-                                      ...l,
-                                      hotel: hotel.name,
-                                      hotelAddress: hotel.location,
-                                      hotelBooked: false,
-                                      hotelLat: hotel.lat,
-                                      hotelLng: hotel.lng,
-                                      hotelPlaceId: hotel.id,
-                                    }
-                                  : l,
-                              ),
-                            )
-                          }
-                          onResults={(hotels) =>
-                            setRecLists((prev) => ({ ...prev, [i]: hotels }))
-                          }
-                        />
-                        {leg.hotelBooked ? (
-                          <>
-                            <Label>
-                              Hotel in {leg.city.trim() || `city ${i + 1}`}
-                            </Label>
-                            <CityHotelField
-                              city={leg.city}
-                              value={leg.hotel}
-                              lat={leg.lat}
-                              lng={leg.lng}
-                              onChange={(next) =>
-                                setLegs((prevLegs) =>
-                                  prevLegs.map((l, j) =>
-                                    j === i
-                                      ? {
-                                          ...l,
-                                          hotel: next.hotel,
-                                          hotelLat: next.hotelLat,
-                                          hotelLng: next.hotelLng,
-                                          hotelPlaceId: next.hotelPlaceId,
-                                          hotelAddress: next.hotelAddress,
-                                        }
-                                      : l,
-                                  ),
-                                )
-                              }
-                            />
-                          </>
-                        ) : leg.hotel ? (
-                          <p className="text-[12px] text-[#080B3A]">
-                            Planning around{" "}
-                            <span className="font-semibold">{leg.hotel}</span>
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-              <p className="text-xs text-[#6B7280]">
-                Total itinerary length: <strong>{totalDays}</strong> days
-                {endDate ? ` · ends ${endDate}` : ""}
-              </p>
-            </div>
+            ) : null}
+          </div>
+        ) : null
+      }
+      flights={
+        <div className="space-y-2 border-t border-[#F0F2F8] pt-3">
+          <div className="grid grid-cols-2 gap-2">
             <div className="relative">
-              <Label>Departure city (optional)</Label>
+              <Label>From</Label>
               <Input
-                value={form.departureCity}
+                value={form.originAirport}
                 onChange={(e) => {
-                  setForm({ ...form, departureCity: e.target.value });
-                  setDepartureCoords(null);
-                  void searchDepartureCities(e.target.value);
+                  const originAirport = e.target.value.toUpperCase();
+                  setForm((current) => ({ ...current, originAirport }));
+                  void searchAirportsFor("origin", originAirport, departureCoords);
+                }}
+                onBlur={() => {
+                  window.setTimeout(() => {
+                    void refreshFlightEstimate();
+                    setOriginAirportSuggestions([]);
+                  }, 150);
                 }}
                 className="mt-1"
-                placeholder="Seattle"
+                placeholder="SEA"
                 autoComplete="off"
               />
               <SuggestionList
-                items={departureSuggestions.map((c) => ({
-                  key: String(c.id),
-                  label: c.label,
+                items={originAirportSuggestions.map((a) => ({
+                  key: a.iata + a.name,
+                  label: a.label,
                 }))}
-                onPick={(idx) => pickDepartureCity(departureSuggestions[idx])}
+                onPick={(index) => pickAirport("origin", originAirportSuggestions[index])}
               />
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="relative">
-                <Label>Start airport (IATA)</Label>
-                <Input
-                  value={form.originAirport}
-                  onChange={(e) => {
-                    const originAirport = e.target.value.toUpperCase();
-                    setForm({ ...form, originAirport });
-                    void searchAirportsFor(
-                      "origin",
-                      originAirport,
-                      departureCoords,
-                    );
-                  }}
-                  onFocus={() =>
-                    void searchAirportsFor(
-                      "origin",
-                      form.originAirport,
-                      departureCoords,
-                      true,
-                    )
-                  }
-                  onBlur={() => {
-                    window.setTimeout(() => {
-                      void refreshFlightEstimate();
-                      setOriginAirportSuggestions([]);
-                    }, 150);
-                  }}
-                  className="mt-1"
-                  placeholder="SEA or search…"
-                  autoComplete="off"
-                />
-                <SuggestionList
-                  items={originAirportSuggestions.map((a) => ({
-                    key: a.iata + a.name,
-                    label: a.label,
-                  }))}
-                  onPick={(idx) =>
-                    pickAirport("origin", originAirportSuggestions[idx])
-                  }
-                />
-              </div>
-              <div className="relative">
-                <Label>Arrival airport (IATA)</Label>
-                <Input
-                  value={form.destinationAirport}
-                  onChange={(e) => {
-                    const destinationAirport = e.target.value.toUpperCase();
-                    setForm({ ...form, destinationAirport });
-                    const near =
-                      legs[0]?.lat != null && legs[0]?.lng != null
-                        ? { lat: legs[0].lat, lng: legs[0].lng }
-                        : null;
-                    void searchAirportsFor("dest", destinationAirport, near);
-                  }}
-                  onFocus={() => {
-                    const near =
-                      legs[0]?.lat != null && legs[0]?.lng != null
-                        ? { lat: legs[0].lat, lng: legs[0].lng }
-                        : null;
-                    void searchAirportsFor(
-                      "dest",
-                      form.destinationAirport,
-                      near,
-                      true,
-                    );
-                  }}
-                  onBlur={() => {
-                    window.setTimeout(() => {
-                      void refreshFlightEstimate();
-                      setDestAirportSuggestions([]);
-                    }, 150);
-                  }}
-                  className="mt-1"
-                  placeholder="HND or search…"
-                  autoComplete="off"
-                />
-                <SuggestionList
-                  items={destAirportSuggestions.map((a) => ({
-                    key: a.iata + a.name,
-                    label: a.label,
-                  }))}
-                  onPick={(idx) =>
-                    pickAirport("dest", destAirportSuggestions[idx])
-                  }
-                />
-              </div>
-            </div>
-            {flightHint ? (
-              <p className="rounded-[12px] border border-[#DDE1FF] bg-[#F5F7FF] px-3 py-2 text-xs text-[#080B3A]">
-                {flightHint}
-              </p>
-            ) : (
-              <p className="text-xs text-[#6B7280]">
-                Pick airports near your cities so the first day starts after you
-                land. Times are estimates, not a live flight.
-              </p>
-            )}
-            <FlightRestrictions
-              airlines={routeAirlines}
-              preferred={form.preferredAirlines}
-              pricePoint={form.flightPricePoint}
-              chosen={form.chosenAirline}
-              onPreferred={(preferredAirlines) =>
-                setForm((f) => ({ ...f, preferredAirlines }))
-              }
-              onPricePoint={(flightPricePoint) =>
-                setForm((f) => ({ ...f, flightPricePoint }))
-              }
-              onChoose={(chosenAirline) =>
-                setForm((f) => ({ ...f, chosenAirline }))
-              }
-            />
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <Label>Start date</Label>
-                <Input
-                  type="date"
-                  required
-                  value={form.startDate}
-                  onChange={(e) =>
-                    setForm({ ...form, startDate: e.target.value })
-                  }
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label>End date (from city days)</Label>
-                <Input
-                  type="date"
-                  required
-                  value={endDate}
-                  readOnly
-                  className="mt-1 bg-[#F5F7FF]"
-                />
-              </div>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div>
-                <Label>Travelers</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={form.travelers}
-                  onChange={(e) =>
-                    setForm({ ...form, travelers: Number(e.target.value) })
-                  }
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label>Budget (optional)</Label>
-                <Input
-                  value={form.budget}
-                  onChange={(e) => setForm({ ...form, budget: e.target.value })}
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <Label>Currency</Label>
-                <Input
-                  value={form.currency}
-                  onChange={(e) =>
-                    setForm({ ...form, currency: e.target.value })
-                  }
-                  className="mt-1"
-                />
-              </div>
+            <div className="relative">
+              <Label>To</Label>
+              <Input
+                value={form.destinationAirport}
+                onChange={(e) => {
+                  const destinationAirport = e.target.value.toUpperCase();
+                  setForm((current) => ({ ...current, destinationAirport }));
+                  const near =
+                    firstLeg?.lat != null && firstLeg?.lng != null
+                      ? { lat: firstLeg.lat, lng: firstLeg.lng }
+                      : null;
+                  void searchAirportsFor("dest", destinationAirport, near);
+                }}
+                onBlur={() => {
+                  window.setTimeout(() => {
+                    void refreshFlightEstimate();
+                    setDestAirportSuggestions([]);
+                  }, 150);
+                }}
+                className="mt-1"
+                placeholder="CDG"
+                autoComplete="off"
+              />
+              <SuggestionList
+                items={destAirportSuggestions.map((a) => ({
+                  key: a.iata + a.name,
+                  label: a.label,
+                }))}
+                onPick={(index) => pickAirport("dest", destAirportSuggestions[index])}
+              />
             </div>
           </div>
-        )}
-
-        {step === 1 && (
-          <div className="space-y-4">
-            <h2 className="text-[20px] font-semibold text-[#080B3A]">Travel style</h2>
-            <div>
-              <Label>Interests</Label>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {INTERESTS.map((i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => toggleInterest(i)}
-                    className={`rounded-full px-3 py-1 text-xs capitalize ${
-                      form.interests.includes(i)
-                        ? "bg-[#0400FF] text-white"
-                        : "bg-[#DDE1FF] text-[#0400FF]"
-                    }`}
-                  >
-                    {i}
-                  </button>
-                ))}
-              </div>
-              <Input
-                placeholder="Custom interest"
-                value={form.customInterest}
-                onChange={(e) =>
-                  setForm({ ...form, customInterest: e.target.value })
-                }
-                className="mt-2"
-              />
-            </div>
-            <div>
-              <Label>Pace</Label>
-              <select
-                className="mt-1 w-full rounded-lg border border-[#D1D7E5] px-3 py-2 text-sm"
-                value={form.intensity}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    intensity: e.target.value as typeof form.intensity,
-                  })
-                }
-              >
-                <option value="relaxed">Relaxed</option>
-                <option value="balanced">Balanced</option>
-                <option value="packed">Packed</option>
-              </select>
-            </div>
-            <div>
-              <Label>Within-city transportation</Label>
-              <select
-                className="mt-1 w-full rounded-lg border border-[#D1D7E5] px-3 py-2 text-sm"
-                value={form.transport}
-                onChange={(e) =>
-                  setForm({ ...form, transport: e.target.value })
-                }
-              >
-                <option value="walking">Walking</option>
-                <option value="transit">Public transit</option>
-                <option value="driving">Driving</option>
-                <option value="cycling">Cycling</option>
-              </select>
-              <p className="mt-1 text-[11px] text-[#6B7280]">
-                How you get around inside each city. City-to-city travel
-                (hotel → hotel) is set on step 1 between city cards.
-              </p>
-            </div>
-            <p className="rounded-[12px] border border-[#DDE1FF] bg-[#F5F7FF] px-3 py-2 text-xs text-[#6B7280]">
-              Each city has its own hotel on step 1. Sightseeing is ranked
-              around that hotel pin — the planner only uses real mapped places.
+          {flightHint ? (
+            <p className="text-[11px] leading-snug text-[#6B7280]">{flightHint}</p>
+          ) : (
+            <p className="text-[11px] text-[#6B7280]">
+              Optional. Airlines come from the published route. No fare is shown.
             </p>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={form.prefersHiddenGems}
-                onChange={(e) =>
-                  setForm({ ...form, prefersHiddenGems: e.target.checked })
-                }
-              />
-              Prefer hidden gems over trending spots
-            </label>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="space-y-4">
-            <h2 className="text-[20px] font-semibold text-[#080B3A]">Activity priorities</h2>
-            <div>
-              <Label>Must-see</Label>
-              <Input
-                value={form.mustSee}
-                onChange={(e) => setForm({ ...form, mustSee: e.target.value })}
-                className="mt-1"
-                placeholder="Comma separated"
-              />
-            </div>
-            <div>
-              <Label>Preferred</Label>
-              <Input
-                value={form.preferred}
-                onChange={(e) =>
-                  setForm({ ...form, preferred: e.target.value })
-                }
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label>Optional</Label>
-              <Input
-                value={form.optional}
-                onChange={(e) => setForm({ ...form, optional: e.target.value })}
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label>Avoid</Label>
-              <Input
-                value={form.avoid}
-                onChange={(e) => setForm({ ...form, avoid: e.target.value })}
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label>Describe your ideal trip</Label>
-              <textarea
-                rows={4}
-                className="mt-1 w-full rounded-lg border border-[#D1D7E5] px-3 py-2 text-sm"
-                value={form.idealTrip}
-                onChange={(e) =>
-                  setForm({ ...form, idealTrip: e.target.value })
-                }
-              />
-            </div>
-          </div>
-        )}
-
-        {step === 3 && (
-          <ClarifyStep
-            destination={legs.map((l) => l.city).filter(Boolean).join(" → ")}
-            cities={legs.map((l) => l.city.trim()).filter(Boolean)}
-            form={form}
-            answers={clarifyAnswers}
-            onAnswers={setClarifyAnswers}
-            onPrompt={(id, prompt) =>
-              setClarifyPrompts((prev) => ({ ...prev, [id]: prompt }))
+          )}
+          <FlightRestrictions
+            airlines={routeAirlines}
+            preferred={form.preferredAirlines}
+            pricePoint={form.flightPricePoint}
+            chosen={form.chosenAirline}
+            onPreferred={(preferredAirlines) =>
+              setForm((current) => ({ ...current, preferredAirlines }))
+            }
+            onPricePoint={(flightPricePoint) =>
+              setForm((current) => ({ ...current, flightPricePoint }))
+            }
+            onChoose={(chosenAirline) =>
+              setForm((current) => ({ ...current, chosenAirline }))
             }
           />
-        )}
-
-        {step === 4 && (
-          <div className="space-y-3 text-sm">
-            <h2 className="text-[20px] font-semibold text-[#080B3A]">Review</h2>
-            <div className="space-y-2">
-              <span className="text-[#6B7280]">Cities & place-to-place:</span>
-              <ul className="space-y-2">
-                {legs
-                  .filter((l) => l.city.trim())
-                  .map((l, i, arr) => {
-                    const modeLabel =
-                      INTERCITY_MODES.find(
-                        (m) => m.value === (l.transitFromPrevious || "auto"),
-                      )?.label ?? "Auto";
-                    const prev = i > 0 ? arr[i - 1] : null;
-                    return (
-                      <li key={i} className="rounded-[10px] border border-[#E1E5F0] bg-[#F5F7FF] px-3 py-2">
-                        {i > 0 && prev ? (
-                          <p className="mb-1 text-[11px] text-[#0400FF]">
-                            {(prev.hotel || `${prev.city} hotel`) +
-                              " → " +
-                              (l.hotel || `${l.city} hotel`)}
-                            {" · "}
-                            {modeLabel}
-                          </p>
-                        ) : null}
-                        <p className="font-medium text-[#080B3A]">
-                          City {i + 1}: {l.city} · {l.days}d
-                          {l.hotel
-                            ? ` · ${l.hotelBooked ? "Booked" : "Suggested"} hotel: ${l.hotel}`
-                            : " · (no hotel yet)"}
-                        </p>
-                        {!l.hotelBooked ? (
-                          <ul className="mt-1 space-y-0.5 text-[11px] text-[#6B7280]">
-                            <li>
-                              Hotel booked? No · rating {l.hotelMinRating.toFixed(1)}+ · places {l.hotelPlace}
-                              {l.hotelBrand.trim() ? ` · brand ${l.hotelBrand.trim()}` : ""}
-                            </li>
-                            {(recLists[legs.indexOf(l)] ?? []).map((hotel) => (
-                              <li key={hotel.id}>
-                                {hotel.name === l.hotel ? "Anchor · " : ""}
-                                {hotel.name} · {hotel.rating.toFixed(1)}/5 · {hotel.location}
-                              </li>
-                            ))}
-                            {!(recLists[legs.indexOf(l)] ?? []).length ? (
-                              <li>
-                                No hotel matched these filters. The plan uses the city center if you leave this blank.
-                              </li>
-                            ) : null}
-                          </ul>
-                        ) : null}
-                      </li>
-                    );
-                  })}
-              </ul>
-            </div>
-            <p>
-              <span className="text-[#6B7280]">Dates:</span> {form.startDate} –{" "}
-              {endDate}
-            </p>
-            <p>
-              <span className="text-[#6B7280]">Interests:</span>{" "}
-              {form.interests.join(", ") || "General"}
-            </p>
-            {Object.entries(clarifyAnswers).some(([, answer]) => answer.trim()) ? (
-              <div className="space-y-1">
-                <span className="text-[#6B7280]">Personalized answers:</span>
-                <ul className="space-y-1">
-                  {Object.entries(clarifyAnswers).map(([id, answer]) =>
-                    answer.trim() ? (
-                      <li key={id}>
-                        <span className="text-[#6B7280]">{clarifyPrompts[id] ?? id}</span>{" "}
-                        {answer.trim()}
-                      </li>
-                    ) : null,
-                  )}
-                </ul>
-              </div>
-            ) : null}
-            {progress ? (
-              <p className="text-[#0400FF]">{progress}</p>
-            ) : null}
-            {error ? (
-              <p className="text-[#DC2626]">
-                {error}{" "}
-                {planLimited ? (
-                  <Link href="/plan" className="font-semibold text-[#0400FF] underline">
-                    See plans
-                  </Link>
-                ) : null}
-              </p>
-            ) : null}
-          </div>
-        )}
-
-        <div className="mt-8 flex justify-between">
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={step === 0 || loading}
-            onClick={() => setStep((s) => s - 1)}
-          >
-            Back
-          </Button>
-          {step < 4 ? (
-            <Button
-              type="button"
-              onClick={() => {
-                if (step === 2) {
-                  setClarifyPrompts({});
-                }
-                setStep((s) => s + 1);
-              }}
-              disabled={
-                step === 0 &&
-                (!legs.some((l) => l.city.trim()) || !form.startDate)
-              }
-            >
-              Continue
-            </Button>
-          ) : (
-            <Button type="button" onClick={submit} disabled={loading}>
-              {loading ? "Working…" : "Generate itinerary"}
-            </Button>
-          )}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function ClarifyStep({
-  destination,
-  cities,
-  form,
-  answers,
-  onAnswers,
-  onPrompt,
-}: {
-  destination: string;
-  cities: string[];
-  form: {
-    startDate: string;
-    travelers: number;
-    budget: string;
-    interests: string[];
-    intensity: string;
-    transport: string;
-    dietary: string;
-    accessibility: string;
-    mustSee: string;
-    avoid: string;
-    idealTrip: string;
-  };
-  answers: Record<string, string>;
-  onAnswers: (next: Record<string, string>) => void;
-  onPrompt: (id: string, prompt: string) => void;
-}) {
-  const [summary, setSummary] = useState("");
-  const [question, setQuestion] = useState<{ id: string; prompt: string } | null>(null);
-  const [why, setWhy] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
-  const [answeredIds, setAnsweredIds] = useState<string[]>([]);
-  const [log, setLog] = useState<{ role: "agent" | "you"; text: string }[]>([]);
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-
-  async function load(ids: string[]) {
-    setStatus("loading");
-    try {
-      const res = await fetch("/api/trips/clarify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          destination,
-          startDate: form.startDate,
-          travelers: form.travelers,
-          budget: form.budget ? Number(form.budget) : null,
-          interests: form.interests,
-          intensity: form.intensity,
-          transport: form.transport,
-          dietary: form.dietary,
-          accessibility: form.accessibility,
-          mustSee: splitList(form.mustSee),
-          avoid: splitList(form.avoid),
-          idealTrip: form.idealTrip,
-          cities,
-          answeredIds: ids,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Could not prepare a question");
-      setSummary(data.summary ?? "");
-      setQuestion(data.question ?? null);
-      setWhy(data.why ?? null);
-      setStatus("ready");
-      if (ids.length === 0 && data.summary) {
-        setLog([{ role: "agent", text: data.summary }]);
       }
-    } catch {
-      setStatus("error");
-    }
-  }
-
-  useEffect(() => {
-    void load([]);
-    // One brief when this step opens.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function commit(text: string) {
-    if (!question) return;
-    onPrompt(question.id, question.prompt);
-    const nextAnswers = { ...answers, [question.id]: text };
-    onAnswers(nextAnswers);
-    const nextIds = [...answeredIds, question.id];
-    setAnsweredIds(nextIds);
-    setLog((prev) => [
-      ...prev,
-      { role: "you", text: text || "Skip" },
-    ]);
-    setDraft("");
-    void load(nextIds).then(() => {
-      setLog((prev) => prev);
-    });
-  }
-
-  return (
-    <div className="space-y-4">
-      <h2 className="text-[20px] font-semibold text-[#080B3A]">
-        A question before planning
-      </h2>
-      <div className="space-y-2">
-        {log.map((line, index) => (
-          <p
-            key={`${line.role}-${index}`}
-            className={`rounded-[12px] px-3 py-2 text-sm ${
-              line.role === "agent"
-                ? "bg-[#F5F7FF] text-[#1F2937]"
-                : "bg-white text-[#1F2937]"
-            }`}
-          >
-            {line.text}
-          </p>
-        ))}
-        {status === "loading" ? (
-          <p className="text-sm text-[#0400FF]">Reading what you already entered…</p>
-        ) : null}
-        {status === "error" ? (
-          <p className="text-sm text-[#DC2626]">
-            The question could not be prepared. You can continue with the details you already gave.
-          </p>
-        ) : null}
-        {question ? (
-          <div className="rounded-[12px] border border-[#E1E5F0] bg-white p-3">
-            <p className="text-sm font-medium text-[#1F2937]">{question.prompt}</p>
-            {why ? <p className="mt-1 text-xs text-[#6B7280]">{why}</p> : null}
-            <textarea
-              rows={2}
-              className="mt-2 w-full rounded-lg border border-[#D1D7E5] px-3 py-2 text-sm"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="Your answer"
-            />
-            <div className="mt-2 flex gap-2">
-              <Button type="button" onClick={() => commit(draft.trim())} disabled={!draft.trim()}>
-                Answer
-              </Button>
-              <Button type="button" variant="secondary" onClick={() => commit("")}>
-                Skip
-              </Button>
-            </div>
-          </div>
-        ) : status === "ready" ? (
-          <p className="text-sm text-[#6B7280]">
-            {summary} That is enough to review the trip.
-          </p>
-        ) : null}
-      </div>
-    </div>
+    />
   );
 }
 
@@ -1734,6 +1041,7 @@ function FlightRestrictions({
     </div>
   );
 }
+
 
 function splitList(s: string) {
   return s

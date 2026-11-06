@@ -29,7 +29,7 @@ import { popularityLabelText } from "../popularity/score";
 import { buildItinerarySystemPrompt, buildItineraryUserPrompt } from "./prompts";
 import { itineraryGenerationSchema, type ItineraryGeneration } from "./schema";
 import { logger } from "../logger";
-import { checkVisitAgainstHours } from "./hours";
+import { fitVisit } from "./hours";
 import {
   addMinutes,
   haversineKm,
@@ -118,6 +118,12 @@ function dayCount(start: string, end: string): number {
   const s = new Date(start);
   const e = new Date(end);
   return Math.max(1, Math.ceil((e.getTime() - s.getTime()) / 86_400_000) + 1);
+}
+
+function localTripDate(start: string, dayIndex: number): Date {
+  const [year, month, day] = start.split("-").map(Number);
+  if (!year || !month || !day) return new Date();
+  return new Date(year, month - 1, day + dayIndex);
 }
 
 async function resolveMustSees(
@@ -369,6 +375,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
     formattedAddress?: string;
     wikipediaTitle?: string | null;
     city?: string;
+    openingHours?: string;
   };
 
   const byId = new Map<string, Hit>();
@@ -508,13 +515,14 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       tagCount: c.types.length,
     });
     const interest = onlineInterest.get(c.placeId) ?? null;
-    const discoveryRank = combineDiscoveryRank({
-      relevance: rel,
-      geography: geoFit,
-      quality,
-      interest,
-      prefersHiddenGems: Boolean(prefs.prefersHiddenGems),
-    });
+    const discoveryRank =
+      combineDiscoveryRank({
+        relevance: rel,
+        geography: geoFit,
+        quality,
+        interest,
+        prefersHiddenGems: Boolean(prefs.prefersHiddenGems),
+      }) + (c.openingHours ? 0.04 : 0);
     return {
       placeId: c.placeId,
       displayName: c.displayName,
@@ -522,6 +530,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       lat: c.lat,
       lng: c.lng,
       city: c.city,
+      openingHours: c.openingHours,
       interestMatch: rel,
       geoFit,
       discoveryRank,
@@ -542,6 +551,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       return {
         ...c,
         city: raw?.city ?? c.city,
+        openingHours: raw?.openingHours,
         combinedRank: 0.7 * discovery + 0.3 * c.combinedRank,
       };
     })
@@ -590,7 +600,6 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
         ? "TRANSIT"
         : "WALK";
 
-  const tripStart = new Date(prefs.startDate);
   const days: GeneratedDay[] = [];
   // Prefer AI days aligned to dayPlan length
   const aiByIndex = new Map(ai.days.map((d) => [d.dayIndex, d]));
@@ -633,10 +642,6 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
           ? "14:00"
           : (prefs.dayStart ?? "09:00");
     let cursorTime = defaultStart.slice(0, 5);
-    const dayDate = new Date(tripStart);
-    dayDate.setDate(dayDate.getDate() + assignment.dayIndex);
-
-    // Arrival-day anchor: airport landing when inbound flight is known.
     if (assignment.dayIndex === 0 && prefs.inboundFlight?.toIata) {
       const arr =
         prefs.inboundFlight.estimatedArrivalLocal?.slice(0, 5) ?? cursorTime;
@@ -700,58 +705,113 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       cursorTime = addMinutes(cursorTime, 30);
     }
 
-    for (let i = 0; i < orderedIds.length; i++) {
-      const act = orderedIds[i];
-      if (!byId.has(act.placeId)) {
-        warnings.push(`Dropped unknown placeId ${act.placeId}`);
-        continue;
-      }
-      if (!detailsCache.has(act.placeId)) {
-        detailsCache.set(act.placeId, await getPlaceDetails(act.placeId));
-      }
-      const details = detailsCache.get(act.placeId);
-      const base = byId.get(act.placeId)!;
-      const pop = popularityMap.get(act.placeId);
-      const label =
-        pop && pop.label ? popularityLabelText(pop.label) : null;
+    const dayDate = localTripDate(prefs.startDate, assignment.dayIndex);
+    const dayEnd = (prefs.dayEnd ?? "21:00").slice(0, 5);
+    const usedPlaces = new Set<string>();
 
-      const scheduleWarnings: string[] = [];
-      const hoursCheck = checkVisitAgainstHours({
-        openingHours: details?.regularOpeningHours,
-        visitStartTime: cursorTime,
-        durationMinutes: act.durationMinutes,
+    const placeOne = async (
+      placeId: string,
+      durationMinutes: number,
+      priority: GeneratedActivity["priority"],
+      planningNote: string | undefined,
+      requireKnownHours: boolean,
+    ) => {
+      if (usedPlaces.has(placeId) || !byId.has(placeId)) return false;
+      if (!detailsCache.has(placeId)) {
+        detailsCache.set(placeId, await getPlaceDetails(placeId));
+      }
+      const details = detailsCache.get(placeId);
+      const base = byId.get(placeId)!;
+      const published =
+        (details?.regularOpeningHours as { osmOpeningHours?: string } | undefined)
+          ?.osmOpeningHours ??
+        base.openingHours ??
+        details?.regularOpeningHours;
+      const fit = fitVisit({
+        openingHours: published,
+        cursor: cursorTime,
+        durationMinutes,
         dayDate,
+        dayEnd,
       });
-      if (hoursCheck.warning) scheduleWarnings.push(hoursCheck.warning);
-      if (!hoursCheck.ok) {
-        warnings.push(
-          `${details?.displayName ?? base.displayName}: ${hoursCheck.warning}`,
+      if (fit.status === "closed") {
+        warnings.push(`${details?.displayName ?? base.displayName}: ${fit.reason}`);
+        usedPlaces.add(placeId);
+        return false;
+      }
+      if (requireKnownHours && fit.status !== "open") return false;
+      const startTime = fit.status === "open" ? fit.start : cursorTime;
+      const scheduleWarnings: string[] = [];
+      let note = planningNote ?? "";
+      if (fit.status === "open") {
+        const moved = fit.moved
+          ? `Moved to ${fit.start} so the visit sits inside published hours. `
+          : "";
+        const listedBy =
+          typeof published === "string" || base.openingHours
+            ? "OpenStreetMap"
+            : "the place listing";
+        note = `${moved}Hours from ${listedBy}: ${fit.source}. This visit uses ${fit.window}. ${note}`.trim();
+      } else {
+        scheduleWarnings.push(
+          "Opening hours are not listed, so this time is not confirmed.",
         );
       }
-
+      const pop = popularityMap.get(placeId);
+      const label = pop && pop.label ? popularityLabelText(pop.label) : null;
       activities.push({
-        placeId: act.placeId,
+        placeId,
         name: details?.displayName ?? base.displayName,
         address: details?.formattedAddress ?? base.formattedAddress,
         lat: details?.lat ?? base.lat,
         lng: details?.lng ?? base.lng,
-        startTime: cursorTime,
-        durationMinutes: act.durationMinutes,
-        priority: act.priority,
-        planningNote: act.planningNote,
-        hoursVerified: Boolean(details?.hoursVerified),
+        startTime,
+        durationMinutes,
+        priority,
+        planningNote: note || undefined,
+        hoursVerified: fit.status === "open",
         websiteUri: details?.websiteUri,
         googleMapsUri: details?.googleMapsUri,
         photoName: details?.photoName,
-        openingHours: details?.regularOpeningHours,
+        openingHours: fit.status === "open" ? fit.window : undefined,
         popularityLabel: label,
         popularitySources: pop?.sources,
         popularityAttributionUrls: pop?.attributionUrls,
         scheduleWarnings,
         travelMinutesFromPrev: 0,
       });
+      usedPlaces.add(placeId);
+      cursorTime = addMinutes(startTime, durationMinutes + 15);
+      return true;
+    };
 
-      cursorTime = addMinutes(cursorTime, act.durationMinutes + 15);
+    for (const act of orderedIds) {
+      if (!byId.has(act.placeId)) {
+        warnings.push(`Dropped unknown placeId ${act.placeId}`);
+        continue;
+      }
+      await placeOne(
+        act.placeId,
+        act.durationMinutes,
+        act.priority,
+        act.planningNote,
+        false,
+      );
+    }
+
+    const target =
+      prefs.intensity === "relaxed" ? 3 : prefs.intensity === "packed" ? 5 : 4;
+    const sightseeing = () =>
+      activities.filter(
+        (item) =>
+          !item.placeId.startsWith("transit:") &&
+          !item.placeId.startsWith("flight:"),
+      ).length;
+    for (const candidate of filtered) {
+      if (sightseeing() >= target) break;
+      if ((candidate.city ?? assignment.city) !== assignment.city) continue;
+      if (!candidate.openingHours) continue;
+      await placeOne(candidate.placeId, 90, "preferred", undefined, true);
     }
 
     // Route local sightseeing legs; keep intercity transit duration as estimated

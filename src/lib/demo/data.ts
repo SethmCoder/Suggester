@@ -8,7 +8,7 @@ export const DEMO_DUBAI_ID = "demo-dubai";
 export const DEMO_CONTENT_VERSION = 6;
 
 export const DEMO_BANNER =
-  "You’re exploring a sample trip. Plan your own from Create a trip — it stays on this device.";
+  "You’re exploring a sample trip. Plan your own from Plan a trip — it stays on this device.";
 
 export const demoTrip = {
   id: DEMO_TRIP_ID,

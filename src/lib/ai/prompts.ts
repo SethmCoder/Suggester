@@ -4,6 +4,7 @@ import type { DayCityAssignment } from "../trips/legs";
 export function buildItinerarySystemPrompt(): string {
   return `You are Waypoint's itinerary planner. You may ONLY schedule placeId values from the provided candidate list.
 Never invent places, opening hours, popularity, social-media virality, or travel times.
+The scheduler moves each visit into published opening hours when a source lists them, and leaves off a place that is closed that day. Do not guess a time the source did not publish.
 NEVER invent vague relative stops such as "a bakery near your hotel", "lunch nearby", or "cafe by the hotel".
 Every activity must use an exact placeId from the candidate list (a real named place).
 Online-interest / popularity scores are SECONDARY ranking hints only — traveler interests, geography, pace, and budget matter more.
@@ -42,7 +43,11 @@ export function buildItineraryUserPrompt(input: {
       "city" in c && (c as { city?: string }).city
         ? ` city=${(c as { city?: string }).city}`
         : "";
-    return `- placeId=${c.placeId} name=${c.displayName} types=${c.types.join(",")}${cityPart} rank=${c.combinedRank.toFixed(3)}${popPart}`;
+    const hoursPart =
+      "openingHours" in c && (c as { openingHours?: string }).openingHours
+        ? ` hours=${(c as { openingHours?: string }).openingHours}`
+        : "";
+    return `- placeId=${c.placeId} name=${c.displayName} types=${c.types.join(",")}${cityPart} rank=${c.combinedRank.toFixed(3)}${popPart}${hoursPart}`;
   });
 
   const destCtx = input.destinationContextBlock

@@ -44,6 +44,8 @@ export interface RankedCandidate {
   lng: number;
   popularity: PopularitySignals | null;
   combinedRank: number;
-  /** Multi-city tag — which stay this candidate belongs to. */
+  /** Which stay this candidate belongs to. */
   city?: string;
+  /** Published opening_hours tag, when the source included one. */
+  openingHours?: string;
 }

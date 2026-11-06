@@ -6,7 +6,6 @@ import { DemoBanner } from "@/components/demo/DemoBanner";
 import { Button } from "@/components/ui/Button";
 import { IconArrowRight, IconPlane, IconSearch } from "@/components/ui/Icons";
 import { PlanSummary } from "@/components/billing/PlanSummary";
-import { LocalHeroBackground } from "@/components/home/LocalHero";
 import {
   countryFromDestination,
   destinationImageUrl,
@@ -55,16 +54,8 @@ export default function DashboardPage() {
   const [isDemo, setIsDemo] = useState(false);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
-  const [name, setName] = useState("traveler");
 
   useEffect(() => {
-    try {
-      const u = localStorage.getItem("waypoint:username");
-      if (u) setName(u);
-    } catch {
-      /* ignore */
-    }
-
     const offline = (() => {
       try {
         return listOfflineTrips();
@@ -79,7 +70,6 @@ export default function DashboardPage() {
         const remote = (d.trips ?? []) as TripListItem[];
         setIsDemo(Boolean(d.isDemo));
         if (d.isDemo) {
-          setName("traveler");
           try {
             seedDemoOffline();
           } catch {
@@ -118,35 +108,29 @@ export default function DashboardPage() {
       {isDemo ? <DemoBanner /> : null}
 
       {/* Hero */}
-      <section className="relative overflow-hidden rounded-[16px] bg-[#10194A] shadow-[0_8px_28px_rgba(8,11,58,0.15)]">
-        <LocalHeroBackground opacityClass="opacity-45" showCaption />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#080B3A]/95 via-[#10194A]/80 to-[#10194A]/40" />
-        <div className="relative px-6 py-10 sm:px-10 sm:py-12">
-          <p className="text-sm font-medium text-[#C5CAE5]">Dashboard</p>
-          <h1 className="mt-2 max-w-xl text-[28px] font-bold leading-tight tracking-tight text-white sm:text-[32px]">
-            Welcome back, {name}! Let&apos;s plan your next adventure.
-          </h1>
-          <p className="mt-2 max-w-lg text-sm text-[#C5CAE5]">
-            Build personalized itineraries, refine them with AI, and keep every
-            stop geographically smart.
-          </p>
-          <div className="mt-3">
-            <PlanSummary tone="light" />
-          </div>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Link href="/trips/new" className="inline-flex">
-              <Button>
-                <IconPlane size={16} />
-                Create a Trip
-              </Button>
-            </Link>
+      <section className="rounded-[16px] border border-[#E1E5F0] bg-white px-6 py-8 shadow-[0_6px_18px_rgba(8,11,58,0.05)] sm:px-8">
+        <h1 className="text-[28px] font-bold tracking-tight text-[#080B3A]">
+          Your trips
+        </h1>
+        <p className="mt-1 text-sm text-[#6B7280]">
+          Tell the agent where you are going.
+        </p>
+        <div className="mt-3">
+          <PlanSummary />
+        </div>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <Link href="/trips/new" className="inline-flex">
+            <Button>
+              <IconPlane size={16} />
+              Plan a trip
+            </Button>
+          </Link>
             {isDemo ? (
               <Link href="/signup" className="inline-flex">
                 <Button variant="secondary">Sign up to save trips</Button>
               </Link>
             ) : null}
           </div>
-        </div>
       </section>
 
       {/* Search + section */}
@@ -183,13 +167,10 @@ export default function DashboardPage() {
           </div>
           <p className="text-lg font-semibold text-[#1F2937]">No trips yet</p>
           <p className="mx-auto mt-2 max-w-md text-sm text-[#6B7280]">
-            Create your first itinerary and Waypoint will craft a day-by-day plan
-            around your interests and schedule.
+            Tell the agent where you are going.
           </p>
           <Link href="/trips/new" className="mt-6 inline-flex">
-            <Button>
-              Create a Trip
-            </Button>
+            <Button>Plan a trip</Button>
           </Link>
         </div>
       ) : (
@@ -219,11 +200,9 @@ function CreateTripPreviewCard() {
         </span>
       </div>
       <div className="flex flex-1 flex-col space-y-1.5 p-4">
-        <h3 className="text-[16px] font-semibold text-[#1F2937]">
-          Create a trip
-        </h3>
+        <h3 className="text-[16px] font-semibold text-[#1F2937]">Plan a trip</h3>
         <p className="text-sm text-[#6B7280]">
-          Plan cities, dates, and hotels. The itinerary is saved on this device.
+          Tell the agent where you are going.
         </p>
         <span className="inline-flex items-center gap-1 pt-2 text-sm font-semibold text-[#0400FF] group-hover:gap-2">
           Open planner <IconArrowRight size={14} />

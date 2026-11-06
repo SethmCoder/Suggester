@@ -38,8 +38,8 @@ const STEPS: TourStep[] = [
     placement: "top",
   },
   {
-    title: "Create a trip",
-    body: "Walk through cities, dates, interests, and hotels here. Waypoint builds a day-by-day plan from free map data you can edit afterward. You can also start from Create a Trip in the sidebar.",
+    title: "Plan a trip",
+    body: "Tell the agent where you are going. The brief fills in beside the chat, and you can generate when it looks right.",
     href: "/trips/new",
     target: "tour-create-wizard",
     placement: "bottom",

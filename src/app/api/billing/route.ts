@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { gateFeature } from "@/lib/billing/entitlements";
 import {
   PLAN_COOKIE,
   USED_COOKIE,
@@ -31,7 +32,15 @@ function applyCookies(res: NextResponse, plan: PlanId, used: number) {
 
 export async function GET() {
   const jar = await cookies();
-  return NextResponse.json(readPlan((name) => jar.get(name)?.value));
+  const get = (name: string) => jar.get(name)?.value;
+  const plan = readPlan(get);
+  const generate = gateFeature("generate", get);
+  return NextResponse.json({
+    ...plan,
+    generateAllowed: generate.allowed,
+    priceUsd: 6.99,
+    checkoutAvailable: false,
+  });
 }
 
 export async function POST(req: Request) {

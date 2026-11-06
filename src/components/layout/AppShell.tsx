@@ -105,16 +105,14 @@ export function AppShell({
         className="m-4 rounded-[14px] border border-[#292F68] bg-[#11165A] p-4"
         data-tour="tour-create-trip"
       >
-        <p className="text-sm font-semibold text-white">
-          Plan your next adventure with AI
-        </p>
+        <p className="text-sm font-semibold text-white">Plan a trip</p>
         <p className="mt-1 text-xs leading-relaxed text-[#C5CAE5]">
-          Personalized day-by-day itineraries, optimized for how you travel.
+          Tell the agent where you are going.
         </p>
         <Link href="/trips/new" onClick={() => setMobileOpen(false)}>
           <Button className="mt-3 w-full" variant="primary">
             <IconPlane size={16} />
-            Create a Trip
+            Plan a trip
           </Button>
         </Link>
       </div>

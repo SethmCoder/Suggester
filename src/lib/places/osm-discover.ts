@@ -213,6 +213,7 @@ export function discoveredToPlaceHits(places: DiscoveredPlace[]) {
     types: [p.category, p.tags.tourism, p.tags.amenity, p.tags.historic]
       .filter(Boolean) as string[],
     formattedAddress: p.address ?? undefined,
+    openingHours: p.tags.opening_hours,
     wikipediaTitle: p.wikipediaTitle,
     wikidataId: p.wikidataId,
   }));

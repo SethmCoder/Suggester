@@ -42,6 +42,8 @@ export async function saveGeneratedItinerary(input: {
       priority: act.priority,
       planning_note: act.planningNote ?? null,
       hours_verified: act.hoursVerified,
+      opening_hours:
+        typeof act.openingHours === "string" ? act.openingHours : null,
       website_uri: act.websiteUri ?? null,
       google_maps_uri: act.googleMapsUri ?? null,
       popularity_label: act.popularityLabel ?? null,
