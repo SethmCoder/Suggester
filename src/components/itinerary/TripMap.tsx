@@ -96,6 +96,14 @@ export function TripMap({
   onHotelRef.current = onSelectHotel;
   const onBoundsRef = useRef(onBounds);
   onBoundsRef.current = onBounds;
+  const pinsRef = useRef(pins);
+  pinsRef.current = pins;
+  const pinKey = pins
+    .map(
+      (pin) =>
+        `${pin.activityId ?? ""}:${pin.order}:${pin.lat.toFixed(5)}:${pin.lng.toFixed(5)}:${pin.label}:${pin.starred ? 1 : 0}`,
+    )
+    .join("|");
   const hotelLayerRef = useRef<any>(null);
   const googleHotelMarkers = useRef<any[]>([]);
   const googleMapRef = useRef<any>(null);
@@ -121,8 +129,25 @@ export function TripMap({
   }, []);
 
   useEffect(() => {
-    if (!mounted || !ref.current || pins.length === 0) return;
+    if (!mounted || !ref.current || pinsRef.current.length === 0) return;
     let cancelled = false;
+    const pins = pinsRef.current;
+
+    function framePins(map: any, bounds: any) {
+      map.invalidateSize({ animate: false, pan: false });
+      const size = map.getSize();
+      if (size.x < 20 || size.y < 20 || !bounds.isValid()) return false;
+      if (pins.length < 2) {
+        map.setView(bounds.getCenter(), 14, { animate: false });
+      } else {
+        map.fitBounds(bounds.pad(0.2), {
+          animate: false,
+          maxZoom: 15,
+          padding: [24, 24],
+        });
+      }
+      return true;
+    }
 
     async function renderOsm() {
       const L = await import("leaflet");
@@ -133,10 +158,11 @@ export function TripMap({
         mapRef.current = null;
       }
 
-      const map = L.map(ref.current).setView(
-        [pins[0].lat, pins[0].lng],
-        13,
-      );
+      const map = L.map(ref.current, {
+        zoomAnimation: true,
+        fadeAnimation: false,
+        markerZoomAnimation: false,
+      }).setView([pins[0].lat, pins[0].lng], 14, { animate: false });
       mapRef.current = map;
 
       // Satellite basemap + place/road labels overlay (keeps readable names)
@@ -189,8 +215,42 @@ export function TripMap({
           { color: "#1616C9", weight: 4 },
         ).addTo(map);
       }
-      map.fitBounds(bounds.pad(0.2));
+      let framed = 0;
+      let framing = false;
+      let userMoved = false;
+      let lastW = 0;
+      let lastH = 0;
+      const settle = () => {
+        if (cancelled || framed >= 4) return;
+        const size = map.getSize();
+        const changed =
+          Math.abs(size.x - lastW) >= 48 || Math.abs(size.y - lastH) >= 48;
+        if (framed > 0 && !changed) return;
+        if (userMoved) {
+          map.invalidateSize({ animate: false, pan: false });
+          return;
+        }
+        framing = true;
+        const fitted = framePins(map, bounds);
+        framing = false;
+        if (!fitted) return;
+        const next = map.getSize();
+        lastW = next.x;
+        lastH = next.y;
+        framed += 1;
+      };
+      map.on("dragstart", () => {
+        userMoved = true;
+      });
+      map.on("zoom", () => {
+        if (!framing) userMoved = true;
+      });
+      settle();
+      const container = ref.current;
+      const observer = new ResizeObserver(() => settle());
+      if (container) observer.observe(container);
       map.on("moveend", () => {
+        if (framing) return;
         const box = map.getBounds();
         onBoundsRef.current?.({
           south: box.getSouth(),
@@ -200,6 +260,7 @@ export function TripMap({
         });
       });
       if (!cancelled) setMapEpoch((n) => n + 1);
+      return observer;
     }
 
     function renderGoogle() {
@@ -207,10 +268,9 @@ export function TripMap({
       const scriptId = "google-maps-js";
       function init() {
         if (!ref.current || !window.google || cancelled) return;
-        const center = pins[0];
         const map = new window.google.maps.Map(ref.current, {
-          center: { lat: center.lat, lng: center.lng },
-          zoom: 13,
+          center: { lat: pins[0].lat, lng: pins[0].lng },
+          zoom: 14,
           mapTypeId: "hybrid", // satellite + labels
         });
         googleMapRef.current = map;
@@ -238,7 +298,10 @@ export function TripMap({
           });
           marker.addListener("click", () => onSelectRef.current?.(p));
         });
-        map.fitBounds(bounds);
+        const idle = window.google.maps.event.addListenerOnce(map, "idle", () => {
+          window.google.maps.event.removeListener(idle);
+          map.fitBounds(bounds, 24);
+        });
         if (polyline && window.google.maps.geometry?.encoding) {
           const path =
             window.google.maps.geometry.encoding.decodePath(polyline);
@@ -267,20 +330,25 @@ export function TripMap({
       }
     }
 
+    let observer: ResizeObserver | null = null;
     if (provider === "google" && googleKey) {
       renderGoogle();
     } else {
-      void renderOsm();
+      void renderOsm().then((created) => {
+        observer = created ?? null;
+        if (cancelled) observer?.disconnect();
+      });
     }
 
     return () => {
       cancelled = true;
+      observer?.disconnect();
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
       }
     };
-  }, [mounted, pins, polyline, provider, googleKey]);
+  }, [mounted, pinKey, polyline, provider, googleKey]);
 
   useEffect(() => {
     if (!mapEpoch) return;
@@ -378,18 +446,6 @@ export function TripMap({
   }, [hotelPins, mapEpoch, provider, googleKey]);
 
   const usingGoogle = provider === "google" && Boolean(googleKey);
-
-  useEffect(() => {
-    if (!mounted || !mapRef.current) return;
-    const t = window.setTimeout(() => {
-      try {
-        mapRef.current?.invalidateSize?.();
-      } catch {
-        /* ignore */
-      }
-    }, 200);
-    return () => window.clearTimeout(t);
-  }, [mounted, pins]);
 
   if (!mounted) {
     return (

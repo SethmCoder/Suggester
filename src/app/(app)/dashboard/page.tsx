@@ -17,9 +17,11 @@ import {
   listDemoTrips,
 } from "@/lib/demo/data";
 import {
+  hiddenTripIds,
   listOfflineTrips,
   saveOfflineTrip,
 } from "@/lib/offline/trips";
+import { deleteTrip } from "@/lib/trips/delete-trip";
 import type { TripListItem } from "@/lib/types/trip";
 
 function mergeTrips(
@@ -37,7 +39,9 @@ function mergeTrips(
 }
 
 function seedDemoOffline() {
+  const hidden = new Set(hiddenTripIds());
   for (const trip of listDemoTrips()) {
+    if (hidden.has(trip.id)) continue;
     const payload = getDemoTripPayload(trip.id);
     saveOfflineTrip({
       trip: { ...payload.trip, day_count: payload.days.length },
@@ -54,6 +58,24 @@ export default function DashboardPage() {
   const [isDemo, setIsDemo] = useState(false);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  function visibleTrips(list: TripListItem[]) {
+    const hidden = new Set(hiddenTripIds());
+    return list.filter((trip) => !hidden.has(trip.id));
+  }
+
+  async function removeTrip(trip: TripListItem) {
+    const name = trip.destination.split(",")[0];
+    if (!window.confirm(`Delete ${name}? This cannot be undone.`)) return;
+    setDeleteError(null);
+    const result = await deleteTrip(trip.id);
+    if (!result.ok) {
+      setDeleteError(result.error ?? "Could not delete this trip");
+      return;
+    }
+    setTrips((current) => current.filter((item) => item.id !== trip.id));
+  }
 
   useEffect(() => {
     const offline = (() => {
@@ -75,19 +97,23 @@ export default function DashboardPage() {
           } catch {
             /* ignore */
           }
-          setTrips(mergeTrips(remote.length ? remote : listDemoTrips(), listOfflineTrips()));
+          setTrips(
+            visibleTrips(
+              mergeTrips(remote.length ? remote : listDemoTrips(), listOfflineTrips()),
+            ),
+          );
         } else {
-          setTrips(mergeTrips(remote, offline));
+          setTrips(visibleTrips(mergeTrips(remote, offline)));
         }
       })
       .catch(() => {
         // Fully offline — show local trips (and demos if any were seeded)
         try {
           const local = listOfflineTrips();
-          if (local.length) setTrips(local);
+          if (local.length) setTrips(visibleTrips(local));
           else {
             seedDemoOffline();
-            setTrips(listDemoTrips());
+            setTrips(visibleTrips(listDemoTrips()));
             setIsDemo(true);
           }
         } catch {
@@ -175,9 +201,14 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div id="trips" className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          {deleteError ? (
+            <p className="sm:col-span-2 xl:col-span-3 text-sm text-[#B91C1C]">
+              {deleteError}
+            </p>
+          ) : null}
           {isDemo ? <CreateTripPreviewCard /> : null}
           {filtered.map((trip) => (
-            <TripCard key={trip.id} trip={trip} />
+            <TripCard key={trip.id} trip={trip} onDelete={() => removeTrip(trip)} />
           ))}
         </div>
       )}
@@ -212,7 +243,13 @@ function CreateTripPreviewCard() {
   );
 }
 
-function TripCard({ trip }: { trip: TripListItem }) {
+function TripCard({
+  trip,
+  onDelete,
+}: {
+  trip: TripListItem;
+  onDelete: () => void;
+}) {
   const days =
     trip.day_count ??
     Math.max(
@@ -226,10 +263,8 @@ function TripCard({ trip }: { trip: TripListItem }) {
   const img = trip.cover_image_url || destinationImageUrl(trip.destination);
 
   return (
-    <Link
-      href={`/trips/${trip.id}`}
-      className="group overflow-hidden rounded-[14px] border border-[#E1E5F0] bg-white shadow-[0_4px_20px_rgba(8,11,58,0.05)] transition hover:-translate-y-0.5 hover:border-[#0400FF]/25 hover:shadow-[0_12px_32px_rgba(8,11,58,0.1)]"
-    >
+    <article className="group overflow-hidden rounded-[14px] border border-[#E1E5F0] bg-white shadow-[0_4px_20px_rgba(8,11,58,0.05)] transition hover:-translate-y-0.5 hover:border-[#0400FF]/25 hover:shadow-[0_12px_32px_rgba(8,11,58,0.1)]">
+      <Link href={`/trips/${trip.id}`} className="block">
       <div className="relative h-40 overflow-hidden">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -261,6 +296,16 @@ function TripCard({ trip }: { trip: TripListItem }) {
           View itinerary <IconArrowRight size={14} />
         </span>
       </div>
-    </Link>
+      </Link>
+      <div className="px-4 pb-4">
+        <button
+          type="button"
+          onClick={onDelete}
+          className="text-sm font-semibold text-[#B91C1C] hover:underline"
+        >
+          Delete trip
+        </button>
+      </div>
+    </article>
   );
 }

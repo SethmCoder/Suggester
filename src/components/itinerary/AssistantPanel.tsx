@@ -5,13 +5,6 @@ import { Button } from "@/components/ui/Button";
 import { IconX } from "@/components/ui/Icons";
 import type { AssistantPatch } from "@/lib/ai/patch";
 
-const QUICK_PROMPTS = [
-  "My flight is delayed by 2 hours on day 1",
-  "Best places to eat near our stops",
-  "Make day 2 less busy",
-  "Change the Louvre to Musée d'Orsay",
-];
-
 export function AssistantPanel({
   tripId,
   isDemo = false,
@@ -63,11 +56,13 @@ export function AssistantPanel({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
-      setPending(data.patch);
+      const operations = data.patch?.operations ?? [];
+      setPending(operations.length ? data.patch : null);
+      setMessage("");
       setThread((prev) => [
         ...prev,
         { role: "you", text: content },
-        { role: "wizard", text: data.patch?.summary ?? "I have a suggestion." },
+        { role: "wizard", text: data.patch?.summary ?? "I can talk through the plan." },
       ]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
@@ -123,18 +118,6 @@ export function AssistantPanel({
             </button>
           </div>
           <div className="p-4">
-            <div className="mb-3 flex flex-wrap gap-1.5">
-              {QUICK_PROMPTS.map((q) => (
-                <button
-                  key={q}
-                  type="button"
-                  className="rounded-full bg-[#DDE1FF] px-2.5 py-1 text-[10px] font-medium text-[#0400FF] hover:bg-[#0400FF] hover:text-white"
-                  onClick={() => send(q)}
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
             {thread.length ? (
               <div className="mb-3 max-h-40 space-y-1 overflow-auto">
                 {thread.map((line, index) => (
@@ -148,14 +131,14 @@ export function AssistantPanel({
               </div>
             ) : !pending && !message.trim() ? (
               <p className="mb-3 text-sm leading-relaxed text-[#1F2937]">
-                Hello. I&apos;m Trip Wizard. What would you like to adjust on
-                this trip?
+                Hello. I&apos;m Trip Wizard. Ask me about this trip, or tell me
+                what you want changed.
               </p>
             ) : null}
             <textarea
               rows={3}
               className="w-full rounded-[12px] border border-[#D1D7E5] px-3 py-2 text-sm focus:border-[#0400FF] focus:outline-none focus:ring-2 focus:ring-[#818CFF]/35"
-              placeholder="For example, my flight is 90 minutes late on day 1"
+              placeholder="Ask about a stop, or tell me what to change"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
             />

@@ -75,6 +75,8 @@ export interface TripPreferencesPayload {
   dayEnd?: string;
   prefersHiddenGems?: boolean;
   idealTrip?: string;
+  /** Traveler's name for this trip, shown beside the destination. */
+  title?: string;
 }
 
 export interface ActivityRow {
@@ -114,4 +116,5 @@ export interface TripListItem {
   cover_image_url: string | null;
   created_at: string;
   day_count?: number;
+  title?: string;
 }

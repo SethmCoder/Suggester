@@ -22,7 +22,7 @@ import {
   type PricePoint,
 } from "@/lib/flights/airline-class";
 import type { HotelPlacePreference } from "@/lib/hotels/hotelrec";
-import type { ActivityRow, LegTransitMode } from "@/lib/types/trip";
+import type { LegTransitMode } from "@/lib/types/trip";
 
 const INTERCITY_MODES: { value: LegTransitMode; label: string }[] = [
   { value: "auto", label: "Auto (planner picks)" },
@@ -161,6 +161,7 @@ export function CreateTripWizard({
     optional: "",
     avoid: "",
     idealTrip: "",
+    tripTitle: "",
     prefersHiddenGems: false,
     preferredAirlines: "",
     flightPricePoint: "any" as PricePoint,
@@ -472,7 +473,9 @@ export function CreateTripWizard({
       preferredAirlines: form.preferredAirlines.trim() || undefined,
       flightPricePoint: form.flightPricePoint,
       chosenAirline: form.chosenAirline || undefined,
+      tripTitle: form.tripTitle.trim() || undefined,
       idealTrip: [
+        form.tripTitle.trim() ? `Trip title: ${form.tripTitle.trim()}` : "",
         form.idealTrip.trim(),
         legs
           .filter((l) => !l.hotelBooked && l.hotel.trim())
@@ -543,6 +546,7 @@ export function CreateTripWizard({
             endDate,
             days: (data.days ?? []) as GeneratedDay[],
             legs: body.legs,
+            title: form.tripTitle.trim() || undefined,
           }),
         );
         router.push(`/trips/${tripId}`);
@@ -556,93 +560,9 @@ export function CreateTripWizard({
       return;
     }
 
-    const saveOfflineFallback = () => {
-      setProgress("Saving on this device…");
-      const tripId = createOfflineTripId();
-      const totalDays = Math.max(
-        1,
-        body.legs.reduce((sum, l) => sum + l.days, 0) ||
-          Math.max(
-            1,
-            Math.round(
-              (new Date(endDate).getTime() -
-                new Date(form.startDate).getTime()) /
-                86400000,
-            ) + 1,
-          ),
-      );
-      const days = Array.from({ length: totalDays }, (_, i) => ({
-        id: `${tripId}-day-${i}`,
-        day_index: i,
-      }));
-      const activities: ActivityRow[] = days.map((d, i) => ({
-        id: `${tripId}-act-${i}`,
-        day_id: d.id,
-        name: i === 0 ? `Explore ${destination || "your destination"}` : `Day ${i + 1} free block`,
-        place_id: null,
-        address: null,
-        lat: body.legs[0]?.lat ?? null,
-        lng: body.legs[0]?.lng ?? null,
-        start_time: `${form.dayStart || "10:00"}:00`,
-        end_time: null,
-        duration_minutes: 120,
-        travel_minutes_from_prev: 0,
-        priority: "preferred",
-        planning_note:
-          "Saved offline — open while online to regenerate a full itinerary.",
-        hours_verified: false,
-        opening_hours: null,
-        website_uri: null,
-        google_maps_uri: null,
-        photo_name: null,
-        popularity_label: null,
-        popularity_sources: null,
-        popularity_attribution_urls: null,
-        schedule_warnings: ["Created offline — regenerate when connected"],
-        user_locked: false,
-        completed: false,
-        source: "offline",
-        sort_order: 0,
-      }));
-      saveOfflineTrip({
-        trip: {
-          id: tripId,
-          destination: destination || "Untitled trip",
-          start_date: form.startDate,
-          end_date: endDate,
-          cover_image_url: null,
-          created_at: new Date().toISOString(),
-          day_count: days.length,
-        },
-        days,
-        activities,
-        updatedAt: new Date().toISOString(),
-        offlineOnly: true,
-        legs: body.legs.map((l) => ({
-          city: l.city,
-          days: l.days,
-          hotel: l.hotel,
-          geonameId: l.geonameId,
-          lat: l.lat,
-          lng: l.lng,
-          countryCode: l.countryCode,
-          hotelLat: l.hotelLat,
-          hotelLng: l.hotelLng,
-          hotelPlaceId: l.hotelPlaceId,
-          hotelAddress: l.hotelAddress,
-          hotelBooked: l.hotelBooked,
-          hotelMinRating: l.hotelMinRating,
-          hotelPlace: l.hotelPlace,
-          transitFromPrevious: l.transitFromPrevious,
-        })),
-      });
-      router.push(`/trips/${tripId}`);
-      router.refresh();
-    };
-
     try {
       if (typeof navigator !== "undefined" && !navigator.onLine) {
-        saveOfflineFallback();
+        setError("The planner needs a connection to look up real places.");
         return;
       }
       const res = await fetch("/api/trips/create", {
@@ -672,6 +592,10 @@ export function CreateTripWizard({
                 cover_image_url: full.trip.cover_image_url ?? null,
                 created_at: full.trip.created_at ?? new Date().toISOString(),
                 day_count: full.days.length,
+                title:
+                  (full.preferences as { title?: string } | undefined)?.title ||
+                  form.tripTitle.trim() ||
+                  undefined,
               },
               days: full.days.map(
                 (d: { id: string; day_index: number }) => ({
@@ -690,11 +614,7 @@ export function CreateTripWizard({
       router.push(`/trips/${data.tripId}`);
       router.refresh();
     } catch (e) {
-      try {
-        saveOfflineFallback();
-      } catch {
-        setError(e instanceof Error ? e.message : "Failed");
-      }
+      setError(e instanceof Error ? e.message : "Could not generate this trip");
     } finally {
       setLoading(false);
       setProgress("");
@@ -705,29 +625,51 @@ export function CreateTripWizard({
 
   return (
     <TripAgentDesk
-      city={firstLeg?.city ?? ""}
-      days={firstLeg?.days ?? 3}
-      startDate={form.startDate}
-      endDate={endDate}
-      suggestions={(citySuggestions[0] ?? []).map((c) => ({
-        key: String(c.id),
-        label: c.label,
+      places={legs.map((leg, index) => ({
+        city: leg.city,
+        days: leg.days,
+        suggestions: (citySuggestions[index] ?? []).map((c) => ({
+          key: String(c.id),
+          label: c.label,
+        })),
       }))}
-      onCityInput={(value) => {
+      tripTitle={form.tripTitle}
+      onTripTitle={(tripTitle) => setForm((current) => ({ ...current, tripTitle }))}
+      onCityInput={(index, value) => {
         setLegs((prev) =>
-          prev.map((leg, index) => (index === 0 ? { ...leg, city: value } : leg)),
+          prev.map((leg, i) => (i === index ? { ...leg, city: value } : leg)),
         );
-        void searchCities(0, value);
+        void searchCities(index, value);
       }}
-      onPickSuggestion={(index) => {
-        const city = citySuggestions[0]?.[index];
-        if (city) pickCity(0, city);
+      onPickSuggestion={(legIndex, suggestionIndex) => {
+        const city = citySuggestions[legIndex]?.[suggestionIndex];
+        if (city) pickCity(legIndex, city);
       }}
-      onDays={(days) =>
+      onLegDays={(index, days) =>
         setLegs((prev) =>
-          prev.map((leg, index) => (index === 0 ? { ...leg, days } : leg)),
+          prev.map((leg, i) => (i === index ? { ...leg, days } : leg)),
         )
       }
+      onAddCity={() =>
+        setLegs((prev) => [
+          ...prev,
+          {
+            city: "",
+            days: 2,
+            hotel: "",
+            transitFromPrevious: "auto",
+            hotelBooked: false,
+            hotelMinRating: 4,
+            hotelPlace: "center",
+            hotelBrand: "",
+          },
+        ])
+      }
+      onRemoveCity={(index) =>
+        setLegs((prev) => (prev.length < 2 ? prev : prev.filter((_, i) => i !== index)))
+      }
+      startDate={form.startDate}
+      endDate={endDate}
       onStartDate={(startDate) => setForm((current) => ({ ...current, startDate }))}
       travelers={form.travelers}
       onTravelers={(travelers) => setForm((current) => ({ ...current, travelers }))}

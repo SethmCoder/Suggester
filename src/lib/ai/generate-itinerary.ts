@@ -103,6 +103,18 @@ export interface GeneratedDay {
   routePolyline?: string;
 }
 
+function isSitDown(types: string[]): boolean {
+  return types.some((type) =>
+    /restaurant|cafe|fast_food|bar|pub|food_court|biergarten/i.test(type),
+  );
+}
+
+function isGenericName(name: string): boolean {
+  return /^(food|restaurant|cafe|café|bar|pub|park|museum|attraction|shop|hotel|viewpoint)$/i.test(
+    name.trim(),
+  );
+}
+
 function interestMatch(types: string[], interests: string[]): number {
   if (!interests.length) return 0.5;
   const lower = types.map((t) => t.toLowerCase());
@@ -555,7 +567,12 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
         combinedRank: 0.7 * discovery + 0.3 * c.combinedRank,
       };
     })
-    .sort((a, b) => b.combinedRank - a.combinedRank);
+    .sort((a, b) => {
+      const generic =
+        Number(isGenericName(a.displayName)) - Number(isGenericName(b.displayName));
+      if (generic !== 0) return generic;
+      return b.combinedRank - a.combinedRank;
+    });
 
   const avoidLower = prefs.avoid.map((a) => a.toLowerCase());
   const filtered = ranked.filter(
@@ -601,6 +618,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
         : "WALK";
 
   const days: GeneratedDay[] = [];
+  const usedAcross = new Set<string>();
   // Prefer AI days aligned to dayPlan length
   const aiByIndex = new Map(ai.days.map((d) => [d.dayIndex, d]));
 
@@ -716,7 +734,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       planningNote: string | undefined,
       requireKnownHours: boolean,
     ) => {
-      if (usedPlaces.has(placeId) || !byId.has(placeId)) return false;
+      if (usedAcross.has(placeId) || usedPlaces.has(placeId) || !byId.has(placeId)) return false;
       if (!detailsCache.has(placeId)) {
         detailsCache.set(placeId, await getPlaceDetails(placeId));
       }
@@ -781,6 +799,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
         travelMinutesFromPrev: 0,
       });
       usedPlaces.add(placeId);
+      usedAcross.add(placeId);
       cursorTime = addMinutes(startTime, durationMinutes + 15);
       return true;
     };
@@ -807,11 +826,29 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
           !item.placeId.startsWith("transit:") &&
           !item.placeId.startsWith("flight:"),
       ).length;
-    for (const candidate of filtered) {
+    const cityPool = filtered.filter(
+      (candidate) =>
+        (candidate.city ?? assignment.city) === assignment.city &&
+        !usedAcross.has(candidate.placeId),
+    );
+    const sightsFirst = [
+      ...cityPool.filter((candidate) => !isSitDown(candidate.types)),
+      ...cityPool.filter((candidate) => isSitDown(candidate.types)),
+    ];
+    for (const candidate of sightsFirst) {
       if (sightseeing() >= target) break;
-      if ((candidate.city ?? assignment.city) !== assignment.city) continue;
-      if (!candidate.openingHours) continue;
-      await placeOne(candidate.placeId, 90, "preferred", undefined, true);
+      await placeOne(
+        candidate.placeId,
+        isSitDown(candidate.types) ? 75 : 90,
+        "preferred",
+        undefined,
+        false,
+      );
+    }
+    if (sightseeing() === 0) {
+      warnings.push(
+        `No OpenStreetMap places were available to schedule in ${assignment.city} on day ${assignment.dayIndex + 1}.`,
+      );
     }
 
     // Route local sightseeing legs; keep intercity transit duration as estimated

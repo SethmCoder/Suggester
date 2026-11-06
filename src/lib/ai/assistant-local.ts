@@ -4,6 +4,36 @@ import { addMinutes } from "./scheduler";
 
 type DayInfo = { id: string; day_index: number };
 
+export function messageAsksForChange(message: string): boolean {
+  return /\b(delay|delayed|late|move|swap|replace|change the|remove|delete|skip|less busy|lighter|shorter|add a|insert|retime|rearrange|make day)\b/i.test(
+    message,
+  );
+}
+
+export function messageIsQuestion(message: string): boolean {
+  if (messageAsksForChange(message)) return false;
+  return /(\?|(^|\b)(what|why|how|where|when|who|which|can you|could you|should we|should i|tell me|is there|what's|whats)\b)/i.test(
+    message,
+  );
+}
+
+function answerFromPlan(input: {
+  activities: ActivityRow[];
+  destination?: string;
+}): AssistantPatch {
+  const names = input.activities
+    .map((activity) => activity.name)
+    .filter(Boolean)
+    .slice(0, 8);
+  const place = input.destination?.replace(/\s*\(Demo\)\s*/i, "").trim() || "this trip";
+  const listed = names.length ? names.join(", ") : "no stops yet";
+  return {
+    summary: `For ${place}, the plan currently includes ${listed}. I can talk through those stops. I will not invent hours, prices, or bookings. Tell me when you want a day changed.`,
+    operations: [],
+    suggestions: [],
+  };
+}
+
 /**
  * Heuristic itinerary assistant for demo mode and Groq fallback.
  * Flight delays reshuffle the day (drop/move overflow + OSM retimes), not a blind push.
@@ -15,6 +45,9 @@ export function buildLocalAssistantPatch(input: {
   dayEnd?: string;
   transport?: string;
 }): AssistantPatch {
+  if (messageIsQuestion(input.message)) {
+    return answerFromPlan({ activities: input.activities });
+  }
   const msg = input.message.toLowerCase();
   const suggestions: string[] = [];
 
@@ -165,6 +198,12 @@ export async function buildLocalAssistantPatchAsync(input: {
   transport?: string;
   destination?: string;
 }): Promise<AssistantPatch> {
+  if (messageIsQuestion(input.message)) {
+    return answerFromPlan({
+      activities: input.activities,
+      destination: input.destination,
+    });
+  }
   const msg = input.message.toLowerCase();
   const { isFoodRecommendQuery, buildFoodRecommendPatch } = await import(
     "./recommend-food"

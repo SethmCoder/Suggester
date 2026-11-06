@@ -27,17 +27,19 @@ const bodySchema = z.object({
   avoid: z.array(z.string()).optional(),
   idealTrip: z.string().optional(),
   cities: z.array(z.string()).optional(),
+  tripTitle: z.string().optional(),
   history: z.array(lineSchema).max(16).optional(),
   message: z.string().max(2000).optional(),
 });
 
-const SYSTEM = `You are Trip Wizard, a travel agent who wants this specific trip to be as good as it can be. Be warm, specific, and short. Do not quote their sentence back.
-Respond to the latest message. Do not ignore it to ask an unrelated intake question.
-If they ask for examples or what a good trip looks like, give two or three day shapes using their destination and interests. Say these are patterns, not bookings.
-If they say who they are traveling with, follow up about those people (ages, walking, naps, pace) before you change the subject.
-A one-word yes or no about companions is not enough. Ask who is coming.
-Use their words. One short reply, then at most one question.
-Do not invent hotel names, fares, opening hours, ratings, or reservations.
+const SYSTEM = `You are Trip Wizard, a travel agent writing this chat for one specific trip. Be warm and concrete. Do not quote their sentence back.
+
+Write the questions yourself for this destination. Do not walk through a fixed list such as hotel, food, then budget.
+
+When the history is empty, open with a short orientation of a few real neighborhoods or areas in their city, then one or two questions you invent for these dates. Ask what they want to do, what a dream version of the trip would feel like, and how they like to travel. If past trip names are provided, ask whether this trip should feel like one of those. If the past-trip list is empty, do not invent one.
+
+If they ask you something, answer it, then ask at most one follow-up. Use their words.
+Do not invent hotel names, fares, opening hours, ratings, populations, or reservations.
 When four useful answers are already in the history, you may set done to true.
 Return JSON only: {"reply":"...","done":false}`;
 
@@ -61,8 +63,9 @@ export async function POST(req: Request) {
   };
   const history = (body.history ?? []) as ChatLine[];
   const message = body.message?.trim() ?? "";
+  const pastTrips = await recentTripNames();
   const local = localClarifyReply(input, history, message);
-  const modeled = await modelReply(input, history, message);
+  const modeled = await modelReply(input, history, message, pastTrips, body.tripTitle);
   const reply =
     modeled && !replyIgnoresTraveler(message, modeled.reply) ? modeled : local;
   return NextResponse.json({
@@ -76,10 +79,34 @@ export async function POST(req: Request) {
   });
 }
 
+async function recentTripNames(): Promise<string[]> {
+  try {
+    const { createSupabaseServerClient } = await import("@/lib/supabase/server");
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return [];
+    const { data } = await supabase
+      .from("trips")
+      .select("destination")
+      .eq("owner_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(5);
+    return (data ?? [])
+      .map((trip) => trip.destination)
+      .filter((name): name is string => typeof name === "string" && name.trim().length > 0);
+  } catch {
+    return [];
+  }
+}
+
 async function modelReply(
   input: ClarifyInput,
   history: ChatLine[],
   message: string,
+  pastTrips: string[],
+  tripTitle?: string,
 ): Promise<{ reply: string; done: boolean } | null> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return null;
@@ -87,7 +114,7 @@ async function modelReply(
     const Groq = (await import("groq-sdk")).default;
     const client = new Groq({ apiKey });
     const completion = await client.chat.completions.create({
-      model: process.env.GROQ_MODEL || "llama-3.1-8b-instant",
+      model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
       temperature: 0.4,
       response_format: { type: "json_object" },
       messages: [
@@ -96,6 +123,9 @@ async function modelReply(
           role: "user",
           content: JSON.stringify({
             destination: input.destination,
+            cities: input.cities,
+            tripTitle: tripTitle || "",
+            pastTrips,
             travelers: input.travelers,
             interests: input.interests,
             intensity: input.intensity,

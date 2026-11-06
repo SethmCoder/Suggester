@@ -39,6 +39,7 @@ const bodySchema = z.object({
   optional: z.array(z.string()).default([]),
   avoid: z.array(z.string()).default([]),
   idealTrip: z.string().default(""),
+  tripTitle: z.string().max(80).optional(),
   preferredAirlines: z.string().optional(),
   flightPricePoint: z.enum(["any", "budget", "standard", "premium"]).optional(),
   chosenAirline: z.string().optional(),
@@ -213,6 +214,7 @@ export async function POST(req: Request) {
 
     const res = NextResponse.json({
       destination,
+      tripTitle: body.tripTitle,
       days: generated.days,
       warnings: generated.warnings,
       legs: body.legs ?? [],

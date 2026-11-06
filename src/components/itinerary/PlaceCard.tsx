@@ -66,22 +66,22 @@ export function PlaceCard({
   }, [place.name, place.lat, place.lng, place.address]);
 
   return (
-    <div className="pointer-events-auto absolute inset-x-2 bottom-2 z-[500] max-h-[70%] overflow-hidden rounded-[14px] border border-[#E1E5F0] bg-white shadow-[0_12px_40px_rgba(8,11,58,0.2)]">
+    <div className="pointer-events-auto absolute inset-x-2 bottom-2 z-[500] max-h-[78%] overflow-hidden rounded-[14px] border border-[#E1E5F0] bg-white shadow-[0_12px_40px_rgba(8,11,58,0.2)]">
+      <div className="h-36 w-full bg-[#080B3A]">
+        {brief?.thumbnailUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={brief.thumbnailUrl}
+            alt=""
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div className="flex h-full items-end px-3 py-3 text-lg font-semibold text-white">
+            {place.name}
+          </div>
+        )}
+      </div>
       <div className="flex gap-3 border-b border-[#E1E5F0] p-3">
-        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-[10px] bg-[#F5F7FF]">
-          {brief?.thumbnailUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={brief.thumbnailUrl}
-              alt=""
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-lg font-semibold text-[#0400FF]">
-              {place.name.slice(0, 1).toUpperCase()}
-            </div>
-          )}
-        </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <p className="text-sm font-semibold leading-snug text-[#080B3A]">

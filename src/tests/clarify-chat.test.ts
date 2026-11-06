@@ -10,36 +10,24 @@ const input: ClarifyInput = {
   transport: "walking",
 };
 
-const opening = {
-  role: "assistant" as const,
-  text: "Who is traveling with you, and does anyone need a slower pace?",
-};
-
 describe("clarify conversation", () => {
-  it("follows up when the traveler mentions children", () => {
-    const turn = localClarifyReply(
-      input,
-      [opening],
-      "My sister and her two kids",
-    );
-    expect(turn.reply.toLowerCase()).toMatch(/old|children|walk/);
-    expect(turn.reply.toLowerCase()).not.toMatch(/how do you want to spend/);
+  it("opens with the destination instead of a fixed intake list", () => {
+    const turn = localClarifyReply(input, [], "");
+    expect(turn.reply).toMatch(/Paris/);
+    expect(turn.reply.toLowerCase()).not.toMatch(/hotel|how do you want to spend/);
     expect(turn.done).toBe(false);
   });
 
-  it("does not accept a bare yes as the companion answer", () => {
-    const turn = localClarifyReply(input, [opening], "yes");
-    expect(turn.reply.toLowerCase()).toMatch(/who is actually coming/);
+  it("keeps an open question when the traveler mentions children", () => {
+    const turn = localClarifyReply(input, [], "My sister and her two kids");
+    expect(turn.reply.toLowerCase()).toMatch(/paris|dream/);
+    expect(turn.reply.toLowerCase()).not.toMatch(/how do you want to spend|already booked a hotel/);
+    expect(turn.done).toBe(false);
   });
 
-  it("answers a request for examples instead of the next intake question", () => {
-    const turn = localClarifyReply(
-      input,
-      [],
-      "Can you give me some examples of a good trip?",
-    );
-    expect(turn.reply.toLowerCase()).toMatch(/three shapes/);
-    expect(turn.reply.toLowerCase()).not.toMatch(/who is traveling/);
-    expect(turn.reply).not.toMatch(/\$\d/);
+  it("does not treat a short reply as a finished brief", () => {
+    const turn = localClarifyReply(input, [], "yes");
+    expect(turn.done).toBe(false);
+    expect(turn.reply.toLowerCase()).not.toMatch(/\$\d/);
   });
 });

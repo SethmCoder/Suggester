@@ -16,6 +16,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { AssistantPatch } from "@/lib/ai/patch";
 import { shiftActivityStartTime } from "@/lib/ai/scheduler";
 import {
@@ -28,12 +29,15 @@ import {
   saveOfflineDayGroups,
   saveOfflineTrip,
 } from "@/lib/offline/trips";
+import { formatTripDate } from "@/lib/format-date";
 import type { DayCityAssignment } from "@/lib/trips/legs";
+import { deleteTrip } from "@/lib/trips/delete-trip";
 import {
   formatIntercityModeLabel,
   intercityModeFromPlaceId,
   type IntercityMode,
 } from "@/lib/trips/intercity-transit";
+import { CityCard } from "./CityCard";
 import { CityHotelField } from "./CityHotelField";
 import { AddStopSearch, PlaceCard, type SelectedPlace } from "./PlaceCard";
 import { PopularityBadge } from "./PopularityBadge";
@@ -109,6 +113,7 @@ export function ItineraryEditor({
   endDate,
   dayCities,
   initialLegs,
+  tripTitle,
 }: {
   tripId: string;
   destination: string;
@@ -119,6 +124,7 @@ export function ItineraryEditor({
   endDate?: string;
   dayCities?: DayCityAssignment[];
   initialLegs?: TripLeg[];
+  tripTitle?: string;
 }) {
   const [days, setDays] = useState<DayGroup[]>(() =>
     initialDays
@@ -141,6 +147,25 @@ export function ItineraryEditor({
   const [offlineSaved, setOfflineSaved] = useState(false);
   const [legs, setLegs] = useState<TripLeg[]>(() => initialLegs ?? []);
   const [selectedPlace, setSelectedPlace] = useState<SelectedPlace | null>(null);
+  const [selectedCity, setSelectedCity] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const router = useRouter();
+
+  async function removeTrip() {
+    const name = destination.replace(/\s*\(Demo\)\s*/i, "").split(",")[0];
+    if (!window.confirm(`Delete ${name}? This cannot be undone.`)) return;
+    setDeleting(true);
+    setDeleteError(null);
+    const result = await deleteTrip(tripId);
+    if (!result.ok) {
+      setDeleteError(result.error ?? "Could not delete this trip");
+      setDeleting(false);
+      return;
+    }
+    router.push("/dashboard");
+    router.refresh();
+  }
 
   // Prefer locally saved edits (works offline / after reload).
   // Demo trips ignore stale snapshots (e.g. old Paris data under demo-dubai).
@@ -651,6 +676,17 @@ export function ItineraryEditor({
         <div>
           <h1 className="text-[28px] font-bold tracking-tight text-[#080B3A]">
             {destName}
+            {tripTitle ? (
+              <span className="ml-3 text-[20px] font-semibold text-[#0400FF]">
+                {tripTitle}
+              </span>
+            ) : null}
+            {startDate ? (
+              <span className="ml-3 text-[16px] font-medium text-[#6B7280]">
+                {formatTripDate(startDate, "short")}
+                {endDate ? ` – ${formatTripDate(endDate, "long")}` : ""}
+              </span>
+            ) : null}
           </h1>
           <p className="mt-1 text-sm text-[#6B7280]">
             {days.length} days · {flatActivities.length} activities ·{" "}
@@ -666,7 +702,19 @@ export function ItineraryEditor({
                     ? "Saved on this device"
                     : "Up to date"}
           </p>
+          {deleteError ? (
+            <p className="mt-2 text-sm text-[#B91C1C]">{deleteError}</p>
+          ) : null}
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void removeTrip()}
+            disabled={deleting}
+            className="rounded-[10px] px-3 py-1.5 text-sm font-semibold text-[#B91C1C] hover:bg-[#FEF2F2] disabled:opacity-60"
+          >
+            {deleting ? "Deleting…" : "Delete trip"}
+          </button>
         <div className="flex rounded-[12px] border border-[#E1E5F0] bg-[#F5F7FF] p-1 text-sm">
           {(["schedule", "map", "split"] as const).map((v) => (
             <button
@@ -682,6 +730,7 @@ export function ItineraryEditor({
               {v}
             </button>
           ))}
+        </div>
         </div>
       </section>
       <TripIntelligence
@@ -788,6 +837,9 @@ export function ItineraryEditor({
                 })}
               </section>
             ) : null}
+            {selectedCity ? (
+              <CityCard name={selectedCity} onClose={() => setSelectedCity(null)} />
+            ) : null}
             {days.map((day, dayIndex) => {
               const isOpen = Boolean(expanded[dayIndex]);
               return (
@@ -799,21 +851,26 @@ export function ItineraryEditor({
                     : "border-[#E1E5F0]"
                 }`}
               >
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left"
-                  onClick={() => {
-                    setSelectedDay(dayIndex);
-                    setExpanded((e) => ({
-                      // Accordion: only one day open at a time
-                      [dayIndex]: !e[dayIndex],
-                    }));
-                  }}
-                >
+                <div className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left">
                   <span className="text-[16px] font-semibold text-[#080B3A]">
-                    Day {day.dayIndex + 1}
+                    <button
+                      type="button"
+                      className="font-semibold"
+                      onClick={() => {
+                        setSelectedDay(dayIndex);
+                        setExpanded((e) => ({
+                          [dayIndex]: !e[dayIndex],
+                        }));
+                      }}
+                    >
+                      Day {day.dayIndex + 1}
+                    </button>
                     {dayCities?.[day.dayIndex] ? (
-                      <span className="ml-2 font-normal text-[#0400FF]">
+                      <button
+                        type="button"
+                        className="ml-2 font-normal text-[#0400FF]"
+                        onClick={() => setSelectedCity(dayCities[day.dayIndex].city)}
+                      >
                         · {dayCities[day.dayIndex].city}
                         {dayCities[day.dayIndex].isArrivalTransitDay ? (
                           <>
@@ -846,16 +903,25 @@ export function ItineraryEditor({
                             </span>
                           </>
                         ) : null}
-                      </span>
+                      </button>
                     ) : null}
                     <span className="ml-2 font-normal text-[#6B7280]">
                       · {day.activities.length} stops
                     </span>
                   </span>
-                  <span className="rounded-full bg-[#F5F7FF] px-2.5 py-1 text-[11px] font-semibold text-[#0400FF]">
+                  <button
+                    type="button"
+                    className="rounded-full bg-[#F5F7FF] px-2.5 py-1 text-[11px] font-semibold text-[#0400FF]"
+                    onClick={() => {
+                      setSelectedDay(dayIndex);
+                      setExpanded((e) => ({
+                        [dayIndex]: !e[dayIndex],
+                      }));
+                    }}
+                  >
                     {isOpen ? "Hide" : "Show"}
-                  </span>
-                </button>
+                  </button>
+                </div>
                 {isOpen ? (
                   <div className="border-t border-[#E1E5F0] bg-[#FAFBFF] px-3 pb-3">
                     <DndContext

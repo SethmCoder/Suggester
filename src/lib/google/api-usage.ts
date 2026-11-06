@@ -1,6 +1,7 @@
 import { createServiceClient } from "../supabase/server";
 
 const CAPS: Record<string, number> = {
+  "places.searchText": 400,
   "places.details.enterprise": 900,
   "routes.compute.essentials": 9000,
   "places.photo": 9000,

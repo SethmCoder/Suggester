@@ -22,6 +22,7 @@ import {
 const NAV = [
   { href: "/dashboard", label: "Home", icon: IconHome },
   { href: "/dashboard", label: "My Trips", icon: IconMap, hash: "trips" },
+  { href: "/explore", label: "Local Explorer", icon: IconSearch },
   { href: "/saved-places", label: "Saved Places", icon: IconPin },
   { href: "/profile", label: "Profile", icon: IconUser },
   { href: "/plan", label: "Plans", icon: IconPlane },

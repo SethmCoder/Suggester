@@ -8,7 +8,7 @@ export const FREE_TRIP_LIMIT = 3;
 export const PRO_PRICE_EUR = 9;
 
 /** Smaller Groq model used on the free plan. */
-export const FREE_MODEL = "llama-3.1-8b-instant";
+export const FREE_MODEL = "openai/gpt-oss-120b";
 
 export type PlanId = "free" | "pro";
 

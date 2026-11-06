@@ -41,6 +41,7 @@ const bodySchema = z.object({
   optional: z.array(z.string()).default([]),
   avoid: z.array(z.string()).default([]),
   idealTrip: z.string().default(""),
+  tripTitle: z.string().max(80).optional(),
   preferredAirlines: z.string().optional(),
   flightPricePoint: z.enum(["any", "budget", "standard", "premium"]).optional(),
   chosenAirline: z.string().optional(),
@@ -223,6 +224,7 @@ export async function POST(req: Request) {
         dayEnd: body.dayEnd,
         prefersHiddenGems: body.prefersHiddenGems,
         idealTrip: body.idealTrip,
+        title: body.tripTitle,
       },
       priorities: {
         mustSee: body.mustSee,

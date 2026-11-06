@@ -1,10 +1,9 @@
 /**
- * Short place card: Wikipedia when a page matches, otherwise a planner
- * paragraph. Booking links are real URLs only. Reviews are never written here.
+ * Short place card. A planner paragraph leads, using a Wikipedia extract when
+ * one exists. Booking links are real URLs only. Reviews are never written here.
  */
 
 import Groq from "groq-sdk";
-import { plannerModel } from "@/lib/billing/model";
 import { quotesForHotelName } from "@/lib/hotels/hotelrec";
 import {
   accountlessFetch,
@@ -78,7 +77,7 @@ function titleLooksRelated(query: string, title: string): boolean {
   return words.some((w) => t.includes(w));
 }
 
-async function wikipediaBrief(
+export async function lookupWikipedia(
   name: string,
 ): Promise<{
   title: string;
@@ -173,11 +172,12 @@ async function plannerParagraph(input: {
   address?: string | null;
   lat: number;
   lng: number;
+  sourceText?: string | null;
 }): Promise<string | null> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return null;
   const client = new Groq({ apiKey });
-  const model = await plannerModel();
+  const model = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
   const completion = await client.chat.completions.create({
     model,
     temperature: 0.3,
@@ -185,13 +185,14 @@ async function plannerParagraph(input: {
       {
         role: "system",
         content:
-          "You write a short traveler-facing explanation of a place. 2 to 4 sentences. Use only general public knowledge. If you are unsure, say what kind of place the name suggests and that details should be checked on site. Do not invent reviews, star ratings, prices, opening hours, or booking links. Do not pretend a visitor said anything.",
+          "You write a short traveler-facing explanation of a place. 2 to 4 sentences. Use the reference text when it is provided, and do not add facts that are not in that text or in the name and address. If you are unsure, say what kind of place the name suggests and that details should be checked on site. Do not invent reviews, star ratings, prices, opening hours, or booking links. Do not pretend a visitor said anything.",
       },
       {
         role: "user",
         content: `Place: ${cleanName(input.name)}
 Address: ${input.address?.trim() || "unknown"}
-Coordinates: ${input.lat.toFixed(4)}, ${input.lng.toFixed(4)}`,
+Coordinates: ${input.lat.toFixed(4)}, ${input.lng.toFixed(4)}
+Reference text: ${input.sourceText?.trim() || "none"}`,
       },
     ],
   });
@@ -274,17 +275,21 @@ export async function getPlaceBrief(input: {
   if (cached) return cached;
 
   const [wiki, site, google] = await Promise.all([
-    wikipediaBrief(name).catch(() => null),
+    lookupWikipedia(name).catch(() => null),
     osmWebsite(name, input.lat, input.lng).catch(() => null),
     googleReviews({ name, lat: input.lat, lng: input.lng }),
   ]);
 
-  let paragraph = wiki?.extract ?? "";
-  let paragraphSource: PlaceBrief["paragraphSource"] = "wikipedia";
+  const written = await plannerParagraph({
+    ...input,
+    sourceText: wiki?.extract ?? null,
+  }).catch(() => null);
+  let paragraph = written ?? wiki?.extract ?? "";
+  let paragraphSource: PlaceBrief["paragraphSource"] = written
+    ? "planner"
+    : "wikipedia";
   if (!paragraph) {
-    paragraph =
-      (await plannerParagraph(input).catch(() => null)) ??
-      `${name} is a stop on this itinerary${input.address ? ` (${input.address})` : ""}. No reference article was found, and the planner could not write a description just now.`;
+    paragraph = `${name} is a stop on this itinerary${input.address ? ` (${input.address})` : ""}. No reference article was found, and the planner could not write a description just now.`;
     paragraphSource = "planner";
   }
 

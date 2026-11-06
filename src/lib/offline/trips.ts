@@ -7,6 +7,7 @@ import type { ActivityRow, TripLeg, TripListItem } from "@/lib/types/trip";
 
 const INDEX_KEY = "waypoint:offline-trips-index-v1";
 const SNAPSHOT_PREFIX = "waypoint:offline-trip:";
+const HIDDEN_KEY = "waypoint:hidden-trips";
 
 export type OfflineDay = { id: string; day_index: number };
 
@@ -74,6 +75,28 @@ export function listOfflineTrips(): TripListItem[] {
 export function removeOfflineTrip(id: string) {
   localStorage.removeItem(`${SNAPSHOT_PREFIX}${id}`);
   writeIndex(readIndex().filter((x) => x !== id));
+}
+
+export function hiddenTripIds(): string[] {
+  try {
+    const raw = localStorage.getItem(HIDDEN_KEY);
+    if (!raw) return [];
+    const ids = JSON.parse(raw) as unknown;
+    return Array.isArray(ids)
+      ? ids.filter((id): id is string => typeof id === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Drop the on-device copy and keep sample trips from being seeded again. */
+export function hideTripLocally(id: string) {
+  removeOfflineTrip(id);
+  const ids = hiddenTripIds();
+  if (!ids.includes(id)) {
+    localStorage.setItem(HIDDEN_KEY, JSON.stringify([...ids, id]));
+  }
 }
 
 /** Persist day groups from the itinerary editor. */

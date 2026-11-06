@@ -91,9 +91,14 @@ export default async function TripItineraryPage({
         initialLegs={
           (
             data.preferences as
-              | { legs?: import("@/lib/types/trip").TripLeg[] }
+              | { legs?: import("@/lib/types/trip").TripLeg[]; title?: string }
               | undefined
           )?.legs
+        }
+        tripTitle={
+          (
+            data.preferences as { title?: string } | undefined
+          )?.title
         }
       />
     );

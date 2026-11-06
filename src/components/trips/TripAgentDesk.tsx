@@ -3,18 +3,30 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
+import {
+  destinationImageUrl,
+  hasCuratedCityImage,
+} from "@/lib/destination-image";
+
+type PlaceDraft = {
+  city: string;
+  days: number;
+  suggestions: { key: string; label: string }[];
+};
 
 type ChatLine = { role: "agent" | "you"; text: string };
 
 export function TripAgentDesk({
-  city,
-  days,
-  startDate,
-  endDate,
-  suggestions,
+  places,
+  tripTitle,
+  onTripTitle,
   onCityInput,
   onPickSuggestion,
-  onDays,
+  onLegDays,
+  onAddCity,
+  onRemoveCity,
+  startDate,
+  endDate,
   onStartDate,
   travelers,
   onTravelers,
@@ -36,14 +48,16 @@ export function TripAgentDesk({
   error,
   onGenerate,
 }: {
-  city: string;
-  days: number;
+  places: PlaceDraft[];
+  tripTitle: string;
+  onTripTitle: (value: string) => void;
+  onCityInput: (index: number, value: string) => void;
+  onPickSuggestion: (legIndex: number, suggestionIndex: number) => void;
+  onLegDays: (index: number, days: number) => void;
+  onAddCity: () => void;
+  onRemoveCity: (index: number) => void;
   startDate: string;
   endDate: string;
-  suggestions: { key: string; label: string }[];
-  onCityInput: (value: string) => void;
-  onPickSuggestion: (index: number) => void;
-  onDays: (days: number) => void;
   onStartDate: (value: string) => void;
   travelers: number;
   onTravelers: (count: number) => void;
@@ -65,63 +79,128 @@ export function TripAgentDesk({
   error: string | null;
   onGenerate: () => void;
 }) {
+  const lead = places[0]?.city.trim() || "";
+  const photo = lead && hasCuratedCityImage(lead);
+
   return (
     <div className="mx-auto max-w-6xl" data-tour="tour-create-wizard">
-      <div className="mb-6 max-w-xl">
-        <h1 className="text-[32px] font-bold tracking-tight text-[#080B3A]">
-          Plan a trip
-        </h1>
-        <p className="mt-1 text-sm text-[#6B7280]">
-          Tell the agent where you are going.
-        </p>
-      </div>
+      <section className="mb-6 overflow-hidden rounded-[20px] border border-[#E1E5F0] bg-white shadow-[0_8px_24px_rgba(8,11,58,0.05)]">
+        {photo ? (
+          <div className="relative h-44 sm:h-56">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={destinationImageUrl(lead)}
+              alt=""
+              className="h-full w-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#080B3A]/70 to-transparent" />
+            <p className="absolute bottom-4 left-5 text-2xl font-bold text-white">
+              {lead}
+            </p>
+          </div>
+        ) : (
+          <div className="bg-[#080B3A] px-5 py-8 text-white">
+            <p className="text-2xl font-bold">{lead || "Where are you going?"}</p>
+          </div>
+        )}
+        <div className="grid gap-3 p-4 sm:grid-cols-[1.2fr_1.2fr_1fr] sm:p-5">
+          <CityField
+            label="Place"
+            city={places[0]?.city ?? ""}
+            suggestions={places[0]?.suggestions ?? []}
+            onChange={(value) => onCityInput(0, value)}
+            onPick={(index) => onPickSuggestion(0, index)}
+          />
+          <div>
+            <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
+              Title
+            </Label>
+            <Input
+              value={tripTitle}
+              onChange={(e) => onTripTitle(e.target.value)}
+              placeholder={lead ? `A trip to ${lead}` : "Title of the trip"}
+            />
+          </div>
+          <div>
+            <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
+              Dates
+            </Label>
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(e) => onStartDate(e.target.value)}
+            />
+            {startDate && endDate ? (
+              <p className="mt-1 text-xs text-[#6B7280]">
+                {startDate} – {endDate}
+              </p>
+            ) : null}
+          </div>
+        </div>
+        {places.slice(1).map((place, offset) => {
+          const index = offset + 1;
+          return (
+            <div
+              key={index}
+              className="grid items-end gap-3 border-t border-[#F0F2F8] px-4 py-3 sm:grid-cols-[1.4fr_0.5fr_auto] sm:px-5"
+            >
+              <CityField
+                label={`City ${index + 1}`}
+                city={place.city}
+                suggestions={place.suggestions}
+                onChange={(value) => onCityInput(index, value)}
+                onPick={(pick) => onPickSuggestion(index, pick)}
+              />
+              <div>
+                <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
+                  Days
+                </Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={place.days}
+                  onChange={(e) =>
+                    onLegDays(index, Math.max(1, Number(e.target.value) || 1))
+                  }
+                />
+              </div>
+              <button
+                type="button"
+                className="pb-2 text-sm font-semibold text-[#B91C1C]"
+                onClick={() => onRemoveCity(index)}
+              >
+                Remove
+              </button>
+            </div>
+          );
+        })}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#F0F2F8] px-4 py-3 sm:px-5">
+          <div className="flex items-center gap-2 text-sm text-[#6B7280]">
+            <span>Days in {places[0]?.city.trim() || "the first city"}</span>
+            <Input
+              type="number"
+              min={1}
+              max={30}
+              aria-label="Days in the first city"
+              value={places[0]?.days ?? 1}
+              onChange={(e) =>
+                onLegDays(0, Math.max(1, Number(e.target.value) || 1))
+              }
+              className="w-16"
+            />
+          </div>
+          <button
+            type="button"
+            className="text-sm font-semibold text-[#0400FF]"
+            onClick={onAddCity}
+          >
+            Add a city
+          </button>
+        </div>
+      </section>
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.2fr)_340px]">
         <section className="rounded-[20px] border border-[#E1E5F0] bg-white p-4 shadow-[0_8px_24px_rgba(8,11,58,0.05)] sm:p-6">
-          <div className="grid gap-3 sm:grid-cols-[1.4fr_1fr_0.6fr]">
-            <div className="relative">
-              <Label className="text-xs uppercase tracking-wide text-[#6B7280]">Where</Label>
-              <Input
-                value={city}
-                onChange={(e) => onCityInput(e.target.value)}
-                placeholder="Paris"
-                autoComplete="off"
-              />
-              {suggestions.length ? (
-                <ul className="absolute z-20 mt-1 max-h-44 w-full overflow-auto rounded-[12px] border border-[#E1E5F0] bg-white shadow-lg">
-                  {suggestions.map((item, index) => (
-                    <li key={item.key}>
-                      <button
-                        type="button"
-                        className="w-full px-3 py-2 text-left text-sm hover:bg-[#DDE1FF]"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => onPickSuggestion(index)}
-                      >
-                        {item.label}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-            <div>
-              <Label className="text-xs uppercase tracking-wide text-[#6B7280]">Start</Label>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => onStartDate(e.target.value)}
-              />
-            </div>
-            <div>
-              <Label className="text-xs uppercase tracking-wide text-[#6B7280]">Days</Label>
-              <Input
-                type="number"
-                min={1}
-                max={30}
-                value={days}
-                onChange={(e) => onDays(Math.max(1, Number(e.target.value) || 1))}
-              />
-            </div>
-          </div>
           <AgentThread
             destination={destination}
             cities={cities}
@@ -129,83 +208,83 @@ export function TripAgentDesk({
             travelers={travelers}
             interests={interests}
             idealTrip={idealTrip}
+            tripTitle={tripTitle}
             onExchange={onExchange}
           />
         </section>
         <aside className="flex max-h-[calc(100vh-7rem)] flex-col rounded-[20px] border border-[#E1E5F0] bg-white p-5 shadow-[0_8px_24px_rgba(8,11,58,0.05)] lg:sticky lg:top-6">
           <div className="min-h-0 flex-1 space-y-5 overflow-auto pr-1">
             <h2 className="text-[18px] font-semibold text-[#080B3A]">Trip brief</h2>
-            <p className="mt-1 text-xs text-[#6B7280]">
-              Fills in as you talk.
-            </p>
-          <dl className="space-y-2.5 text-sm">
-            <BriefRow label="Cities" value={cities.filter(Boolean).join(" → ")} />
-            <BriefRow
-              label="Dates"
-              value={startDate ? `${startDate}${endDate ? ` – ${endDate}` : ""}` : ""}
-            />
-            <BriefRow label="Who" value={party} />
-          </dl>
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
-              Pace
-            </p>
-            <div className="mt-2 flex gap-1 rounded-full bg-[#F5F7FF] p-1">
-              {(["relaxed", "balanced", "packed"] as const).map((pace) => (
-                <button
-                  key={pace}
-                  type="button"
-                  className={`flex-1 rounded-full px-2 py-1.5 text-xs font-semibold capitalize ${
-                    intensity === pace ? "bg-[#0400FF] text-white" : "text-[#0400FF]"
-                  }`}
-                  onClick={() => onIntensity(pace)}
-                >
-                  {pace}
-                </button>
-              ))}
+            <p className="mt-1 text-xs text-[#6B7280]">Fills in as you talk.</p>
+            <dl className="space-y-2.5 text-sm">
+              <BriefRow label="Title" value={tripTitle} />
+              <BriefRow label="Cities" value={cities.filter(Boolean).join(" → ")} />
+              <BriefRow
+                label="Dates"
+                value={startDate ? `${startDate}${endDate ? ` – ${endDate}` : ""}` : ""}
+              />
+              <BriefRow label="Who" value={party} />
+            </dl>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
+                Pace
+              </p>
+              <div className="mt-2 flex gap-1 rounded-full bg-[#F5F7FF] p-1">
+                {(["relaxed", "balanced", "packed"] as const).map((pace) => (
+                  <button
+                    key={pace}
+                    type="button"
+                    className={`flex-1 rounded-full px-2 py-1.5 text-xs font-semibold capitalize ${
+                      intensity === pace ? "bg-[#0400FF] text-white" : "text-[#0400FF]"
+                    }`}
+                    onClick={() => onIntensity(pace)}
+                  >
+                    {pace}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-sm text-[#6B7280]">Travelers</span>
-            <input
-              type="number"
-              min={1}
-              aria-label="Travelers"
-              value={travelers}
-              onChange={(e) => onTravelers(Math.max(1, Number(e.target.value) || 1))}
-              className="w-16 rounded-[10px] border border-[#D1D7E5] px-2 py-1 text-center text-sm text-[#080B3A]"
-            />
-          </div>
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
-              Getting around
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {(
-                [
-                  ["walking", "Walking"],
-                  ["transit", "Transit"],
-                  ["driving", "Driving"],
-                  ["cycling", "Cycling"],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                    transport === value
-                      ? "bg-[#080B3A] text-white"
-                      : "bg-[#F5F7FF] text-[#080B3A]"
-                  }`}
-                  onClick={() => onTransport(value)}
-                >
-                  {label}
-                </button>
-              ))}
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-[#6B7280]">Travelers</span>
+              <input
+                type="number"
+                min={1}
+                aria-label="Travelers"
+                value={travelers}
+                onChange={(e) => onTravelers(Math.max(1, Number(e.target.value) || 1))}
+                className="w-16 rounded-[10px] border border-[#D1D7E5] px-2 py-1 text-center text-sm text-[#080B3A]"
+              />
             </div>
-          </div>
-          {hotel}
-          {flights}
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
+                Getting around
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {(
+                  [
+                    ["walking", "Walking"],
+                    ["transit", "Transit"],
+                    ["driving", "Driving"],
+                    ["cycling", "Cycling"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      transport === value
+                        ? "bg-[#080B3A] text-white"
+                        : "bg-[#F5F7FF] text-[#080B3A]"
+                    }`}
+                    onClick={() => onTransport(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {hotel}
+            {flights}
           </div>
           <div className="shrink-0 space-y-2 border-t border-[#F0F2F8] bg-white pt-4">
             <p className="text-xs leading-relaxed text-[#6B7280]">
@@ -221,13 +300,55 @@ export function TripAgentDesk({
               type="button"
               className="w-full"
               onClick={onGenerate}
-              disabled={loading || !city.trim() || !startDate}
+              disabled={loading || !lead || !startDate}
             >
               {loading ? "Working…" : "Generate itinerary"}
             </Button>
           </div>
         </aside>
       </div>
+    </div>
+  );
+}
+
+function CityField({
+  label,
+  city,
+  suggestions,
+  onChange,
+  onPick,
+}: {
+  label: string;
+  city: string;
+  suggestions: { key: string; label: string }[];
+  onChange: (value: string) => void;
+  onPick: (index: number) => void;
+}) {
+  return (
+    <div className="relative">
+      <Label className="text-xs uppercase tracking-wide text-[#6B7280]">{label}</Label>
+      <Input
+        value={city}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Tokyo"
+        autoComplete="off"
+      />
+      {suggestions.length ? (
+        <ul className="absolute z-20 mt-1 max-h-44 w-full overflow-auto rounded-[12px] border border-[#E1E5F0] bg-white shadow-lg">
+          {suggestions.map((item, index) => (
+            <li key={item.key}>
+              <button
+                type="button"
+                className="w-full px-3 py-2 text-left text-sm hover:bg-[#DDE1FF]"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => onPick(index)}
+              >
+                {item.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }
@@ -249,6 +370,7 @@ function AgentThread({
   travelers,
   interests,
   idealTrip,
+  tripTitle,
   onExchange,
 }: {
   destination: string;
@@ -257,6 +379,7 @@ function AgentThread({
   travelers: number;
   interests: string[];
   idealTrip: string;
+  tripTitle: string;
   onExchange: (userText: string, reply: string) => void;
 }) {
   const [log, setLog] = useState<ChatLine[]>([]);
@@ -265,8 +388,24 @@ function AgentThread({
   const onExchangeRef = useRef(onExchange);
   onExchangeRef.current = onExchange;
   const userSpoke = useRef(false);
-  const payload = useRef({ destination, cities, startDate, travelers, interests, idealTrip });
-  payload.current = { destination, cities, startDate, travelers, interests, idealTrip };
+  const payload = useRef({
+    destination,
+    cities,
+    startDate,
+    travelers,
+    interests,
+    idealTrip,
+    tripTitle,
+  });
+  payload.current = {
+    destination,
+    cities,
+    startDate,
+    travelers,
+    interests,
+    idealTrip,
+    tripTitle,
+  };
 
   async function talk(history: { role: "user" | "assistant"; text: string }[], message: string) {
     const res = await fetch("/api/trips/clarify", {
@@ -329,7 +468,7 @@ function AgentThread({
   }
 
   return (
-    <div className="mt-6 flex min-h-[420px] flex-col">
+    <div className="flex min-h-[420px] flex-col">
       <div className="flex-1 space-y-3">
         {log.map((line, index) => (
           <p
@@ -357,7 +496,7 @@ function AgentThread({
           rows={2}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="Who's coming, or ask for a few day ideas"
+          placeholder="Ask about the days, or describe the trip you want"
           className="min-h-11 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-[#080B3A] outline-none placeholder:text-[#9299B5]"
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {

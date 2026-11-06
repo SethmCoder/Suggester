@@ -25,6 +25,7 @@ export function OfflineTripLoader({ tripId }: { tripId: string }) {
         isDemo: boolean;
         dayCities?: DayCityAssignment[];
         legs?: import("@/lib/types/trip").TripLeg[];
+        tripTitle?: string;
       }
   >({ status: "loading" });
 
@@ -56,6 +57,7 @@ export function OfflineTripLoader({ tripId }: { tripId: string }) {
         isDemo: true,
         dayCities: data.dayCities,
         legs: data.legs,
+        tripTitle: offline?.trip.title,
       });
       return;
     }
@@ -75,6 +77,7 @@ export function OfflineTripLoader({ tripId }: { tripId: string }) {
         isDemo: Boolean(snap.offlineOnly) || tripId.startsWith("offline-"),
         dayCities: snap.legs?.length ? expandLegsToDays(snap.legs) : undefined,
         legs: snap.legs,
+        tripTitle: snap.trip.title,
     });
   }, [tripId]);
 
@@ -115,6 +118,7 @@ export function OfflineTripLoader({ tripId }: { tripId: string }) {
       endDate={state.endDate}
       dayCities={state.dayCities}
       initialLegs={state.legs}
+      tripTitle={state.tripTitle}
     />
   );
 }

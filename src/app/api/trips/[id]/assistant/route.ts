@@ -13,8 +13,8 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
-  buildLocalAssistantPatch,
   buildLocalAssistantPatchAsync,
+  messageIsQuestion,
 } from "@/lib/ai/assistant-local";
 import {
   assistantSystemPrompt,
@@ -230,6 +230,10 @@ export async function POST(
     }
   } else {
     patch = await buildLocalAssistantPatchAsync(localArgs);
+  }
+
+  if (messageIsQuestion(message)) {
+    patch = { ...patch, operations: [] };
   }
 
   const svc = createServiceClient();
