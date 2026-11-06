@@ -97,7 +97,19 @@ export async function POST(req: Request) {
     const { gateFeature, PRO_REQUIRED_MESSAGE } = await import(
       "@/lib/billing/entitlements"
     );
-    const gate = gateFeature("generate", (name) => jar.get(name)?.value);
+    const { withProfileEntitlement } = await import("@/lib/billing/access");
+    let userId: string | null = null;
+    try {
+      const { createSupabaseServerClient } = await import("@/lib/supabase/server");
+      const supabase = await createSupabaseServerClient();
+      userId = (await supabase.auth.getUser()).data.user?.id ?? null;
+    } catch {
+      userId = null;
+    }
+    const gate = gateFeature(
+      "generate",
+      await withProfileEntitlement((name) => jar.get(name)?.value, userId),
+    );
     if (!gate.allowed) {
       return NextResponse.json(
         { error: PRO_REQUIRED_MESSAGE, code: "pro_required" },

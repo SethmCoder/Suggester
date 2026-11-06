@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { countCreatedOfflineTrips } from "@/lib/offline/trips";
 import type { BillingSnapshot } from "@/lib/billing/plans";
@@ -13,41 +12,87 @@ async function syncPlan(action: "sync" | "upgrade" | "downgrade") {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, created }),
   });
-  return (await res.json()) as BillingSnapshot;
+  return (await res.json()) as BillingSnapshot & {
+    entitled?: boolean;
+    checkoutAvailable?: boolean;
+  };
 }
 
 export default function PlanPage() {
-  const router = useRouter();
-  const [billing, setBilling] = useState<BillingSnapshot | null>(null);
-  const [busy, setBusy] = useState<"pro" | "free" | null>(null);
+  const [billing, setBilling] = useState<
+    (BillingSnapshot & { entitled?: boolean; checkoutAvailable?: boolean }) | null
+  >(null);
+  const [busy, setBusy] = useState<"pro" | "free" | "portal" | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    syncPlan("sync")
-      .then((data) => {
-        if (!cancelled) setBilling(data);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setBilling({ plan: "free", used: 0, limit: 3, remaining: 3 });
+    const sessionId = new URLSearchParams(window.location.search).get("session_id");
+    const cancelledCheckout = new URLSearchParams(window.location.search).get("checkout");
+    async function load() {
+      if (sessionId) {
+        const confirmed = await fetch("/api/billing/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId }),
+        });
+        if (!confirmed.ok) {
+          const data = (await confirmed.json().catch(() => ({}))) as { error?: string };
+          if (!cancelled) setNote(data.error ?? "Checkout could not be confirmed.");
+        } else if (!cancelled) {
+          setNote("Pro is active on this account.");
+          window.history.replaceState(null, "", "/plan");
         }
-      });
+      } else if (cancelledCheckout === "cancel" && !cancelled) {
+        setNote("Checkout was cancelled. Pro was not turned on.");
+      }
+      const data = await syncPlan("sync");
+      if (!cancelled) setBilling(data);
+    }
+    load().catch(() => {
+      if (!cancelled) {
+        setBilling({ plan: "free", used: 0, limit: 3, remaining: 3 });
+      }
+    });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  async function choose(action: "upgrade" | "downgrade") {
-    setBusy(action === "upgrade" ? "pro" : "free");
+  async function subscribe() {
+    setBusy("pro");
+    setNote(null);
     try {
-      setBilling(await syncPlan(action));
-      router.refresh();
+      const res = await fetch("/api/billing/checkout", { method: "POST" });
+      const data = (await res.json()) as { url?: string; error?: string };
+      if (!res.ok || !data.url) {
+        setNote(data.error ?? "Checkout could not start.");
+        return;
+      }
+      window.location.href = data.url;
     } finally {
       setBusy(null);
     }
   }
 
-  const pro = billing?.plan === "pro";
+  async function manage() {
+    setBusy("portal");
+    setNote(null);
+    try {
+      const res = await fetch("/api/billing/portal", { method: "POST" });
+      const data = (await res.json()) as { url?: string; error?: string };
+      if (!res.ok || !data.url) {
+        setNote(data.error ?? "The billing portal could not open.");
+        return;
+      }
+      window.location.href = data.url;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const entitled = Boolean(billing?.entitled);
+  const checkout = Boolean(billing?.checkoutAvailable);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -66,7 +111,7 @@ export default function PlanPage() {
           <p className="text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
             Free
           </p>
-          <p className="mt-2 text-2xl font-bold text-[#080B3A]">€0</p>
+          <p className="mt-2 text-2xl font-bold text-[#080B3A]">$0</p>
           <ul className="mt-4 space-y-2 text-sm text-[#1F2937]">
             <li>3 trips</li>
             <li>Manual editing and the map</li>
@@ -81,10 +126,16 @@ export default function PlanPage() {
             type="button"
             variant="secondary"
             className="mt-4"
-            disabled={!pro || busy !== null}
-            onClick={() => choose("downgrade")}
+            disabled={!entitled || !checkout || busy !== null}
+            onClick={() => void manage()}
           >
-            {pro ? (busy === "free" ? "Switching…" : "Use Free") : "Current plan"}
+            {entitled
+              ? busy === "portal"
+                ? "Opening…"
+                : checkout
+                  ? "Manage subscription"
+                  : "Pro is on"
+              : "Current plan"}
           </Button>
         </section>
 
@@ -104,15 +155,23 @@ export default function PlanPage() {
           <Button
             type="button"
             className="mt-4"
-            disabled
+            disabled={entitled || busy !== null || !checkout}
+            onClick={() => void subscribe()}
           >
-            Checkout is not taking cards yet
+            {entitled
+              ? "Current plan"
+              : busy === "pro"
+                ? "Opening checkout…"
+                : checkout
+                  ? "Subscribe · $6.99/month"
+                  : "Add a Stripe key to subscribe"}
           </Button>
         </section>
       </div>
 
+      {note ? <p className="max-w-xl text-sm text-[#080B3A]">{note}</p> : null}
       <p className="max-w-xl text-xs leading-relaxed text-[#6B7280]">
-        Pro is $6.99 a month. Checkout is not taking cards yet, so this page cannot turn Pro on. Free stays at 3 trips, manual editing, the map, and 5 basic Trip Wizard requests a month.
+        Pro is $6.99 a month through Stripe. A completed checkout turns Pro on for this account. Free stays at 3 trips, manual editing, the map, and 5 basic Trip Wizard requests a month.
       </p>
     </div>
   );

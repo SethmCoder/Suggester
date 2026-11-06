@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { withProfileEntitlement } from "@/lib/billing/access";
 import {
   gateFeature,
   PRO_REQUIRED_MESSAGE,
@@ -90,7 +91,18 @@ export async function POST(req: Request) {
         : body.action === "whatif"
           ? "whatif"
           : "import";
-  const gate = gateFeature(feature, (name) => jar.get(name)?.value);
+  let userId: string | null = null;
+  try {
+    const { createSupabaseServerClient } = await import("@/lib/supabase/server");
+    const supabase = await createSupabaseServerClient();
+    userId = (await supabase.auth.getUser()).data.user?.id ?? null;
+  } catch {
+    userId = null;
+  }
+  const gate = gateFeature(
+    feature,
+    await withProfileEntitlement((name) => jar.get(name)?.value, userId),
+  );
   if (!gate.allowed) {
     return NextResponse.json(
       { error: PRO_REQUIRED_MESSAGE, code: "pro_required" },

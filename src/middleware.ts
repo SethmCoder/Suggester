@@ -28,24 +28,26 @@ export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const demo = isDemoCookie(request.cookies.get(DEMO_COOKIE)?.value);
 
+  const code = request.nextUrl.searchParams.get("code");
+  const tokenHash = request.nextUrl.searchParams.get("token_hash");
+  if (path !== "/auth/callback" && (code || tokenHash)) {
+    const callback = new URL("/auth/callback", request.url);
+    request.nextUrl.searchParams.forEach((value, key) => {
+      if (key !== "next") callback.searchParams.set(key, value);
+    });
+    const next =
+      path === "/" || path === "/login" || path === "/signup"
+        ? "/dashboard"
+        : path;
+    callback.searchParams.set("next", next);
+    return NextResponse.redirect(callback);
+  }
+
   const isProtected =
     PROTECTED.some((p) => path === p || path.startsWith(`${p}/`)) ||
     (path.startsWith(PROTECTED_PREFIX) &&
       !path.startsWith("/trips/preview") &&
       path !== "/trips/new");
-
-  // Demo cookie unlocks dashboard, sample trips, the planner, and trips it creates.
-  if (demo && isProtected) {
-    if (
-      path.startsWith("/trips/") &&
-      !isDemoTripPath(path) &&
-      !isDemoCreatedTrip(path) &&
-      path !== "/trips/new"
-    ) {
-      return NextResponse.redirect(new URL("/trips/demo-paris", request.url));
-    }
-    return NextResponse.next();
-  }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -80,14 +82,43 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (isProtected && !user && !demo) {
+  if (user) {
+    if (demo) {
+      response.cookies.set(DEMO_COOKIE, "", {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 0,
+      });
+    }
+    if (path === "/login" || path === "/signup") {
+      const redirect = NextResponse.redirect(new URL("/dashboard", request.url));
+      response.cookies.getAll().forEach((cookie) => {
+        redirect.cookies.set(cookie);
+      });
+      return redirect;
+    }
+    return response;
+  }
+
+  // Demo cookie unlocks dashboard, sample trips, the planner, and trips it creates.
+  if (demo && isProtected) {
+    if (
+      path.startsWith("/trips/") &&
+      !isDemoTripPath(path) &&
+      !isDemoCreatedTrip(path) &&
+      path !== "/trips/new"
+    ) {
+      return NextResponse.redirect(new URL("/trips/demo-paris", request.url));
+    }
+    return NextResponse.next();
+  }
+
+  if (isProtected && !demo) {
     const login = new URL("/login", request.url);
     login.searchParams.set("next", path);
     return NextResponse.redirect(login);
-  }
-
-  if (user && (path === "/login" || path === "/signup")) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   return response;
@@ -100,6 +131,7 @@ export const config = {
     "/settings/:path*",
     "/saved-places/:path*",
     "/help/:path*",
+    "/plan",
     "/plan/:path*",
     "/trips/:path*",
     "/login",

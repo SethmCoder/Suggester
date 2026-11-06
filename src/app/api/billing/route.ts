@@ -1,7 +1,10 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { gateFeature } from "@/lib/billing/entitlements";
+import { gateFeature, isProEntitled } from "@/lib/billing/entitlements";
+import { withProfileEntitlement } from "@/lib/billing/access";
+import { checkoutConfigured } from "@/lib/billing/stripe";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   PLAN_COOKIE,
   USED_COOKIE,
@@ -33,13 +36,22 @@ function applyCookies(res: NextResponse, plan: PlanId, used: number) {
 export async function GET() {
   const jar = await cookies();
   const get = (name: string) => jar.get(name)?.value;
+  let userId: string | null = null;
+  try {
+    const supabase = await createSupabaseServerClient();
+    userId = (await supabase.auth.getUser()).data.user?.id ?? null;
+  } catch {
+    userId = null;
+  }
+  const access = await withProfileEntitlement(get, userId);
   const plan = readPlan(get);
-  const generate = gateFeature("generate", get);
+  const generate = gateFeature("generate", access);
   return NextResponse.json({
     ...plan,
     generateAllowed: generate.allowed,
+    entitled: isProEntitled(access),
     priceUsd: 6.99,
-    checkoutAvailable: false,
+    checkoutAvailable: checkoutConfigured(),
   });
 }
 
@@ -59,10 +71,10 @@ export async function POST(req: Request) {
   const response = NextResponse.json({
     ...next,
     priceUsd: 6.99,
-    checkoutAvailable: false,
+    checkoutAvailable: checkoutConfigured(),
     message:
       body.action === "upgrade"
-        ? "Pro is $6.99 a month. Checkout is not taking cards yet, so this browser was not upgraded."
+        ? "Pro is $6.99 a month. Use Subscribe on the Plans page. This request does not turn Pro on."
         : undefined,
   });
   applyCookies(response, plan, used);

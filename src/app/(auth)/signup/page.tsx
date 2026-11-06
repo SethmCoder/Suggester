@@ -13,6 +13,7 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   if (!isSupabaseConfigured()) {
@@ -29,23 +30,68 @@ export default function SignupPage() {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    const supabase = createClient();
-    const { data, error: err } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { display_name: displayName } },
-    });
-    if (err) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) {
       setLoading(false);
-      setError(err.message);
+      setError("Accounts aren’t available yet.");
       return;
     }
-    if (data.user) {
+    const redirectTo = `${window.location.origin}/auth/callback`;
+    const res = await fetch(
+      `${url}/auth/v1/signup?redirect_to=${encodeURIComponent(redirectTo)}`,
+      {
+        method: "POST",
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          password,
+          data: { display_name: displayName },
+        }),
+      },
+    );
+    const data = (await res.json().catch(() => ({}))) as {
+      access_token?: string;
+      refresh_token?: string;
+      user?: { id?: string };
+      msg?: string;
+      message?: string;
+      error_description?: string;
+    };
+    if (!res.ok) {
+      setLoading(false);
+      setError(
+        data.msg || data.error_description || data.message || "Could not create the account.",
+      );
+      return;
+    }
+    if (!data.access_token || !data.refresh_token) {
+      setLoading(false);
+      setNotice("Check your email for confirmation.");
+      return;
+    }
+    const supabase = createClient();
+    const { error: sessionError } = await supabase.auth.setSession({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+    });
+    if (sessionError) {
+      setLoading(false);
+      setError(sessionError.message);
+      return;
+    }
+    const userId = data.user?.id;
+    if (userId) {
       await supabase.from("profiles").upsert({
-        id: data.user.id,
+        id: userId,
         display_name: displayName || email.split("@")[0],
       });
     }
+    await fetch("/api/demo/end", { method: "POST" }).catch(() => null);
     setLoading(false);
     router.push("/dashboard");
     router.refresh();
@@ -62,6 +108,9 @@ export default function SignupPage() {
           <p className="mt-1 text-sm text-[#6B7280]">
             Join Waypoint and start planning smarter trips.
           </p>
+          {notice ? (
+            <p className="mt-6 text-sm leading-relaxed text-[#1F2937]">{notice}</p>
+          ) : (
           <form onSubmit={onSubmit} className="mt-6 space-y-4">
             <div>
               <Label>Display name</Label>
@@ -95,6 +144,7 @@ export default function SignupPage() {
               {loading ? "Creating…" : "Sign up"}
             </Button>
           </form>
+          )}
           <p className="mt-6 text-center text-sm text-[#6B7280]">
             <Link href="/login" className="font-semibold text-[#0400FF]">
               Sign in

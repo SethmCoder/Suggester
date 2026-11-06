@@ -72,4 +72,4 @@ export function isAdvancedRequest(message: string): boolean {
 }
 
 export const PRO_REQUIRED_MESSAGE =
-  "Full itinerary generation, the intelligence panel, optimize, what-if, and import are part of Pro at $6.99 a month. Checkout is not taking cards yet.";
+  "Full itinerary generation, the intelligence panel, optimize, what-if, and import are part of Pro at $6.99 a month. Subscribe from Plans.";

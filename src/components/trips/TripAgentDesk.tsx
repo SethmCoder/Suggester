@@ -67,23 +67,22 @@ export function TripAgentDesk({
 }) {
   return (
     <div className="mx-auto max-w-6xl" data-tour="tour-create-wizard">
-      <div className="mb-5">
-        <h1 className="text-[28px] font-bold tracking-tight text-[#080B3A]">
+      <div className="mb-6 max-w-xl">
+        <h1 className="text-[32px] font-bold tracking-tight text-[#080B3A]">
           Plan a trip
         </h1>
         <p className="mt-1 text-sm text-[#6B7280]">
           Tell the agent where you are going.
         </p>
       </div>
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
-        <section className="rounded-[16px] border border-[#E1E5F0] bg-white p-5 shadow-[0_6px_18px_rgba(8,11,58,0.05)] sm:p-6">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="relative sm:col-span-1">
-              <Label>Where</Label>
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.2fr)_340px]">
+        <section className="rounded-[20px] border border-[#E1E5F0] bg-white p-4 shadow-[0_8px_24px_rgba(8,11,58,0.05)] sm:p-6">
+          <div className="grid gap-3 sm:grid-cols-[1.4fr_1fr_0.6fr]">
+            <div className="relative">
+              <Label className="text-xs uppercase tracking-wide text-[#6B7280]">Where</Label>
               <Input
                 value={city}
                 onChange={(e) => onCityInput(e.target.value)}
-                className="mt-1"
                 placeholder="Paris"
                 autoComplete="off"
               />
@@ -105,23 +104,21 @@ export function TripAgentDesk({
               ) : null}
             </div>
             <div>
-              <Label>Start</Label>
+              <Label className="text-xs uppercase tracking-wide text-[#6B7280]">Start</Label>
               <Input
                 type="date"
                 value={startDate}
                 onChange={(e) => onStartDate(e.target.value)}
-                className="mt-1"
               />
             </div>
             <div>
-              <Label>Days</Label>
+              <Label className="text-xs uppercase tracking-wide text-[#6B7280]">Days</Label>
               <Input
                 type="number"
                 min={1}
                 max={30}
                 value={days}
                 onChange={(e) => onDays(Math.max(1, Number(e.target.value) || 1))}
-                className="mt-1"
               />
             </div>
           </div>
@@ -135,71 +132,100 @@ export function TripAgentDesk({
             onExchange={onExchange}
           />
         </section>
-        <aside className="space-y-4 rounded-[16px] border border-[#E1E5F0] bg-white p-5 shadow-[0_6px_18px_rgba(8,11,58,0.05)]">
-          <div>
-            <h2 className="text-[16px] font-semibold text-[#080B3A]">Trip brief</h2>
+        <aside className="flex max-h-[calc(100vh-7rem)] flex-col rounded-[20px] border border-[#E1E5F0] bg-white p-5 shadow-[0_8px_24px_rgba(8,11,58,0.05)] lg:sticky lg:top-6">
+          <div className="min-h-0 flex-1 space-y-5 overflow-auto pr-1">
+            <h2 className="text-[18px] font-semibold text-[#080B3A]">Trip brief</h2>
             <p className="mt-1 text-xs text-[#6B7280]">
-              This is what the itinerary will be built from.
+              Fills in as you talk.
             </p>
-          </div>
-          <dl className="space-y-2 text-sm">
+          <dl className="space-y-2.5 text-sm">
             <BriefRow label="Cities" value={cities.filter(Boolean).join(" → ")} />
-            <BriefRow label="Dates" value={startDate ? `${startDate}${endDate ? ` – ${endDate}` : ""}` : ""} />
-            <BriefRow label="Who" value={party || (travelers ? `${travelers} travelers` : "")} />
-            <BriefRow label="Pace" value={intensity} />
-            <BriefRow label="Getting around" value={transport} />
+            <BriefRow
+              label="Dates"
+              value={startDate ? `${startDate}${endDate ? ` – ${endDate}` : ""}` : ""}
+            />
+            <BriefRow label="Who" value={party} />
           </dl>
-          <div className="flex flex-wrap gap-1.5">
-            {(["relaxed", "balanced", "packed"] as const).map((pace) => (
-              <button
-                key={pace}
-                type="button"
-                className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${
-                  intensity === pace ? "bg-[#0400FF] text-white" : "bg-[#F5F7FF] text-[#0400FF]"
-                }`}
-                onClick={() => onIntensity(pace)}
-              >
-                {pace}
-              </button>
-            ))}
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
+              Pace
+            </p>
+            <div className="mt-2 flex gap-1 rounded-full bg-[#F5F7FF] p-1">
+              {(["relaxed", "balanced", "packed"] as const).map((pace) => (
+                <button
+                  key={pace}
+                  type="button"
+                  className={`flex-1 rounded-full px-2 py-1.5 text-xs font-semibold capitalize ${
+                    intensity === pace ? "bg-[#0400FF] text-white" : "text-[#0400FF]"
+                  }`}
+                  onClick={() => onIntensity(pace)}
+                >
+                  {pace}
+                </button>
+              ))}
+            </div>
           </div>
-          <label className="block text-xs text-[#6B7280]">
-            Travelers
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm text-[#6B7280]">Travelers</span>
             <input
               type="number"
               min={1}
+              aria-label="Travelers"
               value={travelers}
               onChange={(e) => onTravelers(Math.max(1, Number(e.target.value) || 1))}
-              className="mt-1 w-20 rounded-[8px] border border-[#D1D7E5] px-2 py-1 text-sm text-[#080B3A]"
+              className="w-16 rounded-[10px] border border-[#D1D7E5] px-2 py-1 text-center text-sm text-[#080B3A]"
             />
-          </label>
-          <label className="block text-xs text-[#6B7280]">
-            Within the city
-            <select
-              value={transport}
-              onChange={(e) => onTransport(e.target.value)}
-              className="mt-1 w-full rounded-[8px] border border-[#D1D7E5] bg-white px-2 py-1.5 text-sm text-[#080B3A]"
-            >
-              <option value="walking">Walking</option>
-              <option value="transit">Public transit</option>
-              <option value="driving">Driving</option>
-              <option value="cycling">Cycling</option>
-            </select>
-          </label>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
+              Getting around
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {(
+                [
+                  ["walking", "Walking"],
+                  ["transit", "Transit"],
+                  ["driving", "Driving"],
+                  ["cycling", "Cycling"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                    transport === value
+                      ? "bg-[#080B3A] text-white"
+                      : "bg-[#F5F7FF] text-[#080B3A]"
+                  }`}
+                  onClick={() => onTransport(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
           {hotel}
           {flights}
-          <p className="rounded-[12px] bg-[#F5F7FF] px-3 py-2 text-xs leading-relaxed text-[#1F2937]">
-            {canGenerate === null
-              ? "Checking whether a generated itinerary is included."
-              : canGenerate
-                ? "A full generated itinerary is included on this account. This conversation does not use that."
-                : "A full generated itinerary is part of Pro at $6.99 a month. Checkout is not taking cards yet, so Generate will not turn Pro on. This conversation is included either way."}
-          </p>
-          {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
-          {progress ? <p className="text-sm text-[#0400FF]">{progress}</p> : null}
-          <Button type="button" className="w-full" onClick={onGenerate} disabled={loading || !city.trim() || !startDate}>
-            {loading ? "Working…" : "Generate itinerary"}
-          </Button>
+          </div>
+          <div className="shrink-0 space-y-2 border-t border-[#F0F2F8] bg-white pt-4">
+            <p className="text-xs leading-relaxed text-[#6B7280]">
+              {canGenerate === null
+                ? "Checking whether generation is included."
+                : canGenerate
+                  ? "Generation is included on this account."
+                  : "Generation is Pro at $6.99 a month. Subscribe from Plans."}
+            </p>
+            {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
+            {progress ? <p className="text-sm text-[#0400FF]">{progress}</p> : null}
+            <Button
+              type="button"
+              className="w-full"
+              onClick={onGenerate}
+              disabled={loading || !city.trim() || !startDate}
+            >
+              {loading ? "Working…" : "Generate itinerary"}
+            </Button>
+          </div>
         </aside>
       </div>
     </div>
@@ -207,10 +233,11 @@ export function TripAgentDesk({
 }
 
 function BriefRow({ label, value }: { label: string; value: string }) {
+  if (!value.trim()) return null;
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-[#F0F2F8] pb-2">
+    <div className="flex items-start justify-between gap-3">
       <dt className="text-[#6B7280]">{label}</dt>
-      <dd className="text-right font-medium capitalize text-[#080B3A]">{value}</dd>
+      <dd className="line-clamp-2 text-right font-medium text-[#080B3A]">{value}</dd>
     </div>
   );
 }
@@ -302,12 +329,12 @@ function AgentThread({
   }
 
   return (
-    <div className="mt-5 space-y-3">
-      <div className="max-h-[420px] space-y-2 overflow-auto pr-1">
+    <div className="mt-6 flex min-h-[420px] flex-col">
+      <div className="flex-1 space-y-3">
         {log.map((line, index) => (
           <p
             key={`${line.role}-${index}`}
-            className={`max-w-[92%] rounded-[16px] px-3.5 py-2.5 text-sm leading-relaxed ${
+            className={`max-w-[85%] rounded-[18px] px-4 py-3 text-sm leading-relaxed ${
               line.role === "agent"
                 ? "bg-[#F5F7FF] text-[#1F2937]"
                 : "ml-auto bg-[#080B3A] text-white"
@@ -325,13 +352,13 @@ function AgentThread({
           </p>
         ) : null}
       </div>
-      <div>
+      <div className="mt-4 flex items-end gap-2 rounded-[16px] border border-[#D1D7E5] bg-[#F5F7FF] p-2">
         <textarea
-          rows={3}
+          rows={2}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="I'm going with my sister and her kids. Or: can you give me examples?"
-          className="w-full rounded-[12px] border border-[#D1D7E5] px-3 py-2 text-sm"
+          placeholder="Who's coming, or ask for a few day ideas"
+          className="min-h-11 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-[#080B3A] outline-none placeholder:text-[#9299B5]"
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
@@ -341,7 +368,6 @@ function AgentThread({
         />
         <Button
           type="button"
-          className="mt-2"
           onClick={() => void send()}
           disabled={!draft.trim() || status === "loading"}
         >

@@ -59,13 +59,8 @@ export function HotelChoice({
 }) {
   const [hotels, setHotels] = useState<Suggestion[]>([]);
   const [citation, setCitation] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
   const [openReviews, setOpenReviews] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "ready">("idle");
-  const placeIndex = Math.max(
-    0,
-    PLACES.findIndex((item) => item.value === place),
-  );
   const onResultsRef = useRef(onResults);
   const onClearRef = useRef(onClear);
   const selectedRef = useRef(selectedName);
@@ -76,7 +71,6 @@ export function HotelChoice({
   useEffect(() => {
     if (booked || city.trim().length < 2) {
       setHotels([]);
-      setNote(null);
       setStatus("idle");
       onResultsRef.current?.([]);
       return;
@@ -97,7 +91,6 @@ export function HotelChoice({
           const next = (data.hotels ?? []) as Suggestion[];
           setHotels(next);
           setCitation(data.citation ?? null);
-          setNote(typeof data.note === "string" ? data.note : null);
           setStatus("ready");
           onResultsRef.current?.(next);
           if (
@@ -110,7 +103,6 @@ export function HotelChoice({
         .catch(() => {
           if (cancelled) return;
           setHotels([]);
-          setNote(null);
           setStatus("ready");
           onResultsRef.current?.([]);
         });
@@ -123,96 +115,77 @@ export function HotelChoice({
 
   return (
     <div className="space-y-3">
-      <div>
-        <div className="flex items-center justify-between text-[11px] font-medium text-[#080B3A]">
-          <span>Hotel booked?</span>
-          <span>{booked ? "Yes — plan around my hotel" : "No — suggest hotels"}</span>
-        </div>
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={1}
-          aria-label="Hotel booked?"
-          value={booked ? 1 : 0}
-          onChange={(e) => onBooked(e.target.value === "1")}
-          className="mt-1 w-full accent-[#0400FF]"
-        />
-        <div className="flex justify-between text-[10px] text-[#6B7280]">
-          <span>No</span>
-          <span>Yes</span>
-        </div>
+      <div className="grid grid-cols-2 gap-1 rounded-full bg-[#F5F7FF] p-1">
+        <button
+          type="button"
+          className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+            booked ? "text-[#6B7280]" : "bg-white text-[#080B3A] shadow-sm"
+          }`}
+          onClick={() => onBooked(false)}
+        >
+          Suggest a hotel
+        </button>
+        <button
+          type="button"
+          className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+            booked ? "bg-white text-[#080B3A] shadow-sm" : "text-[#6B7280]"
+          }`}
+          onClick={() => onBooked(true)}
+        >
+          I already booked
+        </button>
       </div>
       {booked ? null : (
         <div className="space-y-3">
-          <label className="block">
-            <span className="text-[11px] font-medium text-[#080B3A]">
-              Preferred brand
-            </span>
-            <input
-              value={brand}
-              onChange={(e) => onBrand(e.target.value)}
-              placeholder="Westin, Hilton, hostel…"
-              className="mt-1 w-full rounded-[10px] border border-[#D1D7E5] bg-white px-3 py-2 text-sm focus:border-[#0400FF] focus:outline-none focus:ring-2 focus:ring-[#818CFF]/35"
-            />
-            <span className="mt-1 block text-[10px] leading-snug text-[#6B7280]">
-              Leave this blank for a few hotels in the city. A brand only
-              returns places whose name matches. Pick one before generating.
-            </span>
-          </label>
-          <div>
-            <div className="flex items-center justify-between text-[11px] font-medium text-[#080B3A]">
-              <span>Minimum rating</span>
-              <span>{minRating.toFixed(1)}+</span>
-            </div>
-            <input
-              type="range"
-              min={1}
-              max={5}
-              step={0.5}
-              aria-label="Minimum hotel rating"
-              value={minRating}
-              onChange={(e) => onMinRating(Number(e.target.value))}
-              className="mt-1 w-full accent-[#0400FF]"
-            />
+          <input
+            value={brand}
+            onChange={(e) => onBrand(e.target.value)}
+            placeholder="Brand, such as Westin"
+            aria-label="Preferred hotel brand"
+            className="w-full rounded-[12px] border border-[#D1D7E5] bg-white px-3 py-2 text-sm focus:border-[#0400FF] focus:outline-none focus:ring-2 focus:ring-[#818CFF]/35"
+          />
+          <div className="flex flex-wrap gap-1.5">
+            {[3, 4, 4.5].map((rating) => (
+              <button
+                key={rating}
+                type="button"
+                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                  minRating === rating
+                    ? "bg-[#0400FF] text-white"
+                    : "bg-[#F5F7FF] text-[#0400FF]"
+                }`}
+                onClick={() => onMinRating(rating)}
+              >
+                {rating}+ stars
+              </button>
+            ))}
           </div>
-          <div>
-            <div className="flex items-center justify-between text-[11px] font-medium text-[#080B3A]">
-              <span>Places</span>
-              <span>{PLACES[placeIndex]?.label}</span>
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={PLACES.length - 1}
-              step={1}
-              aria-label="Hotel place preference"
-              value={placeIndex}
-              onChange={(e) =>
-                onPlace(PLACES[Number(e.target.value)]?.value ?? "any")
-              }
-              className="mt-1 w-full accent-[#0400FF]"
-            />
-            <div className="flex justify-between text-[10px] text-[#6B7280]">
-              {PLACES.map((item) => (
-                <span key={item.value}>{item.label}</span>
-              ))}
-            </div>
+          <div className="flex flex-wrap gap-1.5">
+            {PLACES.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                  place === item.value
+                    ? "bg-[#080B3A] text-white"
+                    : "bg-[#F5F7FF] text-[#080B3A]"
+                }`}
+                onClick={() => onPlace(item.value)}
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
           {status === "loading" ? (
             <p className="text-[11px] text-[#0400FF]">Looking up hotels…</p>
           ) : null}
-          {note ? (
-            <p className="text-[11px] leading-snug text-[#080B3A]">{note}</p>
-          ) : null}
           {status === "ready" && hotels.length === 0 ? (
             <p className="text-[11px] text-[#6B7280]">
-              No hotels in {city.trim()} match this rating. Try a lower rating,
-              or set Hotel booked to Yes and enter your own.
+              No listed hotels match that brand and rating.
             </p>
           ) : null}
           <ul className="space-y-2">
-            {hotels.map((hotel) => {
+            {hotels.slice(0, 3).map((hotel) => {
               const selected = hotel.name === selectedName;
               const reviewsOpen = openReviews === hotel.id;
               return (
@@ -229,16 +202,11 @@ export function HotelChoice({
                   </p>
                   <p className="text-[11px] text-[#6B7280]">
                     {hotel.reviewCount > 0
-                      ? `${hotel.rating.toFixed(1)} / 5${
-                          hotel.locationScore != null
-                            ? ` · location ${hotel.locationScore.toFixed(1)} / 5`
-                            : ""
-                        } · ${hotel.reviewCount} reviews`
+                      ? `${hotel.rating.toFixed(1)} / 5`
                       : hotel.rating > 0
                         ? `${hotel.rating.toFixed(1)} stars`
-                        : "Stars and reviews are not listed for this place."}
+                        : hotel.location}
                   </p>
-                  <p className="text-[11px] text-[#6B7280]">{hotel.location}</p>
                   <div className="mt-1.5 flex gap-3">
                     <button
                       type="button"
@@ -287,7 +255,7 @@ export function HotelChoice({
               );
             })}
           </ul>
-          {citation && hotels.length ? (
+          {citation && openReviews ? (
             <p className="text-[10px] leading-snug text-[#6B7280]">
               Reviews are real quotes from {citation} Waypoint does not write
               reviews.

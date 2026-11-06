@@ -93,7 +93,20 @@ export async function POST(req: Request) {
     const { gateFeature, PRO_REQUIRED_MESSAGE } = await import(
       "@/lib/billing/entitlements"
     );
-    const gate = gateFeature("generate", (name) => jar.get(name)?.value);
+    const { withProfileEntitlement } = await import("@/lib/billing/access");
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    }
+
+    const gate = gateFeature(
+      "generate",
+      await withProfileEntitlement((name) => jar.get(name)?.value, user.id),
+    );
     if (!gate.allowed) {
       return NextResponse.json(
         { error: PRO_REQUIRED_MESSAGE, code: "pro_required" },
@@ -110,14 +123,6 @@ export async function POST(req: Request) {
       legs,
       hotel: legs?.[0]?.hotel || parsed.hotel,
     };
-    const supabase = await createSupabaseServerClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: "Sign in required" }, { status: 401 });
-    }
 
     if (!createServiceClient()) {
       return NextResponse.json(

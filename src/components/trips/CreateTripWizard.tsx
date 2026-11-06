@@ -199,6 +199,7 @@ export function CreateTripWizard({
     AirportSuggestion[]
   >([]);
   const [flightHint, setFlightHint] = useState<string | null>(null);
+  const [airportOpen, setAirportOpen] = useState<"origin" | "dest" | null>(null);
   const airportTimers = useRef<{
     origin?: ReturnType<typeof setTimeout>;
     dest?: ReturnType<typeof setTimeout>;
@@ -333,9 +334,6 @@ export function CreateTripWizard({
       ),
     );
     setCitySuggestions((s) => ({ ...s, [legIndex]: [] }));
-    if (legIndex === 0) {
-      void searchAirportsFor("dest", "", { lat: c.lat, lng: c.lng }, true);
-    }
   }
 
   function pickDepartureCity(c: CitySuggestion) {
@@ -356,20 +354,6 @@ export function CreateTripWizard({
       void refreshFlightEstimate(form.originAirport || form.departureCity, a.iata);
     }
   }
-
-  // When first destination city gains coords, seed arrival-airport options
-  useEffect(() => {
-    const first = legs[0];
-    if (first?.lat != null && first?.lng != null && !form.destinationAirport) {
-      void searchAirportsFor(
-        "dest",
-        "",
-        { lat: first.lat, lng: first.lng },
-        true,
-      );
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional on first-leg coords
-  }, [legs[0]?.lat, legs[0]?.lng]);
 
   useEffect(() => {
     let cancelled = false;
@@ -861,10 +845,12 @@ export function CreateTripWizard({
         ) : null
       }
       flights={
-        <div className="space-y-2 border-t border-[#F0F2F8] pt-3">
+        <div className="space-y-3 border-t border-[#F0F2F8] pt-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
+            Flight
+          </p>
           <div className="grid grid-cols-2 gap-2">
             <div className="relative">
-              <Label>From</Label>
               <Input
                 value={form.originAirport}
                 onChange={(e) => {
@@ -872,26 +858,29 @@ export function CreateTripWizard({
                   setForm((current) => ({ ...current, originAirport }));
                   void searchAirportsFor("origin", originAirport, departureCoords);
                 }}
+                onFocus={() => setAirportOpen("origin")}
                 onBlur={() => {
                   window.setTimeout(() => {
                     void refreshFlightEstimate();
                     setOriginAirportSuggestions([]);
+                    setAirportOpen((open) => (open === "origin" ? null : open));
                   }, 150);
                 }}
-                className="mt-1"
-                placeholder="SEA"
+                placeholder="From"
+                aria-label="From airport"
                 autoComplete="off"
               />
-              <SuggestionList
-                items={originAirportSuggestions.map((a) => ({
-                  key: a.iata + a.name,
-                  label: a.label,
-                }))}
-                onPick={(index) => pickAirport("origin", originAirportSuggestions[index])}
-              />
+              {airportOpen === "origin" ? (
+                <SuggestionList
+                  items={originAirportSuggestions.map((a) => ({
+                    key: a.iata + a.name,
+                    label: a.label,
+                  }))}
+                  onPick={(index) => pickAirport("origin", originAirportSuggestions[index])}
+                />
+              ) : null}
             </div>
             <div className="relative">
-              <Label>To</Label>
               <Input
                 value={form.destinationAirport}
                 onChange={(e) => {
@@ -903,32 +892,32 @@ export function CreateTripWizard({
                       : null;
                   void searchAirportsFor("dest", destinationAirport, near);
                 }}
+                onFocus={() => setAirportOpen("dest")}
                 onBlur={() => {
                   window.setTimeout(() => {
                     void refreshFlightEstimate();
                     setDestAirportSuggestions([]);
+                    setAirportOpen((open) => (open === "dest" ? null : open));
                   }, 150);
                 }}
-                className="mt-1"
-                placeholder="CDG"
+                placeholder="To"
+                aria-label="To airport"
                 autoComplete="off"
               />
-              <SuggestionList
-                items={destAirportSuggestions.map((a) => ({
-                  key: a.iata + a.name,
-                  label: a.label,
-                }))}
-                onPick={(index) => pickAirport("dest", destAirportSuggestions[index])}
-              />
+              {airportOpen === "dest" ? (
+                <SuggestionList
+                  items={destAirportSuggestions.map((a) => ({
+                    key: a.iata + a.name,
+                    label: a.label,
+                  }))}
+                  onPick={(index) => pickAirport("dest", destAirportSuggestions[index])}
+                />
+              ) : null}
             </div>
           </div>
           {flightHint ? (
             <p className="text-[11px] leading-snug text-[#6B7280]">{flightHint}</p>
-          ) : (
-            <p className="text-[11px] text-[#6B7280]">
-              Optional. Airlines come from the published route. No fare is shown.
-            </p>
-          )}
+          ) : null}
           <FlightRestrictions
             airlines={routeAirlines}
             preferred={form.preferredAirlines}
@@ -976,38 +965,22 @@ function FlightRestrictions({
 }) {
   const matches = filterAirlines(airlines, { airlines: preferred, pricePoint });
   return (
-    <div className="space-y-3 rounded-[12px] border border-[#E1E5F0] bg-[#F5F7FF] p-3">
-      <div>
-        <Label>Airlines</Label>
-        <Input
-          value={preferred}
-          onChange={(e) => onPreferred(e.target.value)}
-          className="mt-1 bg-white"
-          placeholder="Delta, ANA, or leave blank"
-        />
-      </div>
-      <div>
-        <Label>Price point</Label>
-        <div className="mt-1 flex flex-wrap gap-1.5">
-          {PRICE_POINTS.map((point) => (
-            <button
-              key={point.value}
-              type="button"
-              className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                pricePoint === point.value
-                  ? "bg-[#0400FF] text-white"
-                  : "bg-white text-[#0400FF]"
-              }`}
-              onClick={() => onPricePoint(point.value)}
-            >
-              {point.label}
-            </button>
-          ))}
-        </div>
-        <p className="mt-1 text-[11px] leading-snug text-[#6B7280]">
-          Budget, standard, and premium keep airlines of that kind on the
-          published route. No fare is shown.
-        </p>
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-1.5">
+        {PRICE_POINTS.map((point) => (
+          <button
+            key={point.value}
+            type="button"
+            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              pricePoint === point.value
+                ? "bg-[#0400FF] text-white"
+                : "bg-[#F5F7FF] text-[#0400FF]"
+            }`}
+            onClick={() => onPricePoint(point.value)}
+          >
+            {point.label}
+          </button>
+        ))}
       </div>
       {matches.length ? (
         <div className="flex flex-wrap gap-1.5">
@@ -1017,9 +990,9 @@ function FlightRestrictions({
               <button
                 key={airline.code}
                 type="button"
-                className={`rounded-[10px] border px-2.5 py-1 text-left text-xs ${
+                className={`rounded-full border px-3 py-1 text-xs ${
                   selected
-                    ? "border-[#0400FF] bg-white font-semibold text-[#080B3A]"
+                    ? "border-[#0400FF] bg-[#0400FF] font-semibold text-white"
                     : "border-[#E1E5F0] bg-white text-[#1F2937]"
                 }`}
                 onClick={() => onChoose(selected ? "" : airline.name)}
@@ -1029,15 +1002,14 @@ function FlightRestrictions({
             );
           })}
         </div>
-      ) : airlines.length ? (
-        <p className="text-[11px] text-[#6B7280]">
-          No airline on this route matches those restrictions.
-        </p>
-      ) : (
-        <p className="text-[11px] text-[#6B7280]">
-          Enter both airports to see airlines that fly the route.
-        </p>
-      )}
+      ) : null}
+      <input
+        value={preferred}
+        onChange={(e) => onPreferred(e.target.value)}
+        className="w-full rounded-[12px] border border-[#D1D7E5] px-3 py-2 text-sm"
+        placeholder="Or type an airline"
+        aria-label="Airlines"
+      />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import {
   isAdvancedRequest,
   PRO_REQUIRED_MESSAGE,
 } from "@/lib/billing/entitlements";
+import { withProfileEntitlement } from "@/lib/billing/access";
 import { plannerModel } from "@/lib/billing/model";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
@@ -40,7 +41,20 @@ export async function POST(
   const { message } = bodySchema.parse(await req.json());
   const cookieStore = await cookies();
   const feature = isAdvancedRequest(message) ? "advanced" : "basic";
-  const gate = gateFeature(feature, (name) => cookieStore.get(name)?.value);
+  let accessUserId: string | null = null;
+  try {
+    const supabase = await createSupabaseServerClient();
+    accessUserId = (await supabase.auth.getUser()).data.user?.id ?? null;
+  } catch {
+    accessUserId = null;
+  }
+  const gate = gateFeature(
+    feature,
+    await withProfileEntitlement(
+      (name) => cookieStore.get(name)?.value,
+      accessUserId,
+    ),
+  );
   if (!gate.allowed) {
     return NextResponse.json(
       { error: PRO_REQUIRED_MESSAGE, code: "pro_required" },

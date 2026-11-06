@@ -12,6 +12,7 @@ function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
   const next = params.get("next") ?? "/dashboard";
+  const linkError = params.get("error_description") ?? params.get("error");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +78,13 @@ function LoginForm() {
           placeholder="••••••••"
         />
       </div>
+      {linkError ? (
+        <p className="text-sm text-[#DC2626]">
+          {linkError === "auth"
+            ? "That confirmation link is invalid or expired. Sign in after you confirm, or sign up again."
+            : linkError}
+        </p>
+      ) : null}
       {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
       <Button type="submit" disabled={loading} className="w-full">
         {loading ? "Signing in…" : "Sign in"}
