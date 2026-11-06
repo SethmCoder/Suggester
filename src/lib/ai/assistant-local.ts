@@ -1,11 +1,12 @@
 import type { ActivityRow } from "@/lib/types/trip";
+import { planCheaper, planLongerVisit, planRainChange, planTiredWalk } from "./replan";
 import type { AssistantPatch } from "./patch";
 import { addMinutes } from "./scheduler";
 
 type DayInfo = { id: string; day_index: number };
 
 export function messageAsksForChange(message: string): boolean {
-  return /\b(delay|delayed|late|move|swap|replace|change the|remove|delete|skip|less busy|lighter|shorter|add a|insert|retime|rearrange|make day)\b/i.test(
+  return /\b(delay|delayed|late|behind|move|swap|replace|change the|remove|delete|skip|less busy|lighter|shorter|add a|insert|retime|rearrange|make day|rain|raining|tired|cheaper|more time)\b/i.test(
     message,
   );
 }
@@ -38,6 +39,54 @@ function answerFromPlan(input: {
  * Heuristic itinerary assistant for demo mode and Groq fallback.
  * Flight delays reshuffle the day (drop/move overflow + OSM retimes), not a blind push.
  */
+function localConstraintPatch(input: {
+  message: string;
+  days: DayInfo[];
+  activities: ActivityRow[];
+  dayEnd?: string;
+}): AssistantPatch | null {
+  if (/rain|raining|rainy/i.test(input.message)) return planRainChange(input);
+  if (/tired|too far to walk|don't want to walk|do not want to walk/i.test(input.message)) {
+    return planTiredWalk(input);
+  }
+  if (/cheaper|less expensive|save money/i.test(input.message)) return planCheaper(input);
+  if (/more time/i.test(input.message)) return planLongerVisit(input);
+  return null;
+}
+
+async function indoorReplacement(lat: number, lng: number, destination?: string) {
+  const { discoverPlacesFromOsm } = await import("@/lib/places/osm-discover");
+  const found = await discoverPlacesFromOsm({
+    destination: destination || "nearby",
+    lat,
+    lng,
+    categories: ["museum"],
+    limit: 5,
+  }).catch(() => []);
+  const place = found.find((item) => item.name);
+  if (!place) return null;
+  return {
+    name: place.name,
+    lat: place.lat,
+    lng: place.lng,
+    placeId: place.placeId,
+    address: place.address,
+  };
+}
+
+async function freeReplacement(lat: number, lng: number, destination?: string) {
+  const { discoverPlacesFromOsm } = await import("@/lib/places/osm-discover");
+  const found = await discoverPlacesFromOsm({
+    destination: destination || "nearby",
+    lat,
+    lng,
+    limit: 8,
+  }).catch(() => []);
+  const place = found.find((item) => item.tags.fee === "no" && item.name);
+  if (!place) return null;
+  return { name: place.name, lat: place.lat, lng: place.lng, placeId: place.placeId };
+}
+
 export function buildLocalAssistantPatch(input: {
   message: string;
   days: DayInfo[];
@@ -50,19 +99,24 @@ export function buildLocalAssistantPatch(input: {
   }
   const msg = input.message.toLowerCase();
   const suggestions: string[] = [];
+  const localChange = localConstraintPatch(input);
+  if (localChange) return localChange;
 
   // Flight / arrival delay: "flight delayed 2 hours", "arrive 90 minutes late"
   const delayMatch =
     msg.match(
       /(?:flight|plane|arrival|arrive|landing)?\s*(?:is\s+)?(?:delayed|late)\s*(?:by\s*)?(\d+)\s*(hours?|hrs?|minutes?|mins?)/i,
     ) ||
-    msg.match(/(\d+)\s*(hours?|hrs?|minutes?|mins?)\s*(?:delay|late|behind)/i);
+    msg.match(/(\d+)\s*(hours?|hrs?|minutes?|mins?)\s*(?:delay|late|behind)/i) ||
+    msg.match(/\b(one|two|three|four|five)\s+hours?\s+(?:behind|late|delay)/i);
 
-  if (delayMatch || /flight\s+delay|delayed\s+flight|missed\s+connection/i.test(msg)) {
-    let minutes = 120;
+  if (delayMatch || /flight\s+delay|delayed\s+flight|missed\s+connection|behind schedule|running late/i.test(msg)) {
+    let minutes = 60;
     if (delayMatch) {
-      const n = Number(delayMatch[1]);
-      const unit = delayMatch[2].toLowerCase();
+      const raw = delayMatch[1].toLowerCase();
+      const words: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+      const n = words[raw] ?? Number(raw);
+      const unit = (delayMatch[2] ?? "hours").toLowerCase();
       minutes = unit.startsWith("h") ? n * 60 : n;
     }
     const dayIndex = detectDayIndex(msg, input.days) ?? 0;
@@ -205,6 +259,33 @@ export async function buildLocalAssistantPatchAsync(input: {
     });
   }
   const msg = input.message.toLowerCase();
+  if (/rain|raining|rainy/i.test(input.message)) {
+    const outdoor = input.activities.find((activity) =>
+      /park|garden|beach|viewpoint|outdoor/i.test(activity.name),
+    );
+    const replacement = outdoor?.lat != null && outdoor.lng != null
+      ? await indoorReplacement(outdoor.lat, outdoor.lng, input.destination)
+      : null;
+    return planRainChange({
+      message: input.message,
+      days: input.days,
+      activities: input.activities,
+      replacement,
+    });
+  }
+  if (/tired|too far to walk|don't want to walk|do not want to walk/i.test(input.message)) {
+    return planTiredWalk(input);
+  }
+  if (/cheaper|less expensive|save money/i.test(input.message)) {
+    const paid = input.activities.find((activity) => /a fee is listed/i.test(activity.planning_note ?? ""));
+    const replacement = paid?.lat != null && paid.lng != null
+      ? await freeReplacement(paid.lat, paid.lng, input.destination)
+      : null;
+    return planCheaper({ ...input, replacement });
+  }
+  if (/more time/i.test(input.message)) {
+    return planLongerVisit({ ...input, dayEnd: input.dayEnd });
+  }
   const { isFoodRecommendQuery, buildFoodRecommendPatch } = await import(
     "./recommend-food"
   );
@@ -221,13 +302,16 @@ export async function buildLocalAssistantPatchAsync(input: {
     msg.match(
       /(?:flight|plane|arrival|arrive|landing)?\s*(?:is\s+)?(?:delayed|late)\s*(?:by\s*)?(\d+)\s*(hours?|hrs?|minutes?|mins?)/i,
     ) ||
-    msg.match(/(\d+)\s*(hours?|hrs?|minutes?|mins?)\s*(?:delay|late|behind)/i);
+    msg.match(/(\d+)\s*(hours?|hrs?|minutes?|mins?)\s*(?:delay|late|behind)/i) ||
+    msg.match(/\b(one|two|three|four|five)\s+hours?\s+(?:behind|late|delay)/i);
 
-  if (delayMatch || /flight\s+delay|delayed\s+flight|missed\s+connection/i.test(msg)) {
-    let minutes = 120;
+  if (delayMatch || /flight\s+delay|delayed\s+flight|missed\s+connection|behind schedule|running late/i.test(msg)) {
+    let minutes = 60;
     if (delayMatch) {
-      const n = Number(delayMatch[1]);
-      const unit = delayMatch[2].toLowerCase();
+      const raw = delayMatch[1].toLowerCase();
+      const words: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+      const n = words[raw] ?? Number(raw);
+      const unit = (delayMatch[2] ?? "hours").toLowerCase();
       minutes = unit.startsWith("h") ? n * 60 : n;
     }
     const dayIndex = detectDayIndex(msg, input.days) ?? 0;

@@ -14,6 +14,10 @@ export type ClarifyTurn = {
 const DREAM_MARK = "closest to the days you want";
 const WHERE_MARK = "which part of the trip should carry that";
 const PACE_MARK = "how full should the days feel";
+const PARTY_MARK = "who is traveling";
+const WALK_MARK = "how long a walk between stops";
+const SETTING_MARK = "indoors or outdoors";
+const LEAD_MARK = "which interest should lead";
 
 /** Used only when the model is down or repeats itself. Each step is a different choice. */
 export function localClarifyReply(
@@ -43,6 +47,10 @@ export function localClarifyReply(
 
   if (
     asked(history, PACE_MARK) &&
+    asked(history, PARTY_MARK) &&
+    asked(history, WALK_MARK) &&
+    asked(history, SETTING_MARK) &&
+    (input.interests.length < 2 || asked(history, LEAD_MARK)) &&
     budgetTopicAsked(history, "total") &&
     budgetTopicAsked(history, "split") &&
     budgetTopicAsked(history, "food")
@@ -103,6 +111,56 @@ export function localClarifyReply(
         { id: "casual", label: "Casual sit-down" },
         { id: "nicer", label: "One nicer meal" },
         { id: "mix", label: "A mix" },
+      ],
+    };
+  }
+
+  if (!asked(history, PARTY_MARK)) {
+    return {
+      reply: `${heard}Who is traveling?`,
+      done: false,
+      choices: [
+        { id: "solo", label: "Solo" },
+        { id: "couple", label: "A couple" },
+        { id: "family", label: "Family with children" },
+        { id: "multi", label: "Multigenerational" },
+        { id: "friends", label: "Friends" },
+        { id: "business", label: "Business" },
+      ],
+    };
+  }
+
+  if (!asked(history, WALK_MARK)) {
+    return {
+      reply: `${heard}How long a walk between stops feels comfortable?`,
+      done: false,
+      choices: [
+        { id: "short", label: "Under 15 minutes" },
+        { id: "medium", label: "About 30 minutes" },
+        { id: "open", label: "As far as the route needs" },
+      ],
+    };
+  }
+
+  if (!asked(history, SETTING_MARK)) {
+    return {
+      reply: `${heard}Should the days lean indoors or outdoors?`,
+      done: false,
+      choices: [
+        { id: "indoor", label: "Mostly indoors" },
+        { id: "outdoor", label: "Mostly outdoors" },
+        { id: "either", label: "Either indoors or outdoors" },
+      ],
+    };
+  }
+
+  if (input.interests.length > 1 && !asked(history, LEAD_MARK)) {
+    return {
+      reply: `${heard}Which interest should lead the days?`,
+      done: false,
+      choices: [
+        ...input.interests.slice(0, 3).map((interest) => ({ id: interest, label: interest })),
+        { id: "equal", label: "Keep them equal" },
       ],
     };
   }

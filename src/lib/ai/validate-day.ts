@@ -71,6 +71,8 @@ export function expandInterestQueries(interests: string[]): string[] {
       add("aviation museum");
       add("aircraft museum");
     }
+    if (/architect/i.test(interest)) add("historic building");
+    if (/histor/i.test(interest)) add("historic site");
   }
   if (!out.length) add("tourist attraction");
   return out.slice(0, 6);

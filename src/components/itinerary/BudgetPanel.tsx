@@ -4,12 +4,18 @@ import {
   type BudgetPlan,
 } from "@/lib/trips/budget";
 
+function costLabel(note?: string | null): string {
+  if (/lists this as free/i.test(note ?? "")) return "Listed as free";
+  if (/a fee is listed/i.test(note ?? "")) return "Fee listed, amount not listed";
+  return "Cost not listed";
+}
+
 export function BudgetPanel({
   plan,
   stops,
 }: {
   plan?: BudgetPlan;
-  stops: { id: string; name: string }[];
+  stops: { id: string; name: string; note?: string | null }[];
 }) {
   let total = "Not set";
   if (plan?.total && plan.total > 0) {
@@ -40,19 +46,29 @@ export function BudgetPanel({
           <dt className="text-[#6B7280]">Restaurants</dt>
           <dd className="font-medium">{restaurantLabel(plan?.restaurantStyle)}</dd>
         </div>
+        <div>
+          <dt className="text-[#6B7280]">Party</dt>
+          <dd className="font-medium capitalize">{plan?.party || "Not set"}</dd>
+        </div>
+        <div>
+          <dt className="text-[#6B7280]">Walk limit</dt>
+          <dd className="font-medium">
+            {plan?.maxWalkMinutes ? `${plan.maxWalkMinutes} minutes` : "Not set"}
+          </dd>
+        </div>
       </dl>
       {stops.length ? (
         <ul className="mt-3 space-y-1 text-sm text-[#374151]">
           {stops.map((stop) => (
             <li key={stop.id} className="flex justify-between gap-3">
               <span className="truncate">{stop.name}</span>
-              <span className="shrink-0 text-[#6B7280]">Cost not listed</span>
+              <span className="shrink-0 text-[#6B7280]">{costLabel(stop.note)}</span>
             </li>
           ))}
         </ul>
       ) : null}
       <p className="mt-3 text-xs text-[#6B7280]">
-        Known costs: none listed, so a remaining amount is not calculated.
+        Known dollar amounts are not listed, so the budget cannot be confirmed.
       </p>
     </section>
   );

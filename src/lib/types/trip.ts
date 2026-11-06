@@ -63,6 +63,10 @@ export interface TripPreferencesPayload {
   /** Estimated inbound flight from OpenFlights (no live schedule API). */
   inboundFlight?: InboundFlightPrefs;
   travelers?: number;
+  party?: "solo" | "couple" | "family" | "multigen" | "friends" | "business";
+  interestWeights?: Record<string, number>;
+  maxWalkMinutes?: number;
+  indoorOutdoor?: "indoor" | "outdoor" | "either";
   budget?: number;
   budgetAllocation?: "sights" | "food" | "getting-around" | "mostly-free";
   restaurantStyle?: "street" | "casual" | "sit-down" | "mix";

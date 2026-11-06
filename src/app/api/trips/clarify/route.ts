@@ -107,7 +107,7 @@ export async function POST(req: Request) {
     !replyIgnoresTraveler(message, modeled.reply) &&
     !replyRepeats(previous, modeled.reply) &&
     (modeled.done || modeled.choices.length >= 2) &&
-    !(modeled.done && budgetQuestionsPending(history)) &&
+    !(modeled.done && (budgetQuestionsPending(history) || constraintsStillOpen(history, input.interests))) &&
     !repeatsBudgetTopic(history, modeled.reply);
   const reply = modelOk && modeled ? modeled : local;
   return NextResponse.json({
@@ -121,6 +121,18 @@ export async function POST(req: Request) {
     questions: [],
     source: modelOk ? "model" : "rules",
   });
+}
+
+function constraintsStillOpen(history: ChatLine[], interests: string[]): boolean {
+  const asked = history
+    .filter((line) => line.role === "assistant")
+    .map((line) => line.text.toLowerCase())
+    .join("\n");
+  if (!asked.includes("who is traveling")) return true;
+  if (!asked.includes("how long a walk")) return true;
+  if (!asked.includes("indoors or outdoors")) return true;
+  if (interests.length > 1 && !asked.includes("which interest should lead")) return true;
+  return false;
 }
 
 function mergeTraveler(

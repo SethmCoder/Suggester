@@ -64,6 +64,25 @@ describe("clarify conversation", () => {
     expect(third.done).toBe(false);
   });
 
+  it("asks who is traveling after the budget questions", () => {
+    const history = [
+      { role: "assistant" as const, text: "Which of these is closest to the days you want?" },
+      { role: "user" as const, text: "The well-known sights" },
+      { role: "assistant" as const, text: "Which part of the trip should carry that?" },
+      { role: "user" as const, text: "Split it across every city" },
+      { role: "assistant" as const, text: "How much is set aside for the whole trip?" },
+      { role: "user" as const, text: "Under $500" },
+      { role: "assistant" as const, text: "How should that money be used?" },
+      { role: "user" as const, text: "Mostly free" },
+      { role: "assistant" as const, text: "What kind of restaurants should the days lean toward?" },
+      { role: "user" as const, text: "Street food" },
+    ];
+    const turn = localClarifyReply(input, history, "Street food");
+    expect(turn.reply.toLowerCase()).toMatch(/who is traveling/);
+    expect(turn.choices.map((choice) => choice.label)).toContain("Family with children");
+    expect(turn.done).toBe(false);
+  });
+
   it("does not treat a short reply as a finished brief", () => {
     const first = localClarifyReply(input, [], "");
     const turn = localClarifyReply(input, [{ role: "assistant", text: first.reply }], "yes");

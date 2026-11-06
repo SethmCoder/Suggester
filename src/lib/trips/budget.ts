@@ -6,6 +6,8 @@ export type BudgetPlan = {
   currency?: string;
   allocation?: BudgetAllocation;
   restaurantStyle?: RestaurantStyle;
+  party?: string;
+  maxWalkMinutes?: number;
 };
 
 const TOTAL_MARK = "how much is set aside for the whole trip";

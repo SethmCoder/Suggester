@@ -15,6 +15,7 @@ import { filterAirlines, flightRestrictionNote } from "@/lib/flights/airline-cla
 import { estimateFlight } from "@/lib/flights/openflights";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { constraintsFromConversation } from "@/lib/ai/constraints";
 import { budgetFromConversation } from "@/lib/trips/budget";
 import type { InboundFlightPrefs } from "@/lib/types/trip";
 
@@ -31,6 +32,10 @@ const bodySchema = z.object({
   restaurantStyle: z.enum(["street", "casual", "sit-down", "mix"]).optional(),
   rejectedPlaceIds: z.array(z.string().max(120)).max(40).optional(),
   keptPlaceIds: z.array(z.string().max(120)).max(40).optional(),
+  party: z.enum(["solo", "couple", "family", "multigen", "friends", "business"]).optional(),
+  interestWeights: z.record(z.string(), z.number()).optional(),
+  maxWalkMinutes: z.number().int().min(5).max(180).optional(),
+  indoorOutdoor: z.enum(["indoor", "outdoor", "either"]).optional(),
   currency: z.string().optional(),
   interests: z.array(z.string()).default([]),
   intensity: z.enum(["relaxed", "balanced", "packed"]),
@@ -224,13 +229,25 @@ export async function POST(req: Request) {
           body.restaurantStyle ?? budgetFromConversation(body.idealTrip).restaurantStyle,
         rejectedPlaceIds: body.rejectedPlaceIds,
         keptPlaceIds: body.keptPlaceIds,
+        party: body.party ?? constraintsFromConversation(body.idealTrip, body.interests).party,
+        interestWeights:
+          body.interestWeights ??
+          constraintsFromConversation(body.idealTrip, body.interests).interestWeights,
+        maxWalkMinutes:
+          body.maxWalkMinutes ??
+          constraintsFromConversation(body.idealTrip, body.interests).maxWalkMinutes,
+        indoorOutdoor:
+          body.indoorOutdoor ??
+          constraintsFromConversation(body.idealTrip, body.interests).indoorOutdoor,
+        accessibility:
+          body.accessibility ||
+          constraintsFromConversation(body.idealTrip, body.interests).accessibility,
         currency: body.currency,
         interests: body.interests,
         intensity: body.intensity,
         transport: body.transport,
         hotel: body.hotel,
         dietary: body.dietary,
-        accessibility: body.accessibility,
         dayStart,
         dayEnd: body.dayEnd,
         prefersHiddenGems: body.prefersHiddenGems,
@@ -264,6 +281,20 @@ export async function POST(req: Request) {
         body.restaurantStyle ?? budgetFromConversation(body.idealTrip).restaurantStyle,
       rejectedPlaceIds: body.rejectedPlaceIds,
       keptPlaceIds: body.keptPlaceIds,
+      party: body.party ?? constraintsFromConversation(body.idealTrip, body.interests).party,
+      interestWeights:
+        body.interestWeights ??
+        constraintsFromConversation(body.idealTrip, body.interests).interestWeights,
+      maxWalkMinutes:
+        body.maxWalkMinutes ??
+        constraintsFromConversation(body.idealTrip, body.interests).maxWalkMinutes,
+      indoorOutdoor:
+        body.indoorOutdoor ??
+        constraintsFromConversation(body.idealTrip, body.interests).indoorOutdoor,
+      dietary: body.dietary,
+      accessibility:
+        body.accessibility ||
+        constraintsFromConversation(body.idealTrip, body.interests).accessibility,
       dayStart,
       dayEnd: body.dayEnd,
       hotel: body.hotel,

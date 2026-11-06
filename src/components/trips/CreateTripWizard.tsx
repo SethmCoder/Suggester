@@ -13,6 +13,7 @@ import {
 import { PLAN_LIMIT_MESSAGE } from "@/lib/billing/plans";
 import { offlineSnapshotFromGenerated } from "@/lib/trips/offline-from-generated";
 import { budgetFromConversation } from "@/lib/trips/budget";
+import { constraintsFromConversation } from "@/lib/ai/constraints";
 import { readPlaceFeedback } from "@/lib/trips/place-feedback";
 import type { GeneratedDay } from "@/lib/ai/generate-itinerary";
 import { CityHotelField } from "@/components/itinerary/CityHotelField";
@@ -461,6 +462,7 @@ export function CreateTripWizard({
       restaurantStyle: talked.restaurantStyle,
       rejectedPlaceIds: feedback.removed,
       keptPlaceIds: feedback.added,
+      ...constraintsFromConversation(Object.values(clarifyAnswers).join("\n"), form.interests),
       currency: form.currency,
       interests: [
         ...form.interests,

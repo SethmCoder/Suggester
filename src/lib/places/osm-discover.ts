@@ -214,6 +214,9 @@ export function discoveredToPlaceHits(places: DiscoveredPlace[]) {
       .filter(Boolean) as string[],
     formattedAddress: p.address ?? undefined,
     openingHours: p.tags.opening_hours,
+    wheelchair: p.tags.wheelchair ?? null,
+    fee: p.tags.fee ?? null,
+    cuisine: p.tags.cuisine ?? null,
     wikipediaTitle: p.wikipediaTitle,
     wikidataId: p.wikidataId,
   }));

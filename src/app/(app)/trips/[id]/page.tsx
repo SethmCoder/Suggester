@@ -11,13 +11,19 @@ function budgetPlanFrom(preferences: unknown): BudgetPlan | undefined {
     currency?: string;
     budgetAllocation?: BudgetPlan["allocation"];
     restaurantStyle?: BudgetPlan["restaurantStyle"];
+    party?: string;
+    maxWalkMinutes?: number;
   };
-  if (!prefs.budget && !prefs.budgetAllocation && !prefs.restaurantStyle) return undefined;
+  if (!prefs.budget && !prefs.budgetAllocation && !prefs.restaurantStyle && !prefs.party && !prefs.maxWalkMinutes) {
+    return undefined;
+  }
   return {
     total: prefs.budget,
     currency: prefs.currency,
     allocation: prefs.budgetAllocation,
     restaurantStyle: prefs.restaurantStyle,
+    party: prefs.party,
+    maxWalkMinutes: prefs.maxWalkMinutes,
   };
 }
 import { OfflineTripLoader } from "@/components/trips/OfflineTripLoader";

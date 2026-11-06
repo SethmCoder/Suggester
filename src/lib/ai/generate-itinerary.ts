@@ -39,6 +39,19 @@ import {
   orderByRoutedNeighbor,
 } from "./scheduler";
 import {
+  applyDayConstraints,
+  cuisineConflicts,
+  missingMustSees,
+  nameIsAvoided,
+  partyFit,
+  settingFit,
+  stopCap,
+  wantsStepFree,
+  weightedInterestMatch,
+  type SettingLean,
+  type TravelParty,
+} from "./constraints";
+import {
   dropRepeatedExperiences,
   expandInterestQueries,
   explainStop,
@@ -69,6 +82,12 @@ export interface TripPreferencesInput {
   restaurantStyle?: "street" | "casual" | "sit-down" | "mix";
   rejectedPlaceIds?: string[];
   keptPlaceIds?: string[];
+  party?: TravelParty;
+  interestWeights?: Record<string, number>;
+  maxWalkMinutes?: number;
+  indoorOutdoor?: SettingLean;
+  dietary?: string;
+  accessibility?: string;
   dayStart?: string;
   dayEnd?: string;
   hotel?: string;
@@ -103,6 +122,8 @@ export interface GeneratedActivity {
   popularitySources?: string[];
   popularityAttributionUrls?: string[];
   travelMinutesFromPrev?: number;
+  /** True when the previous-leg minutes came from OSRM or Google, not an estimate. */
+  travelRouted?: boolean;
   scheduleWarnings?: string[];
   photoName?: string;
   openingHours?: unknown;
@@ -128,15 +149,12 @@ function isGenericName(name: string): boolean {
   );
 }
 
-function interestMatch(types: string[], interests: string[]): number {
-  if (!interests.length) return 0.5;
-  const lower = types.map((t) => t.toLowerCase());
-  let hits = 0;
-  for (const i of interests) {
-    const token = i.toLowerCase();
-    if (lower.some((t) => t.includes(token) || token.includes(t))) hits += 1;
-  }
-  return Math.min(1, hits / interests.length);
+function interestMatch(
+  types: string[],
+  interests: string[],
+  weights?: Record<string, number>,
+): number {
+  return weightedInterestMatch(types, interests, weights);
 }
 
 function dayCount(start: string, end: string): number {
@@ -398,6 +416,9 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
     wikipediaTitle?: string | null;
     city?: string;
     openingHours?: string;
+    wheelchair?: string | null;
+    fee?: string | null;
+    cuisine?: string | null;
   };
 
   const byId = new Map<string, Hit>();
@@ -520,7 +541,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       legs[0];
     const anchorLat = leg.hotelLat ?? leg.lat ?? geo.lat;
     const anchorLng = leg.hotelLng ?? leg.lng ?? geo.lng;
-    const rel = interestMatch(c.types, prefs.interests);
+    const rel = interestMatch(c.types, prefs.interests, prefs.interestWeights);
     const geoFit =
       1 -
       Math.min(
@@ -559,6 +580,9 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
     if (kept.has(c.placeId.toLowerCase()) || kept.has(c.displayName.toLowerCase())) {
       discoveryRank += 0.35;
     }
+    discoveryRank *= 0.7 + 0.3 * partyFit(c.types, prefs.party);
+    discoveryRank *= 0.75 + 0.25 * settingFit(c.types, prefs.indoorOutdoor);
+    if (cuisineConflicts(prefs.dietary, c.cuisine)) discoveryRank *= 0.25;
     return {
       placeId: c.placeId,
       displayName: c.displayName,
@@ -598,10 +622,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       return b.combinedRank - a.combinedRank;
     });
 
-  const avoidLower = prefs.avoid.map((a) => a.toLowerCase());
-  const filtered = ranked.filter(
-    (c) => !avoidLower.some((a) => c.displayName.toLowerCase().includes(a)),
-  );
+  const filtered = ranked.filter((c) => !nameIsAvoided(c.displayName, prefs.avoid));
 
   const hotelNotes = legs
     .map((l) => {
@@ -849,13 +870,13 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       );
     }
 
-    const tightBudget =
-      prefs.budgetAllocation === "mostly-free" ||
-      (typeof prefs.budget === "number" && prefs.budget > 0 && prefs.budget < 800);
-    const target = Math.min(
-      prefs.intensity === "relaxed" ? 3 : prefs.intensity === "packed" ? 5 : 4,
-      tightBudget || prefs.intensity === "relaxed" ? 3 : 5,
-    );
+    const target = stopCap({
+      intensity: prefs.intensity,
+      party: prefs.party,
+      tightBudget:
+        prefs.budgetAllocation === "mostly-free" ||
+        (typeof prefs.budget === "number" && prefs.budget > 0 && prefs.budget < 800),
+    });
     const sightseeing = () =>
       activities.filter(
         (item) =>
@@ -911,6 +932,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
         const routeLeg = route.legs[i - localStartIdx - 1];
         const travel = routeLeg?.durationMinutes ?? 0;
         activities[i].travelMinutesFromPrev = travel;
+        activities[i].travelRouted = route.source === "osrm" || route.source === "google";
         if (travel > 45) {
           warnings.push(
             `Long transfer (${travel} min) before ${activities[i].name} — likely a real-path detour (bridge, one-way, or sparse paths), not crow-flies distance.`,
@@ -987,15 +1009,55 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       };
     });
 
+    const constrained = applyDayConstraints(
+      scheduled.map((activity) => ({
+        ...activity,
+        types: activity.types ?? byId.get(activity.placeId)?.types ?? [],
+        wheelchair: byId.get(activity.placeId)?.wheelchair,
+        fee: byId.get(activity.placeId)?.fee,
+        cuisine: byId.get(activity.placeId)?.cuisine,
+      })),
+      {
+        maxWalkMinutes: prefs.maxWalkMinutes,
+        walking: prefs.transport !== "driving" && prefs.transport !== "transit",
+        stepFree: wantsStepFree(prefs.accessibility),
+        dietary: prefs.dietary,
+        transit: scheduled
+          .filter((activity) => activity.placeId.startsWith("transit:"))
+          .map((activity) => ({
+            start: activity.startTime,
+            durationMinutes: activity.durationMinutes,
+          })),
+      },
+    );
+    for (const drop of constrained.dropped) warnings.push(drop.reason);
+    const finished = constrained.kept.map((activity) => {
+      const note = constrained.notes[activity.placeId];
+      const extra = [note?.fee, note?.access, note?.cuisine].filter(Boolean).join(" ");
+      const estimateWalk =
+        prefs.maxWalkMinutes &&
+        !activity.travelRouted &&
+        (activity.travelMinutesFromPrev ?? 0) > prefs.maxWalkMinutes
+          ? ["Walk time is an estimate, so it was not used as a hard limit."]
+          : [];
+      return {
+        ...activity,
+        planningNote: extra ? `${activity.planningNote ?? ""} ${extra}`.trim() : activity.planningNote,
+        scheduleWarnings: [...(activity.scheduleWarnings ?? []), ...estimateWalk],
+      };
+    });
+
     days.push({
       dayIndex: assignment.dayIndex,
-      activities: scheduled,
+      activities: finished,
       totalTravelMinutes: route?.totalDurationMinutes,
       totalWalkMeters:
         routeMode === "WALK" ? route?.totalDistanceMeters : undefined,
       routePolyline: route?.polyline,
     });
   }
+
+  warnings.push(...missingMustSees(prefs.mustSee, days.flatMap((day) => day.activities.map((activity) => activity.name))));
 
   return {
     days,

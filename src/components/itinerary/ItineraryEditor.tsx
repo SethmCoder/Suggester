@@ -749,6 +749,7 @@ export function ItineraryEditor({
         stops={(days[selectedDay]?.activities ?? []).map((activity) => ({
           id: activity.id,
           name: activity.name,
+          note: activity.planning_note,
         }))}
       />
       <TripIntelligence
