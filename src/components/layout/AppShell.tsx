@@ -22,9 +22,11 @@ import {
 const NAV = [
   { href: "/dashboard", label: "Home", icon: IconHome },
   { href: "/dashboard", label: "My Trips", icon: IconMap, hash: "trips" },
+  { href: "/discover", label: "Discover", icon: IconSearch },
   { href: "/explore", label: "Local Explorer", icon: IconSearch },
   { href: "/things", label: "Things Search", icon: IconSearch },
-  { href: "/saved-places", label: "Saved Places", icon: IconPin },
+  { href: "/wishlist", label: "Wishlist", icon: IconPin },
+  { href: "/future-trips", label: "Future Trips", icon: IconPlane },
   { href: "/profile", label: "Profile", icon: IconUser },
   { href: "/plan", label: "Plans", icon: IconPlane },
   { href: "/help", label: "Help & Support", icon: IconHelp },
@@ -79,7 +81,7 @@ export function AppShell({
           const tourId =
             item.label === "Home"
               ? "tour-nav-home"
-              : item.label === "Saved Places"
+              : item.label === "Wishlist"
                 ? "tour-nav-saved"
                 : item.label === "Help & Support"
                   ? "tour-nav-help"

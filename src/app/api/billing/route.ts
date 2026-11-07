@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { gateFeature, isProEntitled } from "@/lib/billing/entitlements";
 import { withProfileEntitlement } from "@/lib/billing/access";
+import { LIST_PRICES } from "@/lib/billing/limits";
 import { checkoutConfigured } from "@/lib/billing/stripe";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
@@ -50,7 +51,8 @@ export async function GET() {
     ...plan,
     generateAllowed: generate.allowed,
     entitled: isProEntitled(access),
-    priceUsd: 6.99,
+    priceUsd: LIST_PRICES.proMonthlyUsd,
+    priceAnnualUsd: LIST_PRICES.proAnnualUsd,
     checkoutAvailable: checkoutConfigured(),
   });
 }
@@ -68,13 +70,26 @@ export async function POST(req: Request) {
     if (name === USED_COOKIE) return String(used);
     return undefined;
   });
+  let userId: string | null = null;
+  try {
+    const supabase = await createSupabaseServerClient();
+    userId = (await supabase.auth.getUser()).data.user?.id ?? null;
+  } catch {
+    userId = null;
+  }
+  const access = await withProfileEntitlement(
+    (name) => jar.get(name)?.value,
+    userId,
+  );
   const response = NextResponse.json({
     ...next,
-    priceUsd: 6.99,
+    entitled: isProEntitled(access),
+    priceUsd: LIST_PRICES.proMonthlyUsd,
+    priceAnnualUsd: LIST_PRICES.proAnnualUsd,
     checkoutAvailable: checkoutConfigured(),
     message:
       body.action === "upgrade"
-        ? "Pro is $6.99 a month. Use Subscribe on the Plans page. This request does not turn Pro on."
+        ? `Pro is $${LIST_PRICES.proMonthlyUsd.toFixed(2)} a month or $${LIST_PRICES.proAnnualUsd.toFixed(2)} a year. Use Subscribe on the Plans page. This request does not turn Pro on.`
         : undefined,
   });
   applyCookies(response, plan, used);

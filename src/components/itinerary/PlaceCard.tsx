@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { PlaceBrief } from "@/lib/places/place-brief";
 import { savePlace } from "@/lib/places/saved-places";
+import { saveWishlistItem } from "@/lib/wishlist/sync";
 
 export type SelectedPlace = {
   name: string;
@@ -34,6 +35,7 @@ export function PlaceCard({
   const [tab, setTab] = useState<TabId>("description");
   const [brief, setBrief] = useState<PlaceBrief | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [savedNote, setSavedNote] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -114,17 +116,40 @@ export function PlaceCard({
           <button
             type="button"
             className="mt-1 block text-xs font-semibold text-[#0400FF]"
-            onClick={() =>
+            onClick={() => {
               savePlace({
                 name: place.name,
                 lat: place.lat,
                 lng: place.lng,
                 address: place.address ?? null,
-              })
-            }
+              });
+              void saveWishlistItem({
+                name: place.name,
+                lat: place.lat,
+                lng: place.lng,
+                address: place.address ?? null,
+                location:
+                  place.address?.split(",").slice(-2).join(",").trim() || null,
+                category: "attraction",
+                description: brief?.paragraph || null,
+                photoUrl: brief?.thumbnailUrl || null,
+                photoAttribution: brief?.articleTitle
+                  ? `Wikipedia: ${brief.articleTitle}`
+                  : null,
+                sourceUrl:
+                  brief?.links.find((link) => /wikipedia/i.test(link.label))?.url ||
+                  brief?.links[0]?.url ||
+                  null,
+                externalPlaceId: place.activityId || null,
+                priority: "medium",
+              }).then(() => setSavedNote("Saved to Wishlist"));
+            }}
           >
-            Save place
+            Save to Wishlist
           </button>
+          {savedNote ? (
+            <p className="mt-1 text-[11px] text-[#059669]">{savedNote}</p>
+          ) : null}
         </div>
       </div>
       <div className="flex border-b border-[#E1E5F0] text-xs font-semibold">

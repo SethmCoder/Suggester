@@ -126,11 +126,28 @@ export async function POST(req: Request) {
     }
 
     const parsed = bodySchema.parse(await req.json());
+    let mergedInterests = parsed.interests ?? [];
+    try {
+      const {
+        loadTravelIntelligence,
+        effectiveInterestsServer,
+      } = await import("@/lib/intelligence/server");
+      const profile = await loadTravelIntelligence(supabase, user.id);
+      mergedInterests = [
+        ...new Set([
+          ...(parsed.interests ?? []),
+          ...effectiveInterestsServer(profile),
+        ]),
+      ];
+    } catch {
+      /* keep request interests */
+    }
     const legs = parsed.legs?.length
       ? anchorUnbookedLegs(parsed.legs)
       : parsed.legs;
     const body = {
       ...parsed,
+      interests: mergedInterests,
       legs,
       hotel: legs?.[0]?.hotel || parsed.hotel,
     };

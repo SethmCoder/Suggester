@@ -59,9 +59,9 @@ const STEPS: TourStep[] = [
     placement: "left",
   },
   {
-    title: "Saved places & help",
-    body: "Pin favorites under Saved Places, tweak maps in Settings, and open Help anytime. You’re ready to explore the rest of the app.",
-    href: "/saved-places",
+    title: "Wishlist & help",
+    body: "Save travel ideas under Wishlist, sketch Future Trips before dates are set, tweak maps in Settings, and open Help anytime.",
+    href: "/wishlist",
     target: "tour-nav-saved",
     placement: "right",
   },

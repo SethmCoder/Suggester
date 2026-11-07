@@ -8,7 +8,9 @@ export const AI_MONTH_COOKIE = "waypoint_ai_month";
 export const FREE_AI_LIMIT = 5;
 export const PRO_AI_LIMIT = 80;
 
-export const PRO_PRICE_USD = 6.99;
+/** Monthly list price. Prefer LIST_PRICES / PLAN_LIMITS for UI copy. */
+export const PRO_PRICE_USD = 5.99;
+export const PRO_PRICE_ANNUAL_USD = 49.99;
 
 export type ProFeature =
   | "generate"
@@ -72,4 +74,4 @@ export function isAdvancedRequest(message: string): boolean {
 }
 
 export const PRO_REQUIRED_MESSAGE =
-  "Full itinerary generation, the intelligence panel, optimize, what-if, and import are part of Pro at $6.99 a month. Subscribe from Plans.";
+  "Full itinerary generation, advanced Trip Wizard, optimize, what-if, and import are part of Pro. Subscribe from Plans.";

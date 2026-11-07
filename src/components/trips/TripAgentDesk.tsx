@@ -294,7 +294,7 @@ export function TripAgentDesk({
                 ? "Checking whether generation is included."
                 : canGenerate
                   ? "Generation is included on this account."
-                  : "Generation is Pro at $6.99 a month. Subscribe from Plans."}
+                  : "Generation is part of Pro. Subscribe from Plans."}
             </p>
             {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
             {progress ? <p className="text-sm text-[#0400FF]">{progress}</p> : null}

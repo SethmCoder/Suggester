@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { TripMap } from "@/components/itinerary/TripMap";
 import { IconSearch } from "@/components/ui/Icons";
 import { addPlaceToOfflineTrip } from "@/lib/explorer/add-offline";
@@ -10,6 +11,8 @@ import { emptyPreferences } from "@/lib/explorer/validate";
 import { formatTripDate } from "@/lib/format-date";
 import { listOfflineTrips } from "@/lib/offline/trips";
 import type { TripListItem } from "@/lib/types/trip";
+import { saveWishlistItem } from "@/lib/wishlist/sync";
+import type { WishlistCategory } from "@/lib/wishlist/types";
 
 const PROMPTS = [
   "Find the best restaurants in this city.",
@@ -52,6 +55,7 @@ function dayChoices(trip: TripChoice) {
 }
 
 export function LocalExplorer() {
+  const searchParams = useSearchParams();
   const [city, setCity] = useState("");
   const [draft, setDraft] = useState("");
   const [budget, setBudget] = useState("any");
@@ -75,6 +79,11 @@ export function LocalExplorer() {
 
   const selectedTrip = trips.find((trip) => trip.id === tripId) ?? null;
   const days = selectedTrip ? dayChoices(selectedTrip) : [];
+
+  useEffect(() => {
+    const fromQuery = searchParams.get("city")?.trim();
+    if (fromQuery) setCity(fromQuery);
+  }, [searchParams]);
 
   const pins = useMemo(
     () =>
@@ -369,6 +378,38 @@ export function LocalExplorer() {
                 ) : null}
                 <button type="button" onClick={() => void openAdd(place)} className="rounded-full bg-[#0400FF] px-3 py-1 text-xs font-semibold text-white">
                   Add to itinerary
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const categoryMap: Record<string, WishlistCategory> = {
+                      restaurants: "restaurant",
+                      attractions: "attraction",
+                      architecture: "attraction",
+                      museums: "museum",
+                      nature: "outdoor",
+                      shopping: "experience",
+                    };
+                    void saveWishlistItem({
+                      name: place.name,
+                      lat: place.lat,
+                      lng: place.lng,
+                      address: place.address,
+                      location: city || null,
+                      category: categoryMap[place.category] || "attraction",
+                      description: place.why || null,
+                      photoUrl: place.photoName
+                        ? `/api/places/photo?name=${encodeURIComponent(place.photoName)}`
+                        : null,
+                      sourceUrl: place.mapsUrl || null,
+                      externalPlaceId: place.id,
+                      estimatedPrice: place.priceLevel || null,
+                      priority: "medium",
+                    });
+                  }}
+                  className="rounded-full border border-[#D7DEFF] px-3 py-1 text-xs font-medium text-[#0400FF]"
+                >
+                  Save to Wishlist
                 </button>
               </div>
             </article>

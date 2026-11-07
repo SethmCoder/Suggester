@@ -110,6 +110,38 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  let travelerContextJson: string | undefined;
+  try {
+    const {
+      loadTravelIntelligence,
+      intelligenceContextPayload,
+    } = await import("@/lib/intelligence/server");
+    const supabase = await createSupabaseServerClient();
+    const profile = await loadTravelIntelligence(supabase, userId);
+    const { fetchWishlist } = await import("@/lib/wishlist/server");
+    const { fetchFutureTrips } = await import("@/lib/future-trips/server");
+    const [wishlist, futures] = await Promise.all([
+      fetchWishlist(supabase, userId).catch(() => ({ items: [] as { name: string; category: string; location: string | null }[] })),
+      fetchFutureTrips(supabase, userId).catch(() => []),
+    ]);
+    travelerContextJson = JSON.stringify({
+      travelIntelligence: intelligenceContextPayload(profile),
+      wishlist: wishlist.items.slice(0, 20).map((item) => ({
+        name: item.name,
+        category: item.category,
+        location: item.location,
+      })),
+      futureTrips: futures.slice(0, 12).map((row) => ({
+        destination: row.destination,
+        title: row.title,
+        status: row.status,
+        interests: row.interests,
+      })),
+    });
+  } catch {
+    travelerContextJson = undefined;
+  }
+
   const apiKey = process.env.GROQ_API_KEY;
   const prefs = trip.preferences as
     | { dayEnd?: string; transport?: string }
@@ -217,6 +249,7 @@ export async function POST(
             content: assistantUserPrompt({
               message,
               tripJson: JSON.stringify(trip),
+              travelerContextJson,
             }),
           },
         ],

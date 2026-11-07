@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { countCreatedOfflineTrips } from "@/lib/offline/trips";
 import type { BillingSnapshot } from "@/lib/billing/plans";
+import { LIST_PRICES, planCopy } from "@/lib/billing/limits";
 
 async function syncPlan(action: "sync" | "upgrade" | "downgrade") {
   const created = countCreatedOfflineTrips();
@@ -22,8 +23,10 @@ export default function PlanPage() {
   const [billing, setBilling] = useState<
     (BillingSnapshot & { entitled?: boolean; checkoutAvailable?: boolean }) | null
   >(null);
-  const [busy, setBusy] = useState<"pro" | "free" | "portal" | null>(null);
+  const [busy, setBusy] = useState<"month" | "year" | "portal" | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const free = planCopy(false);
+  const pro = planCopy(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,7 +43,7 @@ export default function PlanPage() {
           const data = (await confirmed.json().catch(() => ({}))) as { error?: string };
           if (!cancelled) setNote(data.error ?? "Checkout could not be confirmed.");
         } else if (!cancelled) {
-          setNote("Pro is active on this account.");
+          setNote("Pro is active on this account. Saved trips and research stay available.");
           window.history.replaceState(null, "", "/plan");
         }
       } else if (cancelledCheckout === "cancel" && !cancelled) {
@@ -59,11 +62,15 @@ export default function PlanPage() {
     };
   }, []);
 
-  async function subscribe() {
-    setBusy("pro");
+  async function subscribe(interval: "month" | "year") {
+    setBusy(interval);
     setNote(null);
     try {
-      const res = await fetch("/api/billing/checkout", { method: "POST" });
+      const res = await fetch("/api/billing/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ interval }),
+      });
       const data = (await res.json()) as { url?: string; error?: string };
       if (!res.ok || !data.url) {
         setNote(data.error ?? "Checkout could not start.");
@@ -101,21 +108,22 @@ export default function PlanPage() {
           Plans
         </h1>
         <p className="mt-1 max-w-xl text-sm text-[#6B7280]">
-          Free plans a few trips with the standard planner. Pro removes the
-          cap and uses the more detailed planner.
+          Free covers year-round research basics. Pro unlocks personalized discovery depth,
+          full itinerary generation, and expanded Trip Wizard. Expiration never deletes your
+          saved trips or research.
         </p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <section className="rounded-[16px] border border-[#E1E5F0] bg-white p-6 shadow-[0_4px_20px_rgba(8,11,58,0.04)]">
           <p className="text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
-            Free
+            {free.title}
           </p>
           <p className="mt-2 text-2xl font-bold text-[#080B3A]">$0</p>
           <ul className="mt-4 space-y-2 text-sm text-[#1F2937]">
-            <li>3 trips</li>
-            <li>Manual editing and the map</li>
-            <li>5 basic Trip Wizard requests a month</li>
+            {free.bullets.map((bullet) => (
+              <li key={bullet}>{bullet}</li>
+            ))}
           </ul>
           <p className="mt-4 text-sm text-[#6B7280]">
             {billing
@@ -141,37 +149,54 @@ export default function PlanPage() {
 
         <section className="rounded-[16px] border border-[#0400FF]/30 bg-[#F5F7FF] p-6 shadow-[0_4px_20px_rgba(4,0,255,0.06)]">
           <p className="text-xs font-semibold uppercase tracking-wide text-[#0400FF]">
-            Pro
+            {pro.title}
           </p>
           <p className="mt-2 text-2xl font-bold text-[#080B3A]">
-            $6.99
+            ${LIST_PRICES.proMonthlyUsd.toFixed(2)}
             <span className="ml-1 text-sm font-medium text-[#6B7280]">/ month</span>
           </p>
+          <p className="mt-1 text-sm text-[#6B7280]">
+            or ${LIST_PRICES.proAnnualUsd.toFixed(2)} / year
+          </p>
           <ul className="mt-4 space-y-2 text-sm text-[#1F2937]">
-            <li>Full multi-day itinerary generation</li>
-            <li>Intelligence panel, optimize, and what-if</li>
-            <li>Import a pasted plan and a higher AI allowance</li>
+            {pro.bullets.map((bullet) => (
+              <li key={bullet}>{bullet}</li>
+            ))}
           </ul>
-          <Button
-            type="button"
-            className="mt-4"
-            disabled={entitled || busy !== null || !checkout}
-            onClick={() => void subscribe()}
-          >
-            {entitled
-              ? "Current plan"
-              : busy === "pro"
+          <div className="mt-4 flex flex-col gap-2">
+            <Button
+              type="button"
+              disabled={entitled || busy !== null || !checkout}
+              onClick={() => void subscribe("month")}
+            >
+              {entitled
+                ? "Current plan"
+                : busy === "month"
+                  ? "Opening checkout…"
+                  : checkout
+                    ? `Subscribe · $${LIST_PRICES.proMonthlyUsd.toFixed(2)}/month`
+                    : "Add a Stripe key to subscribe"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={entitled || busy !== null || !checkout}
+              onClick={() => void subscribe("year")}
+            >
+              {busy === "year"
                 ? "Opening checkout…"
-                : checkout
-                  ? "Subscribe · $6.99/month"
-                  : "Add a Stripe key to subscribe"}
-          </Button>
+                : `Annual · $${LIST_PRICES.proAnnualUsd.toFixed(2)}/year`}
+            </Button>
+          </div>
         </section>
       </div>
 
       {note ? <p className="max-w-xl text-sm text-[#080B3A]">{note}</p> : null}
       <p className="max-w-xl text-xs leading-relaxed text-[#6B7280]">
-        Pro is $6.99 a month through Stripe. A completed checkout turns Pro on for this account. Free stays at 3 trips, manual editing, the map, and 5 basic Trip Wizard requests a month.
+        Billing stays on the existing Stripe checkout. Prices are centralized in plan limits —
+        ${LIST_PRICES.proMonthlyUsd.toFixed(2)} monthly or ${LIST_PRICES.proAnnualUsd.toFixed(2)} annual.
+        Letting Pro lapse keeps your trips, wishlist, and future-trip research intact; only Pro
+        generation features pause.
       </p>
     </div>
   );

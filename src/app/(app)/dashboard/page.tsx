@@ -159,6 +159,58 @@ export default function DashboardPage() {
           </div>
       </section>
 
+      <section className="rounded-[16px] border border-[#E1E5F0] bg-white px-6 py-6 shadow-[0_4px_20px_rgba(8,11,58,0.04)]">
+        <h2 className="text-[20px] font-semibold text-[#1F2937]">
+          Keep researching year-round
+        </h2>
+        <p className="mt-1 text-sm text-[#6B7280]">
+          Useful when you are not packing for a trip yet — discover, compare, and organize ideas that stick.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {[
+            {
+              href: "/discover",
+              title: "Discover destinations",
+              body: "Personalized ideas from your interests and saves.",
+            },
+            {
+              href: "/future-trips",
+              title: "Future trips",
+              body: "Continue research projects before they become itineraries.",
+            },
+            {
+              href: "/wishlist",
+              title: "Wishlist",
+              body: "Organize saved places and attractions.",
+            },
+            {
+              href: "/discover/compare",
+              title: "Compare vacations",
+              body: "Side-by-side trade-offs for shortlisted destinations.",
+            },
+            {
+              href: "/profile",
+              title: "Travel preferences",
+              body: "See why recommendations appear and edit what Waypoint learns.",
+            },
+            {
+              href: "/trips/new",
+              title: "Start planning",
+              body: "Turn a researched idea into an active trip.",
+            },
+          ].map((entry) => (
+            <Link
+              key={entry.href}
+              href={entry.href}
+              className="rounded-[12px] border border-[#E1E5F0] px-4 py-3 transition hover:border-[#0400FF]/35"
+            >
+              <p className="font-semibold text-[#080B3A]">{entry.title}</p>
+              <p className="mt-1 text-sm text-[#6B7280]">{entry.body}</p>
+            </Link>
+          ))}
+        </div>
+      </section>
+
       {/* Search + section */}
       <div
         className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"

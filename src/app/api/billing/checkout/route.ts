@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { getSiteUrl } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getStripe, proPriceData } from "@/lib/billing/stripe";
+
+const bodySchema = z
+  .object({
+    interval: z.enum(["month", "year"]).optional(),
+  })
+  .optional();
 
 export async function POST(req: Request) {
   const stripe = getStripe();
@@ -23,16 +30,18 @@ export async function POST(req: Request) {
     );
   }
 
+  const parsed = bodySchema.parse(await req.json().catch(() => ({})));
+  const interval = parsed?.interval ?? "month";
   const origin = req.headers.get("origin") || getSiteUrl();
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer_email: user.email ?? undefined,
     client_reference_id: user.id,
-    line_items: [{ price_data: proPriceData(), quantity: 1 }],
+    line_items: [{ price_data: proPriceData(interval), quantity: 1 }],
     success_url: `${origin}/plan?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/plan?checkout=cancel`,
-    metadata: { userId: user.id },
-    subscription_data: { metadata: { userId: user.id } },
+    metadata: { userId: user.id, interval },
+    subscription_data: { metadata: { userId: user.id, interval } },
   });
 
   return NextResponse.json({ url: session.url });

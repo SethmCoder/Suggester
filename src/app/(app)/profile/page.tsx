@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
+import { TravelPreferences } from "@/components/profile/TravelPreferences";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 export default function ProfilePage() {
@@ -56,15 +57,16 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="mx-auto max-w-lg space-y-6">
+    <div className="mx-auto max-w-2xl space-y-6">
       <div>
         <h1 className="text-[28px] font-bold tracking-tight text-[#1F2937]">
           Profile
         </h1>
         <p className="mt-1 text-sm text-[#6B7280]">
-          Your name and account details.
+          Your name, account details, and travel preferences used across Discover, Wishlist, Future Trips, and Trip Wizard.
         </p>
       </div>
+      <TravelPreferences />
       <div className="rounded-[16px] border border-[#E1E5F0] bg-white p-6 shadow-[0_4px_20px_rgba(8,11,58,0.05)]">
         <div className="mb-6 flex items-center gap-4">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#0400FF] text-xl font-bold text-white">

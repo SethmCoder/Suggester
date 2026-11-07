@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import {
@@ -26,6 +26,13 @@ import {
 } from "@/lib/flights/airline-class";
 import type { HotelPlacePreference } from "@/lib/hotels/hotelrec";
 import type { LegTransitMode } from "@/lib/types/trip";
+import { getFutureTrip, updateFutureTrip } from "@/lib/future-trips/store";
+import { itemsForDestination, getItem } from "@/lib/wishlist/store";
+import type { WishlistItem } from "@/lib/wishlist/types";
+import {
+  effectiveInterests,
+  readIntelligence,
+} from "@/lib/intelligence/store";
 
 const INTERCITY_MODES: { value: LegTransitMode; label: string }[] = [
   { value: "auto", label: "Auto (planner picks)" },
@@ -130,6 +137,14 @@ export function CreateTripWizard({
   previewMode?: boolean;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const futureTripId = searchParams.get("future");
+  const destinationParam = searchParams.get("destination");
+  const daysParam = searchParams.get("days");
+  const [wishlistSuggestions, setWishlistSuggestions] = useState<WishlistItem[]>(
+    [],
+  );
+  const [acceptedWishlistIds, setAcceptedWishlistIds] = useState<string[]>([]);
   const [clarifyAnswers, setClarifyAnswers] = useState<Record<string, string>>(
     {},
   );
@@ -183,6 +198,77 @@ export function CreateTripWizard({
       hotelBrand: "",
     },
   ]);
+  const futureLoaded = useRef(false);
+
+  useEffect(() => {
+    if (destinationParam && !futureTripId && !futureLoaded.current) {
+      futureLoaded.current = true;
+      const days = Math.max(1, Number(daysParam) || 5);
+      setLegs([
+        {
+          city: destinationParam,
+          days,
+          hotel: "",
+          transitFromPrevious: "auto",
+          hotelBooked: false,
+          hotelMinRating: 4,
+          hotelPlace: "center",
+          hotelBrand: "",
+        },
+      ]);
+      setForm((current) => ({
+        ...current,
+        startDate:
+          current.startDate ||
+          new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+      }));
+    }
+  }, [destinationParam, daysParam, futureTripId]);
+
+  useEffect(() => {
+    if (!futureTripId || futureLoaded.current) return;
+    const trip = getFutureTrip(futureTripId);
+    if (!trip) return;
+    futureLoaded.current = true;
+    const days = Math.max(1, trip.estimatedDurationDays || 3);
+    const start =
+      trip.potentialStart ||
+      new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+    setForm((current) => ({
+      ...current,
+      tripTitle: trip.title || current.tripTitle,
+      startDate: start,
+      travelers: trip.travelers || current.travelers,
+      budget: trip.budget != null ? String(trip.budget) : current.budget,
+      currency: trip.currency || current.currency,
+      interests: trip.interests.length ? trip.interests : current.interests,
+      transport: trip.transport || current.transport,
+      idealTrip: trip.notes || current.idealTrip,
+      mustSee: current.mustSee,
+      preferred: current.preferred,
+    }));
+    setLegs([
+      {
+        city: trip.destination,
+        days,
+        hotel: "",
+        transitFromPrevious: "auto",
+        hotelBooked: false,
+        hotelMinRating: 4,
+        hotelPlace: "center",
+        hotelBrand: "",
+      },
+    ]);
+    const linked = trip.wishlistItemIds
+      .map((id) => getItem(id))
+      .filter((item): item is WishlistItem => Boolean(item));
+    const nearby = itemsForDestination(trip.destination);
+    const merged = [...linked];
+    for (const item of nearby) {
+      if (!merged.some((row) => row.id === item.id)) merged.push(item);
+    }
+    setWishlistSuggestions(merged);
+  }, [futureTripId]);
   const [citySuggestions, setCitySuggestions] = useState<
     Record<number, CitySuggestion[]>
   >({});
@@ -449,6 +535,15 @@ export function CreateTripWizard({
     const destination = legs.map((l) => l.city).filter(Boolean).join(" → ");
     const talked = budgetFromConversation(Object.values(clarifyAnswers).join("\n"));
     const feedback = readPlaceFeedback();
+    const approved = wishlistSuggestions.filter((item) =>
+      acceptedWishlistIds.includes(item.id),
+    );
+    const approvedMust = approved
+      .filter((item) => item.priority === "high")
+      .map((item) => item.name);
+    const approvedPreferred = approved
+      .filter((item) => item.priority !== "high")
+      .map((item) => item.name);
     const body = {
       destination,
       departureCity: form.departureCity,
@@ -465,8 +560,11 @@ export function CreateTripWizard({
       ...constraintsFromConversation(Object.values(clarifyAnswers).join("\n"), form.interests),
       currency: form.currency,
       interests: [
-        ...form.interests,
-        ...(form.customInterest ? [form.customInterest] : []),
+        ...new Set([
+          ...form.interests,
+          ...(form.customInterest ? [form.customInterest] : []),
+          ...effectiveInterests(readIntelligence()),
+        ]),
       ],
       intensity: form.intensity,
       transport: form.transport,
@@ -476,8 +574,12 @@ export function CreateTripWizard({
       dayStart: form.dayStart,
       dayEnd: form.dayEnd,
       prefersHiddenGems: form.prefersHiddenGems,
-      mustSee: splitList(form.mustSee),
-      preferred: splitList(form.preferred),
+      mustSee: [...new Set([...splitList(form.mustSee), ...approvedMust])],
+      preferred: [
+        ...new Set([...splitList(form.preferred), ...approvedPreferred]),
+      ],
+      futureTripId: futureTripId || undefined,
+      idempotencyKey: futureTripId ? `future:${futureTripId}` : undefined,
       optional: splitList(form.optional),
       avoid: splitList(form.avoid),
       preferredAirlines: form.preferredAirlines.trim() || undefined,
@@ -565,6 +667,12 @@ export function CreateTripWizard({
             },
           }),
         );
+        if (futureTripId) {
+          updateFutureTrip(futureTripId, {
+            convertedTripId: tripId,
+            status: "ready",
+          });
+        }
         router.push(`/trips/${tripId}`);
         router.refresh();
       } catch (e) {
@@ -591,6 +699,20 @@ export function CreateTripWizard({
       if (!res.ok) {
         if (data.code === "plan_limit") setPlanLimited(true);
         throw new Error(data.error ?? "Failed");
+      }
+      if (futureTripId && data.tripId) {
+        updateFutureTrip(futureTripId, {
+          convertedTripId: data.tripId as string,
+          status: "ready",
+        });
+        void fetch(`/api/future-trips/${futureTripId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            convertedTripId: data.tripId,
+            status: "ready",
+          }),
+        });
       }
       // Mirror server trip locally so later offline edits still work
       try {
@@ -640,6 +762,46 @@ export function CreateTripWizard({
   const firstLeg = legs[0];
 
   return (
+    <div className="space-y-4">
+      {wishlistSuggestions.length ? (
+        <section className="rounded-[16px] border border-[#E1E5F0] bg-white p-4 shadow-[0_4px_20px_rgba(8,11,58,0.04)]">
+          <h2 className="text-sm font-semibold text-[#080B3A]">
+            Wishlist matches for this trip
+          </h2>
+          <p className="mt-1 text-sm text-[#6B7280]">
+            Approve only the places you want considered. Nothing is inserted automatically.
+          </p>
+          <ul className="mt-3 space-y-2">
+            {wishlistSuggestions.map((item) => {
+              const checked = acceptedWishlistIds.includes(item.id);
+              return (
+                <li key={item.id} className="flex items-start gap-3 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={checked}
+                    onChange={() =>
+                      setAcceptedWishlistIds((current) =>
+                        checked
+                          ? current.filter((id) => id !== item.id)
+                          : [...current, item.id],
+                      )
+                    }
+                  />
+                  <div>
+                    <p className="font-medium text-[#1F2937]">{item.name}</p>
+                    <p className="text-xs text-[#6B7280]">
+                      {item.category}
+                      {item.location ? ` · ${item.location}` : ""}
+                      {item.priority === "high" ? " · high priority" : ""}
+                    </p>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
     <TripAgentDesk
       places={legs.map((leg, index) => ({
         city: leg.city,
@@ -894,6 +1056,7 @@ export function CreateTripWizard({
         </div>
       }
     />
+    </div>
   );
 }
 

@@ -33,6 +33,16 @@ export function rememberRemovedPlace(id: string | null | undefined) {
     removed: [value, ...current.removed.filter((item) => item !== value)].slice(0, 40),
     added: current.added.filter((item) => item !== value),
   });
+  // Soft signal once per remove — evidence still needs repeats before it steers ranking.
+  void import("@/lib/intelligence/sync")
+    .then(({ postIntelligenceSignal }) =>
+      postIntelligenceSignal({
+        type: "activity_dismiss",
+        name: value,
+        types: /night|bar|club|casino/i.test(value) ? ["nightlife"] : ["attraction"],
+      }),
+    )
+    .catch(() => undefined);
 }
 
 export function rememberAddedPlace(id: string | null | undefined) {
@@ -43,4 +53,13 @@ export function rememberAddedPlace(id: string | null | undefined) {
     added: [value, ...current.added.filter((item) => item !== value)].slice(0, 40),
     removed: current.removed.filter((item) => item !== value),
   });
+  void import("@/lib/intelligence/sync")
+    .then(({ postIntelligenceSignal }) =>
+      postIntelligenceSignal({
+        type: "activity_keep",
+        name: value,
+        types: ["attraction"],
+      }),
+    )
+    .catch(() => undefined);
 }
