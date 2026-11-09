@@ -12,10 +12,14 @@ import {
   type ClarifyTurn,
 } from "@/lib/trips/clarify-chat";
 import type { ClarifyInput } from "@/lib/trips/clarify";
+import {
+  coveredClarifyTopics,
+  parseTripBrief,
+} from "@/lib/trips/parse-brief";
 
 const lineSchema = z.object({
   role: z.enum(["user", "assistant"]),
-  text: z.string().max(2000),
+  text: z.string().max(6000),
 });
 
 const travelerSchema = z.object({
@@ -49,25 +53,28 @@ const bodySchema = z.object({
   idealTrip: z.string().optional(),
   cities: z.array(z.string()).optional(),
   tripTitle: z.string().optional(),
-  history: z.array(lineSchema).max(16).optional(),
-  message: z.string().max(2000).optional(),
+  history: z.array(lineSchema).max(24).optional(),
+  message: z.string().max(6000).optional(),
   traveler: travelerSchema.nullable().optional(),
 });
 
-const SYSTEM = `You are Trip Wizard, writing this chat for one specific trip. Be warm and concrete. Do not quote their sentence back.
+const SYSTEM = `You are Trip Wizard, writing this chat for one specific trip. Be warm and concrete. Do not quote their whole message back.
 
-The trip may include several cities. Talk about the whole trip. If more than one city is listed, do not ask only about the first city. Bring in a city that has not been discussed yet.
+Travelers often paste a long brief (who they travel with, ages, interests, must-dos, budget, pace). First extract what they already said. In one short sentence, acknowledge only the useful facts (for example: family with a 12-year-old, food and museums, Colosseum). Then ask exactly one follow-up about something still missing.
 
-Never repeat a question that is already in the history. Read their latest answer and ask one new question that follows from it.
+Never re-ask a fact they already gave. Never repeat a question that is already in the history.
 
-Every question is multiple choice. Write 3 or 4 short options a traveler can tap. Do not include an Other option; the app adds that. The reply is one or two sentences: acknowledge what they just said, then ask the question.
+If more than one city is listed, talk about the whole trip. Do not ask only about the first city.
 
-Do not ask how many days, the dates, or which cities they are visiting. Those are already chosen. Ask about the kind of days they want, using their latest answer and every city on the trip.
+Do not ask how many days, the dates, or which cities they are visiting — those are already chosen in the form.
 
-Before you set done, the history must already include three budget questions: how much is set aside for the whole trip, how that money should be used, and what kind of restaurants the days should lean toward. Ask any of those that are missing, as multiple choice. Use ranges for the total, and let a typed amount arrive through Other.
-If a saved traveler profile is provided, use only those facts. If past trip names are provided, you may ask whether this trip should feel like one of those. If that list is empty, do not invent a past trip.
-Do not invent hotel names, fares, opening hours, ratings, populations, or reservations.
-When those budget answers and the pace of the days are already in the history, you may set done to true and offer no choices.
+Every follow-up is multiple choice. Write 3 or 4 short options. Do not include Other; the app adds that.
+
+Before done=true, make sure these are covered either in their messages or earlier questions: who is traveling (or kids/ages), walk comfort, indoors vs outdoors, day pace, and three budget topics (whole-trip amount, how money is used, restaurant style). Skip any topic already answered in the long brief.
+
+When enough is covered, set done=true, leave choices empty, and tell them to review the trip brief on the right and tap Generate itinerary.
+
+If a saved traveler profile or past trip names are provided, use only those facts. Do not invent hotels, fares, hours, ratings, or reservations.
 Return JSON only: {"reply":"...","done":false,"choices":[{"id":"a","label":"..."}]}`;
 
 export async function POST(req: Request) {
@@ -94,20 +101,35 @@ export async function POST(req: Request) {
   };
   const history = (body.history ?? []) as ChatLine[];
   const message = body.message?.trim() ?? "";
+  const userCorpus = [
+    ...history.filter((line) => line.role === "user").map((line) => line.text),
+    message,
+    body.idealTrip ?? "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const extracted = parseTripBrief(userCorpus);
+  const covered = coveredClarifyTopics(userCorpus, input.interests);
   const [pastTrips, savedTraveler] = await Promise.all([recentTripNames(), loadTraveler()]);
   const traveler = mergeTraveler(savedTraveler, body.traveler);
   const local = localClarifyReply(input, history, message);
   const opening = history.every((line) => line.role !== "assistant");
-  const modeled = opening
-    ? null
-    : await modelReply(input, history, message, pastTrips, traveler, body.tripTitle);
+  const richMessage = message.length >= 80;
+  const modeled =
+    opening && !richMessage
+      ? null
+      : await modelReply(input, history, message, pastTrips, traveler, body.tripTitle, extracted);
   const previous = [...history].reverse().find((line) => line.role === "assistant")?.text;
   const modelOk =
     modeled &&
     !replyIgnoresTraveler(message, modeled.reply) &&
     !replyRepeats(previous, modeled.reply) &&
     (modeled.done || modeled.choices.length >= 2) &&
-    !(modeled.done && (budgetQuestionsPending(history) || constraintsStillOpen(history, input.interests))) &&
+    !(
+      modeled.done &&
+      (stillNeedsBudget(history, covered) ||
+        constraintsStillOpen(history, input.interests, covered))
+    ) &&
     !repeatsBudgetTopic(history, modeled.reply);
   const reply = modelOk && modeled ? modeled : local;
   return NextResponse.json({
@@ -119,19 +141,38 @@ export async function POST(req: Request) {
     question: reply.done ? null : { id: "chat", prompt: reply.reply },
     why: null,
     questions: [],
+    extracted,
     source: modelOk ? "model" : "rules",
   });
 }
 
-function constraintsStillOpen(history: ChatLine[], interests: string[]): boolean {
+function stillNeedsBudget(
+  history: ChatLine[],
+  covered: ReturnType<typeof coveredClarifyTopics>,
+): boolean {
+  if (covered.budgetTotal && covered.budgetSplit && covered.budgetFood) return false;
+  return budgetQuestionsPending(history);
+}
+
+function constraintsStillOpen(
+  history: ChatLine[],
+  interests: string[],
+  covered: ReturnType<typeof coveredClarifyTopics>,
+): boolean {
   const asked = history
     .filter((line) => line.role === "assistant")
     .map((line) => line.text.toLowerCase())
     .join("\n");
-  if (!asked.includes("who is traveling")) return true;
-  if (!asked.includes("how long a walk")) return true;
-  if (!asked.includes("indoors or outdoors")) return true;
-  if (interests.length > 1 && !asked.includes("which interest should lead")) return true;
+  if (!covered.party && !asked.includes("who is traveling")) return true;
+  if (!covered.walk && !asked.includes("how long a walk")) return true;
+  if (!covered.setting && !asked.includes("indoors or outdoors")) return true;
+  if (
+    interests.length > 1 &&
+    !covered.lead &&
+    !asked.includes("which interest should lead")
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -201,13 +242,14 @@ async function modelReply(
   pastTrips: string[],
   traveler: TravelerProfile | null,
   tripTitle?: string,
+  extracted?: ReturnType<typeof parseTripBrief>,
 ): Promise<ClarifyTurn | null> {
   if (!process.env.GROQ_API_KEY) return null;
   try {
     const { groqChat } = await import("@/lib/ai/groq");
     const raw = await groqChat({
       temperature: 0.4,
-      effort: "low",
+      effort: message.length >= 80 ? "medium" : "low",
       responseFormat: { type: "json_object" },
       messages: [
         { role: "system", content: SYSTEM },
@@ -223,6 +265,7 @@ async function modelReply(
             intensity: input.intensity,
             transport: input.transport,
             idealTrip: input.idealTrip,
+            alreadyExtracted: extracted ?? null,
             history,
             message,
           }),

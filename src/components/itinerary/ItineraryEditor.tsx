@@ -1232,6 +1232,10 @@ function SortableActivity({
 }) {
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({ id: activity.id });
+  const [dragReady, setDragReady] = useState(false);
+  useEffect(() => {
+    setDragReady(true);
+  }, []);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -1252,8 +1256,8 @@ function SortableActivity({
           <button
             type="button"
             className="cursor-grab text-[10px] tracking-widest text-[#9299B5]"
-            {...attributes}
-            {...listeners}
+            {...(dragReady ? attributes : {})}
+            {...(dragReady ? listeners : {})}
             aria-label="Drag to reorder"
           >
             ⋮⋮

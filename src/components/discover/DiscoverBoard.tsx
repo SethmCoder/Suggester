@@ -1,8 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { LeavePageLink } from "@/components/ui/LeavePageLink";
 import { DestinationCard } from "@/components/discover/DestinationCard";
 import type { DiscoverSection } from "@/lib/discover/types";
 import { listItems } from "@/lib/wishlist/store";
@@ -33,7 +34,8 @@ function readTraveler(): TravelerProfile {
 }
 
 export function DiscoverBoard() {
-  const [query, setQuery] = useState("");
+  const searchParams = useSearchParams();
+  const [query, setQuery] = useState(searchParams.get("q") ?? "");
   const [sections, setSections] = useState<DiscoverSection[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -123,10 +125,16 @@ export function DiscoverBoard() {
 
   useEffect(() => {
     if (!intelReady) return;
+    const fromUrl = searchParams.get("q")?.trim();
+    if (fromUrl) {
+      setQuery(fromUrl);
+      void run(fromUrl);
+      return;
+    }
     void run("Destinations that fit my saved interests");
     // initial personalized load once intelligence is ready
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [intelReady]);
+  }, [intelReady, searchParams]);
 
   function toggleCompare(id: string) {
     setCompareIds((current) => {
@@ -147,20 +155,21 @@ export function DiscoverBoard() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Link href="/wishlist">
-            <Button variant="secondary">Wishlist</Button>
-          </Link>
-          <Link
-            href={
-              compareIds.length >= 2
-                ? `/discover/compare?ids=${compareIds.join(",")}`
-                : "/discover/compare"
-            }
-          >
-            <Button disabled={compareIds.length < 2}>
-              Compare {compareIds.length ? `(${compareIds.length})` : ""}
+          <LeavePageLink href="/wishlist" variant="secondary">
+            Wishlist
+          </LeavePageLink>
+          {compareIds.length >= 2 ? (
+            <LeavePageLink
+              href={`/discover/compare?ids=${compareIds.join(",")}`}
+              variant="primary"
+            >
+              Compare ({compareIds.length})
+            </LeavePageLink>
+          ) : (
+            <Button type="button" disabled title="Select at least two destinations">
+              Compare
             </Button>
-          </Link>
+          )}
         </div>
       </div>
 

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { LeavePageLink } from "@/components/ui/LeavePageLink";
 import { buildDreamerSuggestions } from "@/lib/dreamer/suggestions";
 import {
   listDreamerBookings,
@@ -252,12 +253,9 @@ export function DreamerDetail({ id }: { id: string }) {
               : "Build itinerary from bookings"}
         </Button>
         {trip.convertedTripId ? (
-          <Link
-            href={`/trips/${trip.convertedTripId}`}
-            className="rounded-[10px] bg-[#F5F7FF] px-4 py-2 text-sm font-semibold text-[#0400FF]"
-          >
+          <LeavePageLink href={`/trips/${trip.convertedTripId}`} variant="secondary">
             Open trip
-          </Link>
+          </LeavePageLink>
         ) : null}
       </div>
       {message ? <p className="text-sm text-[#B91C1C]">{message}</p> : null}

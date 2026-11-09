@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import { TravelerIntro } from "@/components/profile/TravelerIntro";
 import {
-  isIntroComplete,
   normalizeTravelerProfile,
+  shouldSkipIntro,
 } from "@/lib/profile/intro-status";
 import { createServiceClient, createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -28,20 +28,39 @@ export default async function WelcomePage({
     const svc = createServiceClient() ?? supabase;
     const { data: profileRow } = await svc
       .from("profiles")
-      .select("traveler_profile")
+      .select("traveler_profile, created_at")
       .eq("id", user.id)
       .maybeSingle();
     const profile = normalizeTravelerProfile(profileRow?.traveler_profile);
+    const profileAgeMs = profileRow?.created_at
+      ? Date.now() - Date.parse(String(profileRow.created_at))
+      : null;
 
-    const { count: tripCount } = await svc
-      .from("trips")
-      .select("id", { count: "exact", head: true })
-      .eq("owner_id", user.id);
+    const [{ count: tripCount }, { count: futureTripCount }, { count: wishlistCount }] =
+      await Promise.all([
+        svc
+          .from("trips")
+          .select("id", { count: "exact", head: true })
+          .eq("owner_id", user.id),
+        svc
+          .from("future_trips")
+          .select("id", { count: "exact", head: true })
+          .eq("owner_id", user.id),
+        svc
+          .from("wishlist_items")
+          .select("id", { count: "exact", head: true })
+          .eq("owner_id", user.id),
+      ]);
 
-    const returning =
-      isIntroComplete(profile) || (typeof tripCount === "number" && tripCount > 0);
-
-    if (returning) {
+    if (
+      shouldSkipIntro({
+        profile,
+        tripCount,
+        futureTripCount,
+        wishlistCount,
+        profileAgeMs,
+      })
+    ) {
       // Route handler sets the intro cookie (RSC cannot), then sends them home.
       redirect(
         `/api/profile/intro/complete?next=${encodeURIComponent(nextPath)}`,

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useMemo, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { TripMap } from "@/components/itinerary/TripMap";
+import { ExternalLink } from "@/components/ui/ExternalLink";
+import { LeavePageLink } from "@/components/ui/LeavePageLink";
 import { IconSearch } from "@/components/ui/Icons";
 import { addPlaceToOfflineTrip } from "@/lib/explorer/add-offline";
 import { EXPLORER_CATEGORIES, type ExplorerCategory, type ExplorerDay, type ExplorerPlace, type ExplorerPreferences, type ExplorerResult } from "@/lib/explorer/types";
@@ -372,9 +374,12 @@ export function LocalExplorer() {
               </button>
               <div className="flex gap-2 px-3 pb-3">
                 {place.mapsUrl ? (
-                  <a href={place.mapsUrl} target="_blank" rel="noreferrer" className="rounded-full border border-[#D7DEFF] px-3 py-1 text-xs font-medium text-[#0400FF]">
+                  <ExternalLink
+                    href={place.mapsUrl}
+                    className="rounded-full border border-[#D7DEFF] px-3 py-1 text-xs font-medium text-[#0400FF]"
+                  >
                     {place.source === "google" ? "View on Google Maps" : "View on map"}
-                  </a>
+                  </ExternalLink>
                 ) : null}
                 <button type="button" onClick={() => void openAdd(place)} className="rounded-full bg-[#0400FF] px-3 py-1 text-xs font-semibold text-white">
                   Add to itinerary
@@ -468,7 +473,9 @@ export function LocalExplorer() {
             </label>
             {addStatus ? <p className="mt-3 text-sm text-[#1F2937]">{addStatus}</p> : null}
             {addStatus?.startsWith("Added") && tripId ? (
-              <Link href={`/trips/${tripId}`} className="mt-2 inline-block text-sm font-medium text-[#0400FF]">Open trip</Link>
+              <LeavePageLink href={`/trips/${tripId}`} variant="ghost" className="mt-2 px-0 py-0">
+                Open trip
+              </LeavePageLink>
             ) : null}
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" className="rounded-full px-3 py-1.5 text-sm text-[#4B5563]" onClick={() => setAddPlace(null)}>Close</button>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { LeavePageLink } from "@/components/ui/LeavePageLink";
 import { IconPlane } from "@/components/ui/Icons";
 import { destinationImageUrl } from "@/lib/destination-image";
 import {
@@ -117,9 +118,9 @@ export function FutureTripsBoard() {
             Hold potential vacations before dates are locked. Attach wishlist places, compare ideas, then start planning when you are ready.
           </p>
         </div>
-        <Link href="/wishlist">
-          <Button variant="secondary">Open wishlist</Button>
-        </Link>
+        <LeavePageLink href="/wishlist" variant="secondary">
+          Open wishlist
+        </LeavePageLink>
       </div>
 
       {error ? (
@@ -274,13 +275,13 @@ export function FutureTripsBoard() {
                   <p className="line-clamp-2 text-sm text-[#4B5563]">{trip.notes}</p>
                 ) : null}
                 <div className="flex flex-wrap gap-2">
-                  <Link href={`/future-trips/${trip.id}`}>
-                    <Button variant="secondary">Open</Button>
-                  </Link>
+                  <LeavePageLink href={`/future-trips/${trip.id}`} variant="secondary">
+                    Open
+                  </LeavePageLink>
                   {trip.convertedTripId ? (
-                    <Link href={`/trips/${trip.convertedTripId}`}>
-                      <Button>Open active trip</Button>
-                    </Link>
+                    <LeavePageLink href={`/trips/${trip.convertedTripId}`} variant="primary">
+                      Open active trip
+                    </LeavePageLink>
                   ) : (
                     <Button type="button" onClick={() => void convert(trip)} disabled={busy}>
                       Start planning

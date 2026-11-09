@@ -113,8 +113,12 @@ function SignupForm() {
     }
     await fetch("/api/demo/end", { method: "POST" }).catch(() => null);
     setLoading(false);
-    router.push(next.startsWith("/") ? next : "/dashboard");
-    router.refresh();
+    const safeNext =
+      next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
+    // Brand-new accounts go through the traveler intro once.
+    window.location.assign(
+      `/welcome?next=${encodeURIComponent(safeNext)}`,
+    );
   }
 
   if (existingEmail) {
@@ -128,8 +132,11 @@ function SignupForm() {
           type="button"
           className="w-full"
           onClick={() => {
-            router.push("/dashboard");
-            router.refresh();
+            void fetch("/api/profile/intro/complete", { method: "POST" })
+              .catch(() => null)
+              .finally(() => {
+                window.location.assign("/dashboard");
+              });
           }}
         >
           Continue to dashboard

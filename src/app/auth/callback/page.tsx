@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
@@ -28,7 +28,6 @@ function safeNext(value: string | null, fallback: string) {
 }
 
 function CallbackInner() {
-  const router = useRouter();
   const params = useSearchParams();
   const [error, setError] = useState<string | null>(null);
 
@@ -95,15 +94,33 @@ function CallbackInner() {
 
       await fetch("/api/demo/end", { method: "POST" }).catch(() => null);
       if (cancelled) return;
-      router.replace(next);
-      router.refresh();
+      // New email confirmations land on welcome; returning sessions skip it.
+      const intro = await fetch("/api/profile/intro")
+        .then((res) => res.json())
+        .catch(() => null);
+      if (cancelled) return;
+      if (intro?.skipIntro) {
+        window.location.assign(next);
+        return;
+      }
+      if (type === "signup" || type === "invite" || type === "email") {
+        window.location.assign(
+          `/welcome?next=${encodeURIComponent(next)}`,
+        );
+        return;
+      }
+      await fetch("/api/profile/intro/complete", { method: "POST" }).catch(
+        () => null,
+      );
+      if (cancelled) return;
+      window.location.assign(next);
     }
 
     void finish();
     return () => {
       cancelled = true;
     };
-  }, [params, router]);
+  }, [params]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#080B3A] px-4">

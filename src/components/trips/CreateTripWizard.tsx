@@ -550,6 +550,78 @@ export function CreateTripWizard({
     });
   }
 
+  function onBriefParsed(extracted: Record<string, unknown>) {
+    const interests = Array.isArray(extracted.interests)
+      ? extracted.interests.filter((item): item is string => typeof item === "string")
+      : [];
+    const mustSee = Array.isArray(extracted.mustSee)
+      ? extracted.mustSee.filter((item): item is string => typeof item === "string")
+      : [];
+    const partyLabel =
+      typeof extracted.party === "string" ? extracted.party : undefined;
+    const childAges = Array.isArray(extracted.childAges)
+      ? extracted.childAges.filter((item): item is number => typeof item === "number")
+      : [];
+    if (partyLabel) {
+      const label =
+        partyLabel === "family" && childAges.length
+          ? `Family with ${childAges.map((age) => `${age}-year-old`).join(" and ")}`
+          : partyLabel === "multigen"
+            ? "Multigenerational"
+            : partyLabel.charAt(0).toUpperCase() + partyLabel.slice(1);
+      setParty(label);
+    }
+    if (mustSee.length) {
+      setMajorStops((prev) => {
+        const next = [...prev];
+        for (const stop of mustSee) {
+          if (!next.some((item) => item.toLowerCase() === stop.toLowerCase())) {
+            next.push(stop);
+          }
+        }
+        return next.slice(0, 16);
+      });
+    }
+    setForm((current) => {
+      const mergedInterests = [...current.interests];
+      for (const interest of interests) {
+        if (!mergedInterests.some((item) => item.toLowerCase() === interest.toLowerCase())) {
+          mergedInterests.push(interest);
+        }
+      }
+      const travelers =
+        typeof extracted.travelers === "number" && extracted.travelers >= 1
+          ? extracted.travelers
+          : current.travelers;
+      const intensity =
+        extracted.intensity === "relaxed" ||
+        extracted.intensity === "balanced" ||
+        extracted.intensity === "packed"
+          ? extracted.intensity
+          : current.intensity;
+      const transport =
+        typeof extracted.transport === "string" && extracted.transport
+          ? extracted.transport
+          : current.transport;
+      const note =
+        typeof extracted.summary === "string" && extracted.summary.trim()
+          ? extracted.summary.trim()
+          : "";
+      const idealTrip =
+        note && !current.idealTrip.toLowerCase().includes(note.toLowerCase())
+          ? [current.idealTrip.trim(), note].filter(Boolean).join(". ")
+          : current.idealTrip;
+      return {
+        ...current,
+        interests: mergedInterests.slice(0, 12),
+        travelers,
+        intensity,
+        transport,
+        idealTrip,
+      };
+    });
+  }
+
   function onExchange(userText: string, asked: string) {
     const id = `turn-${Object.keys(clarifyAnswers).length + 1}`;
     setClarifyPrompts((prev) => ({ ...prev, [id]: asked || "Trip notes" }));
@@ -1079,6 +1151,7 @@ export function CreateTripWizard({
       onMajorStopsChange={setMajorStops}
       idealTrip={form.idealTrip}
       onExchange={onExchange}
+      onBriefParsed={onBriefParsed}
       canGenerate={canGenerate}
       loading={loading}
       progress={progress}

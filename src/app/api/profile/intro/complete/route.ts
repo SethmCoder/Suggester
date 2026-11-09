@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
 import {
-  isIntroComplete,
   markIntroComplete,
   normalizeTravelerProfile,
 } from "@/lib/profile/intro-status";
 import { INTRO_COOKIE, emptyTraveler } from "@/lib/profile/traveler";
 import { createServiceClient, createSupabaseServerClient } from "@/lib/supabase/server";
+
+function setIntroCookie(res: NextResponse) {
+  res.cookies.set(INTRO_COOKIE, "1", {
+    path: "/",
+    sameSite: "lax",
+    maxAge: 60 * 60 * 24 * 365,
+  });
+}
 
 /** Sets the intro cookie for returning accounts and redirects into the app. */
 export async function GET(req: Request) {
@@ -26,27 +33,17 @@ export async function GET(req: Request) {
       .select("traveler_profile")
       .eq("id", user.id)
       .maybeSingle();
-    const profile = normalizeTravelerProfile(data?.traveler_profile);
-    const { count } = await svc
-      .from("trips")
-      .select("id", { count: "exact", head: true })
-      .eq("owner_id", user.id);
-    const returning =
-      isIntroComplete(profile) || (typeof count === "number" && count > 0);
-    if (returning && !profile.completed) {
-      await svc.from("profiles").upsert({
-        id: user.id,
-        traveler_profile: markIntroComplete(profile),
-      });
-    }
+    const profile = markIntroComplete(
+      normalizeTravelerProfile(data?.traveler_profile) || emptyTraveler(),
+    );
+    await svc.from("profiles").upsert({
+      id: user.id,
+      traveler_profile: profile,
+    });
   }
 
   const res = NextResponse.redirect(new URL(nextPath, req.url));
-  res.cookies.set(INTRO_COOKIE, "1", {
-    path: "/",
-    sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 365,
-  });
+  setIntroCookie(res);
   return res;
 }
 
@@ -72,10 +69,6 @@ export async function POST() {
     traveler_profile: profile,
   });
   const res = NextResponse.json({ ok: true, profile });
-  res.cookies.set(INTRO_COOKIE, "1", {
-    path: "/",
-    sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 365,
-  });
+  setIntroCookie(res);
   return res;
 }

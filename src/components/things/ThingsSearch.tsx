@@ -19,8 +19,9 @@ const PROMPTS = [
 export function ThingsSearch() {
   const searchParams = useSearchParams();
   const tripFromQuery = searchParams.get("trip");
+  const queryFromSearch = searchParams.get("q")?.trim() ?? "";
   const [city, setCity] = useState("");
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(queryFromSearch);
   const [thread, setThread] = useState<ChatLine[]>([]);
   const [places, setPlaces] = useState<ExplorerPlace[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
@@ -49,6 +50,13 @@ export function ThingsSearch() {
       setOfflineTrips([]);
     }
   }, []);
+
+  useEffect(() => {
+    if (!queryFromSearch) return;
+    setDraft(queryFromSearch);
+    void ask(queryFromSearch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed from header search once
+  }, [queryFromSearch]);
 
   const pins = useMemo(
     () =>

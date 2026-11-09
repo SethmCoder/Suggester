@@ -1,57 +1,92 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { ChoiceList } from "@/components/chat/ChoiceList";
 import { Button } from "@/components/ui/Button";
-import { INTRO_COOKIE, TRAVELER_STORAGE_KEY, type TravelerProfile } from "@/lib/profile/traveler";
+import {
+  setIntroCookieClient,
+  shouldSkipIntro,
+} from "@/lib/profile/intro-status";
+import {
+  TRAVELER_STORAGE_KEY,
+  type TravelerProfile,
+} from "@/lib/profile/traveler";
 
 type Line = { role: "agent" | "you"; text: string };
 type Choice = { id: string; label: string };
 
 export function TravelerIntro({ nextPath }: { nextPath: string }) {
-  const router = useRouter();
   const [log, setLog] = useState<Line[]>([]);
   const [choices, setChoices] = useState<Choice[]>([]);
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [needsIntro, setNeedsIntro] = useState(false);
   const [other, setOther] = useState(false);
+  const [skipping, setSkipping] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
   const started = useRef(false);
+  const cancelled = useRef(false);
 
-  function finishAndGo(profile?: TravelerProfile) {
+  function leaveIntro(profile?: TravelerProfile) {
     if (profile) writeLocal(profile);
-    document.cookie = `${INTRO_COOKIE}=1; path=/; max-age=31536000; samesite=lax`;
-    router.replace(nextPath);
+    setIntroCookieClient();
+    // Full navigation so middleware always sees the intro cookie.
+    window.location.assign(nextPath);
   }
 
   useEffect(() => {
     if (started.current) return;
     started.current = true;
+    cancelled.current = false;
     const saved = readLocal();
     if (saved?.completed) {
-      finishAndGo(saved);
+      leaveIntro(saved);
       return;
     }
     void fetch("/api/profile/intro")
       .then((res) => res.json())
-      .then((data: { profile?: TravelerProfile }) => {
-        if (data.profile?.completed) {
-          finishAndGo(data.profile);
-          return;
-        }
-        setNeedsIntro(true);
-        return ask([], "");
-      })
+      .then(
+        (data: {
+          profile?: TravelerProfile;
+          skipIntro?: boolean;
+          tripCount?: number;
+          futureTripCount?: number;
+          wishlistCount?: number;
+        }) => {
+          if (cancelled.current) return;
+          if (
+            data.skipIntro ||
+            shouldSkipIntro({
+              profile: data.profile,
+              tripCount: data.tripCount,
+              futureTripCount: data.futureTripCount,
+              wishlistCount: data.wishlistCount,
+            })
+          ) {
+            leaveIntro(
+              data.profile?.completed
+                ? data.profile
+                : { completed: true, answers: data.profile?.answers ?? [] },
+            );
+            return;
+          }
+          setNeedsIntro(true);
+          return ask([], "");
+        },
+      )
       .catch(() => {
+        if (cancelled.current) return;
         setNeedsIntro(true);
         setStatus("error");
       });
+    return () => {
+      cancelled.current = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
-  }, [nextPath, router]);
+  }, [nextPath]);
 
   async function ask(history: { role: "user" | "assistant"; text: string }[], message: string) {
+    if (cancelled.current) return;
     setStatus("loading");
     const res = await fetch("/api/profile/intro", {
       method: "POST",
@@ -59,6 +94,7 @@ export function TravelerIntro({ nextPath }: { nextPath: string }) {
       body: JSON.stringify({ history, message }),
     });
     const data = await res.json();
+    if (cancelled.current) return;
     if (!res.ok) throw new Error(data.error ?? "Could not continue");
     setChoices((data.choices as Choice[]) ?? []);
     setOther(false);
@@ -66,14 +102,16 @@ export function TravelerIntro({ nextPath }: { nextPath: string }) {
     setStatus("ready");
     if (data.done && data.profile) {
       writeLocal(data.profile as TravelerProfile);
-      document.cookie = `${INTRO_COOKIE}=1; path=/; max-age=31536000; samesite=lax`;
-      window.setTimeout(() => router.push(nextPath), 900);
+      setIntroCookieClient();
+      window.setTimeout(() => {
+        if (!cancelled.current) window.location.assign(nextPath);
+      }, 900);
     }
   }
 
   async function send(text: string) {
     const said = text.trim();
-    if (!said || status === "loading") return;
+    if (!said || status === "loading" || skipping) return;
     const history = log.map((line) => ({
       role: line.role === "you" ? ("user" as const) : ("assistant" as const),
       text: line.text,
@@ -86,6 +124,18 @@ export function TravelerIntro({ nextPath }: { nextPath: string }) {
     } catch {
       setStatus("error");
     }
+  }
+
+  function skipIntro() {
+    if (skipping) return;
+    setSkipping(true);
+    cancelled.current = true;
+    const profile: TravelerProfile = { completed: true, answers: [] };
+    writeLocal(profile);
+    setIntroCookieClient();
+    // Persist in the background; navigation must not wait on the network.
+    void fetch("/api/profile/intro/complete", { method: "POST" }).catch(() => null);
+    window.location.assign(nextPath);
   }
 
   if (!needsIntro) {
@@ -105,14 +155,11 @@ export function TravelerIntro({ nextPath }: { nextPath: string }) {
       </p>
       <button
         type="button"
-        className="mt-2 text-sm font-semibold text-[#0400FF]"
-        onClick={() => {
-          void fetch("/api/profile/intro/complete", { method: "POST" })
-            .then(() => finishAndGo({ completed: true, answers: [] }))
-            .catch(() => finishAndGo({ completed: true, answers: [] }));
-        }}
+        className="mt-2 text-sm font-semibold text-[#0400FF] disabled:opacity-60"
+        disabled={skipping}
+        onClick={skipIntro}
       >
-        Skip — I’ve used Waypoint before
+        {skipping ? "Skipping…" : "Skip — I’ve used Waypoint before"}
       </button>
       <div className="mt-5 space-y-3">
         {log.map((line, index) => (
@@ -125,7 +172,7 @@ export function TravelerIntro({ nextPath }: { nextPath: string }) {
             {line.text}
           </p>
         ))}
-        {status === "ready" ? (
+        {status === "ready" && !skipping ? (
           <ChoiceList
             choices={choices}
             onPick={(label) => void send(label)}
@@ -135,7 +182,7 @@ export function TravelerIntro({ nextPath }: { nextPath: string }) {
             }}
           />
         ) : null}
-        {status === "loading" ? <p className="text-sm text-[#0400FF]">Thinking…</p> : null}
+        {status === "loading" && !skipping ? <p className="text-sm text-[#0400FF]">Thinking…</p> : null}
         {status === "error" ? (
           <p className="text-sm text-[#DC2626]">That reply did not come through. You can try again.</p>
         ) : null}
@@ -148,6 +195,7 @@ export function TravelerIntro({ nextPath }: { nextPath: string }) {
           onChange={(e) => setDraft(e.target.value)}
           placeholder={other ? "Type your own answer" : "Or type your own answer"}
           className="min-h-11 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-[#080B3A] outline-none placeholder:text-[#9299B5]"
+          disabled={skipping}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
@@ -155,7 +203,7 @@ export function TravelerIntro({ nextPath }: { nextPath: string }) {
             }
           }}
         />
-        <Button type="button" onClick={() => void send(draft)} disabled={!draft.trim() || status === "loading"}>
+        <Button type="button" onClick={() => void send(draft)} disabled={!draft.trim() || status === "loading" || skipping}>
           Send
         </Button>
       </div>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { LeavePageLink } from "@/components/ui/LeavePageLink";
 import {
   FUTURE_TRIP_STATUSES,
   statusLabel,
@@ -82,9 +83,9 @@ export function FutureTripDetail({ id }: { id: string }) {
     return (
       <div className="space-y-4">
         <p className="text-sm text-[#6B7280]">That future trip was not found.</p>
-        <Link href="/future-trips">
-          <Button variant="secondary">Back to future trips</Button>
-        </Link>
+        <LeavePageLink href="/future-trips" variant="secondary">
+          Back to future trips
+        </LeavePageLink>
       </div>
     );
   }
@@ -103,9 +104,9 @@ export function FutureTripDetail({ id }: { id: string }) {
         </div>
         <div className="flex flex-wrap gap-2">
           {trip.convertedTripId ? (
-            <Link href={`/trips/${trip.convertedTripId}`}>
-              <Button>Open active trip</Button>
-            </Link>
+            <LeavePageLink href={`/trips/${trip.convertedTripId}`} variant="primary">
+              Open active trip
+            </LeavePageLink>
           ) : (
             <Button
               type="button"

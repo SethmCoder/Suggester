@@ -104,8 +104,15 @@ export async function middleware(request: NextRequest) {
     // Signed-in users who open login go home. Signup stays reachable so
     // "Create account" can clear the session and show the new-account form.
     if (path === "/login") {
+      // Already signed in: never force the new-account survey from login.
+      // Complete sets the intro cookie, then sends them into the app.
       const redirect = NextResponse.redirect(
-        new URL(introDone ? "/dashboard" : "/welcome", request.url),
+        new URL(
+          introDone
+            ? "/dashboard"
+            : "/api/profile/intro/complete?next=%2Fdashboard",
+          request.url,
+        ),
       );
       response.cookies.getAll().forEach((cookie) => {
         redirect.cookies.set(cookie);

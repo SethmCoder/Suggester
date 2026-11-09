@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { IconExternalLink } from "@/components/ui/Icons";
 import { nightsBetween, nightsLabel } from "@/lib/trips/dates";
 
 type SectionId = "overview" | "itinerary" | "explore" | "details";
@@ -64,12 +65,22 @@ export function TripPlanSidebar({
   const pathname = usePathname();
   const search = useSearchParams();
   const [open, setOpen] = useState(true);
+  const [hash, setHash] = useState("");
   const [expanded, setExpanded] = useState<Record<SectionId, boolean>>({
     overview: true,
     itinerary: true,
     explore: true,
     details: true,
   });
+
+  useEffect(() => {
+    function syncHash() {
+      setHash(window.location.hash.replace(/^#/, ""));
+    }
+    syncHash();
+    window.addEventListener("hashchange", syncHash);
+    return () => window.removeEventListener("hashchange", syncHash);
+  }, [pathname]);
 
   const nights =
     startDate && endDate
@@ -83,8 +94,6 @@ export function TripPlanSidebar({
       : 0;
 
   const tripBase = `/trips/${tripId}`;
-  const activeHash =
-    typeof window !== "undefined" ? window.location.hash.replace("#", "") : "";
 
   function sectionLink(item: { href: string; hash?: string }) {
     if (item.href.startsWith("/")) {
@@ -99,8 +108,24 @@ export function TripPlanSidebar({
     if (item.href.startsWith("/")) {
       return pathname.startsWith(item.href);
     }
-    if (item.hash) return activeHash === item.hash || (!activeHash && item.hash === "itinerary");
+    if (item.hash) return hash === item.hash || (!hash && item.hash === "itinerary");
     return pathname === tripBase;
+  }
+
+  function goToSection(
+    event: React.MouseEvent<HTMLAnchorElement>,
+    item: { href: string; hash?: string },
+  ) {
+    if (item.href.startsWith("/")) return;
+    event.preventDefault();
+    const targetId = item.hash || "overview";
+    const el = document.getElementById(targetId);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    const next = `${tripBase}#${targetId}`;
+    window.history.replaceState(null, "", next);
+    setHash(targetId);
   }
 
   return (
@@ -156,23 +181,26 @@ export function TripPlanSidebar({
                   {section.items.map((item) => {
                     const href = sectionLink(item);
                     const active = isActive(item);
+                    const leavesTrip = item.href.startsWith("/");
                     return (
                       <li key={`${section.id}-${item.label}`}>
                         <Link
                           href={href}
-                          className={`block rounded-[8px] px-2 py-1.5 text-sm ${
+                          className={`flex items-center justify-between gap-2 rounded-[8px] px-2 py-1.5 text-sm ${
                             active
                               ? "bg-[#0400FF] font-medium text-white"
                               : "text-[#374151] hover:bg-[#F5F7FF]"
                           }`}
-                          onClick={(e) => {
-                            // Never navigate to /trips/new from sidebar — preserve progress.
-                            if (href.includes("/trips/new")) {
-                              e.preventDefault();
-                            }
-                          }}
+                          onClick={(event) => goToSection(event, item)}
                         >
-                          {item.label}
+                          <span>{item.label}</span>
+                          {leavesTrip ? (
+                            <IconExternalLink
+                              size={11}
+                              className={active ? "text-white/80" : "text-[#9299B5]"}
+                              aria-hidden
+                            />
+                          ) : null}
                         </Link>
                       </li>
                     );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ExternalLink } from "@/components/ui/ExternalLink";
 
 type HotelHit = {
   id: string;
@@ -178,14 +179,12 @@ export function CityHotelField({
           {picked.chain ? <p className="mt-1">Group: {picked.chain}</p> : null}
           {picked.phone ? <p className="mt-1">{picked.phone}</p> : null}
           {picked.website ? (
-            <a
+            <ExternalLink
               href={picked.website}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-1 block font-medium text-[#1616C9]"
+              className="mt-1 font-medium text-[#1616C9]"
             >
               Website
-            </a>
+            </ExternalLink>
           ) : null}
           {picked.amenities.length ? (
             <p className="mt-1 text-[#6B7280]">{picked.amenities.join(" · ")}</p>

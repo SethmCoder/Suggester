@@ -232,8 +232,13 @@ export function constraintsFromConversation(text: string, interests: string[] = 
   const lower = text.toLowerCase();
   const out: ReturnType<typeof constraintsFromConversation> = {};
   if (/multigenerational/.test(lower)) out.party = "multigen";
-  else if (/family with children|with children|family/.test(lower)) out.party = "family";
-  else if (/friends/.test(lower)) out.party = "friends";
+  else if (
+    /family with children|with children|family|\d{1,2}\s*[- ]?year(?:s)?[- ]old|traveling with .{0,40}\b(?:kid|child|son|daughter)\b/.test(
+      lower,
+    )
+  ) {
+    out.party = "family";
+  } else if (/friends/.test(lower)) out.party = "friends";
   else if (/business/.test(lower)) out.party = "business";
   else if (/couple/.test(lower)) out.party = "couple";
   else if (/\bsolo\b/.test(lower)) out.party = "solo";

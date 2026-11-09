@@ -4,10 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ComponentType, type SVGProps } from "react";
 import { AvatarMenu } from "./AvatarMenu";
+import { HeaderSearch } from "./HeaderSearch";
+import { NotificationsMenu } from "./NotificationsMenu";
 import { UserAvatar } from "./UserAvatar";
 import { FirstRunTour } from "@/components/tutorial/FirstRunTour";
 import {
-  IconBell,
   IconCompass,
   IconCredit,
   IconHelp,
@@ -16,7 +17,6 @@ import {
   IconMenu,
   IconPin,
   IconPlane,
-  IconSearch,
   IconSettings,
   IconSpark,
   IconUser,
@@ -194,25 +194,8 @@ export function AppShell({
               <IconMenu size={20} />
             </button>
 
-            <div className="relative min-w-0 flex-1 max-w-xl">
-              <IconSearch
-                size={16}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#9299B5]"
-              />
-              <input
-                type="search"
-                placeholder="Search trips, places, plans…"
-                className="h-10 w-full rounded-[12px] border border-[#D1D7E5] bg-[#F5F7FF] pl-9 pr-3 text-sm text-[#1F2937] placeholder:text-[#9299B5] focus:border-[#0400FF] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#818CFF]/35"
-              />
-            </div>
-
-            <button
-              type="button"
-              className="relative rounded-full p-2 text-[#6B7280] hover:bg-[#DDE1FF] hover:text-[#080B3A]"
-              aria-label="Notifications"
-            >
-              <IconBell size={18} />
-            </button>
+            <HeaderSearch />
+            <NotificationsMenu />
 
             <div className="hidden items-center gap-2 sm:flex">
               <UserAvatar

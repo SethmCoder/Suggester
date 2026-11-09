@@ -58,6 +58,7 @@ export function TripAgentDesk({
   onMajorStopsChange,
   idealTrip,
   onExchange,
+  onBriefParsed,
   canGenerate,
   loading,
   progress,
@@ -107,6 +108,7 @@ export function TripAgentDesk({
   onMajorStopsChange: (stops: string[]) => void;
   idealTrip: string;
   onExchange: (userText: string, reply: string) => void;
+  onBriefParsed?: (extracted: Record<string, unknown>) => void;
   canGenerate: boolean | null;
   loading: boolean;
   progress: string;
@@ -382,9 +384,16 @@ export function TripAgentDesk({
             idealTrip={idealTrip}
             tripTitle={tripTitle}
             onExchange={onExchange}
+            onBriefParsed={onBriefParsed}
+            canGenerate={Boolean(canGenerate && lead && startDate)}
+            loading={loading}
+            onGenerate={onGenerate}
           />
         </section>
-        <aside className="flex max-h-[calc(100vh-7rem)] flex-col rounded-[20px] border border-[#E1E5F0] bg-white p-5 shadow-[0_8px_24px_rgba(8,11,58,0.05)] lg:sticky lg:top-6">
+        <aside
+          id="trip-brief-panel"
+          className="flex max-h-[calc(100vh-7rem)] flex-col rounded-[20px] border border-[#E1E5F0] bg-white p-5 shadow-[0_8px_24px_rgba(8,11,58,0.05)] lg:sticky lg:top-6"
+        >
           <div className="min-h-0 flex-1 space-y-5 overflow-auto pr-1">
             <h2 className="text-[18px] font-semibold text-[#080B3A]">Trip brief</h2>
             <p className="mt-1 text-xs text-[#6B7280]">Fills in as you talk.</p>
@@ -513,8 +522,8 @@ export function TripAgentDesk({
                   ? "Checking whether generation is included."
                   : canGenerate
                     ? majorStops.length
-                      ? "Major stops stay locked in. Waypoint fills the rest of each day from your interests."
-                      : "Generation is included on this account."
+                      ? "When the chat says it’s ready, tap Generate. Major stops stay locked in."
+                      : "When the chat says it’s ready — or whenever the brief looks right — tap Generate itinerary."
                     : "Free includes 3 generated trips. Upgrade on Plans for more, or your AI allowance may be used up."}
             </p>
             {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
@@ -679,6 +688,10 @@ function AgentThread({
   idealTrip,
   tripTitle,
   onExchange,
+  onBriefParsed,
+  canGenerate,
+  loading,
+  onGenerate,
 }: {
   destination: string;
   cities: string[];
@@ -688,14 +701,21 @@ function AgentThread({
   idealTrip: string;
   tripTitle: string;
   onExchange: (userText: string, reply: string) => void;
+  onBriefParsed?: (extracted: Record<string, unknown>) => void;
+  canGenerate: boolean;
+  loading: boolean;
+  onGenerate: () => void;
 }) {
   const [log, setLog] = useState<ChatLine[]>([]);
   const [choices, setChoices] = useState<{ id: string; label: string }[]>([]);
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [chatDone, setChatDone] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
   const onExchangeRef = useRef(onExchange);
   onExchangeRef.current = onExchange;
+  const onBriefParsedRef = useRef(onBriefParsed);
+  onBriefParsedRef.current = onBriefParsed;
   const userSpoke = useRef(false);
   const payload = useRef({
     destination,
@@ -731,9 +751,13 @@ function AgentThread({
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? "Could not continue");
+    if (data.extracted && typeof data.extracted === "object") {
+      onBriefParsedRef.current?.(data.extracted as Record<string, unknown>);
+    }
     return {
       reply: (data.reply as string) || "Tell me a little more about how you want the days to feel.",
       choices: (data.choices as { id: string; label: string }[]) ?? [],
+      done: Boolean(data.done),
     };
   }
 
@@ -747,6 +771,7 @@ function AgentThread({
           if (cancelled || userSpoke.current) return;
           setLog([{ role: "agent", text: turn.reply }]);
           setChoices(turn.choices);
+          setChatDone(turn.done);
           setStatus("ready");
         })
         .catch(() => {
@@ -778,7 +803,8 @@ function AgentThread({
       const turn = await talk(history, said);
       onExchangeRef.current(said, asked);
       setLog((prev) => [...prev, { role: "agent", text: turn.reply }]);
-      setChoices(turn.choices);
+      setChoices(turn.done ? [] : turn.choices);
+      setChatDone(turn.done);
       setStatus("ready");
     } catch {
       setStatus("error");
@@ -787,6 +813,13 @@ function AgentThread({
 
   return (
     <div className="flex min-h-[420px] flex-col">
+      <div className="mb-3 rounded-[14px] border border-[#E8ECF6] bg-[#FAFBFF] px-3.5 py-2.5">
+        <p className="text-sm font-semibold text-[#080B3A]">Plan with the agent</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-[#6B7280]">
+          Answer the choices, or paste a full trip description — who you’re with, interests,
+          must-dos, budget. It will pull what it can, then ask only what’s still missing.
+        </p>
+      </div>
       <div className="flex-1 space-y-3">
         {log.map((line, index) => (
           <p
@@ -800,12 +833,46 @@ function AgentThread({
             {line.text}
           </p>
         ))}
-        {status === "ready" ? (
+        {status === "ready" && !chatDone ? (
           <ChoiceList
             choices={choices}
             onPick={(label) => void send(label)}
             onOther={() => box.current?.focus()}
           />
+        ) : null}
+        {status === "ready" && chatDone ? (
+          <div className="rounded-[16px] border border-[#0400FF]/25 bg-[#F5F7FF] p-4">
+            <p className="text-sm font-semibold text-[#080B3A]">Ready to generate</p>
+            <p className="mt-1 text-sm leading-relaxed text-[#6B7280]">
+              The agent has enough to build days. Check the trip brief on the right, then generate
+              — or add one more note below first.
+            </p>
+            {!canGenerate ? (
+              <p className="mt-2 text-xs text-[#DC2626]">
+                Add a city and arrival date above before generating.
+              </p>
+            ) : null}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                onClick={onGenerate}
+                disabled={loading || !canGenerate}
+              >
+                {loading ? "Working…" : "Generate itinerary"}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  document
+                    .getElementById("trip-brief-panel")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+              >
+                Review brief
+              </Button>
+            </div>
+          </div>
         ) : null}
         {status === "loading" ? (
           <p className="text-sm text-[#0400FF]">Thinking about the trip…</p>
@@ -819,13 +886,19 @@ function AgentThread({
       <div className="mt-4 flex items-end gap-2 rounded-[16px] border border-[#D1D7E5] bg-[#F5F7FF] p-2">
         <textarea
           ref={box}
-          rows={2}
+          rows={draft.length > 120 ? 5 : 2}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder={choices.length ? "Other — type your own answer" : "Ask about the days, or describe the trip you want"}
-          className="min-h-11 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-[#080B3A] outline-none placeholder:text-[#9299B5]"
+          placeholder={
+            chatDone
+              ? "Optional — add one more detail before generating"
+              : choices.length
+                ? "Other — type your own answer, or paste a longer trip description"
+                : "Describe the trip you want, or answer the question above"
+          }
+          className="min-h-11 flex-1 resize-y bg-transparent px-2 py-1.5 text-sm text-[#080B3A] outline-none placeholder:text-[#9299B5]"
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+            if (e.key === "Enter" && !e.shiftKey && draft.trim().length < 200) {
               e.preventDefault();
               void send();
             }

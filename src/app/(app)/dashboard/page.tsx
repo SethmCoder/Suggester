@@ -5,7 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { CreateAccountLink } from "@/components/auth/CreateAccountLink";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { Button } from "@/components/ui/Button";
-import { IconArrowRight, IconPlane, IconSearch } from "@/components/ui/Icons";
+import { IconArrowRight, IconExternalLink, IconPlane, IconSearch } from "@/components/ui/Icons";
+import { LeavePageLink } from "@/components/ui/LeavePageLink";
 import { PlanSummary } from "@/components/billing/PlanSummary";
 import {
   countryFromDestination,
@@ -146,18 +147,18 @@ export default function DashboardPage() {
           <PlanSummary />
         </div>
         <div className="mt-6 flex flex-wrap gap-3">
-          <Link href="/trips/new" className="inline-flex">
-            <Button>
+          <LeavePageLink href="/trips/new" variant="primary">
+            <span className="inline-flex items-center gap-2">
               <IconPlane size={16} />
               Plan a trip
-            </Button>
-          </Link>
-            {isDemo ? (
-              <CreateAccountLink className="inline-flex items-center justify-center rounded-[12px] border border-[#E1E5F0] bg-white px-4 py-2.5 text-sm font-semibold text-[#1F2937] shadow-sm transition-colors hover:bg-[#DDE1FF]/60">
-                Sign up to save trips
-              </CreateAccountLink>
-            ) : null}
-          </div>
+            </span>
+          </LeavePageLink>
+          {isDemo ? (
+            <CreateAccountLink className="inline-flex items-center justify-center gap-1.5 rounded-[12px] border border-[#E1E5F0] bg-white px-4 py-2.5 text-sm font-semibold text-[#1F2937] shadow-sm transition-colors hover:bg-[#DDE1FF]/60">
+              Sign up to save trips
+            </CreateAccountLink>
+          ) : null}
+        </div>
       </section>
 
       <section className="rounded-[16px] border border-[#E1E5F0] bg-white px-6 py-6 shadow-[0_4px_20px_rgba(8,11,58,0.04)]">
@@ -203,9 +204,16 @@ export default function DashboardPage() {
             <Link
               key={entry.href}
               href={entry.href}
-              className="rounded-[12px] border border-[#E1E5F0] px-4 py-3 transition hover:border-[#0400FF]/35"
+              className="group rounded-[12px] border border-[#E1E5F0] px-4 py-3 transition hover:border-[#0400FF]/35"
             >
-              <p className="font-semibold text-[#080B3A]">{entry.title}</p>
+              <p className="flex items-center justify-between gap-2 font-semibold text-[#080B3A]">
+                <span>{entry.title}</span>
+                <IconExternalLink
+                  size={12}
+                  className="shrink-0 text-[#9299B5] opacity-70 transition group-hover:text-[#0400FF] group-hover:opacity-100"
+                  aria-hidden
+                />
+              </p>
               <p className="mt-1 text-sm text-[#6B7280]">{entry.body}</p>
             </Link>
           ))}
@@ -248,9 +256,9 @@ export default function DashboardPage() {
           <p className="mx-auto mt-2 max-w-md text-sm text-[#6B7280]">
             Tell the agent where you are going.
           </p>
-          <Link href="/trips/new" className="mt-6 inline-flex">
-            <Button>Plan a trip</Button>
-          </Link>
+          <LeavePageLink href="/trips/new" variant="primary" className="mt-6">
+            Plan a trip
+          </LeavePageLink>
         </div>
       ) : (
         <div id="trips" className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">

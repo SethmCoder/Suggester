@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ExternalLink } from "@/components/ui/ExternalLink";
 import type { PlaceBrief } from "@/lib/places/place-brief";
 import { savePlace } from "@/lib/places/saved-places";
 import { saveWishlistItem } from "@/lib/wishlist/sync";
@@ -182,14 +183,12 @@ export function PlaceCard({
           <ul className="space-y-2">
             {brief.links.map((link) => (
               <li key={link.url}>
-                <a
+                <ExternalLink
                   href={link.url}
-                  target="_blank"
-                  rel="noreferrer"
                   className="text-[13px] font-medium text-[#0400FF] underline"
                 >
                   {link.label}
-                </a>
+                </ExternalLink>
                 {link.kind === "tickets" ? (
                   <p className="text-[11px] text-[#6B7280]">
                     Opens a search. This is not a reservation.

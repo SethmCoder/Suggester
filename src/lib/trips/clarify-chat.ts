@@ -1,5 +1,9 @@
 import type { ClarifyInput } from "@/lib/trips/clarify";
 import { budgetTopicAsked } from "@/lib/trips/budget";
+import {
+  coveredClarifyTopics,
+  parseTripBrief,
+} from "@/lib/trips/parse-brief";
 
 export type ChatLine = { role: "user" | "assistant"; text: string };
 
@@ -28,9 +32,47 @@ export function localClarifyReply(
   const cities = tripCities(input);
   const place = cities.length ? cities.join(" and ") : "this trip";
   const trimmed = message.trim();
-  const heard = acknowledge(trimmed);
+  const userCorpus = [
+    ...history.filter((line) => line.role === "user").map((line) => line.text),
+    trimmed,
+    input.idealTrip ?? "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const covered = coveredClarifyTopics(userCorpus, input.interests);
+  const brief = parseTripBrief(userCorpus);
+  const heard = acknowledge(trimmed, brief.summary);
 
-  if (!asked(history, DREAM_MARK)) {
+  const dreamDone = asked(history, DREAM_MARK) || covered.dream;
+  const partyDone = asked(history, PARTY_MARK) || covered.party;
+  const walkDone = asked(history, WALK_MARK) || covered.walk;
+  const settingDone = asked(history, SETTING_MARK) || covered.setting;
+  const paceDone = asked(history, PACE_MARK) || covered.pace;
+  const leadDone =
+    input.interests.length < 2 || asked(history, LEAD_MARK) || covered.lead;
+  const budgetTotalDone = budgetTopicAsked(history, "total") || covered.budgetTotal;
+  const budgetSplitDone = budgetTopicAsked(history, "split") || covered.budgetSplit;
+  const budgetFoodDone = budgetTopicAsked(history, "food") || covered.budgetFood;
+
+  if (
+    dreamDone &&
+    paceDone &&
+    partyDone &&
+    walkDone &&
+    settingDone &&
+    leadDone &&
+    budgetTotalDone &&
+    budgetSplitDone &&
+    budgetFoodDone
+  ) {
+    return {
+      reply: readyReply(place, brief.summary),
+      done: true,
+      choices: [],
+    };
+  }
+
+  if (!dreamDone) {
     return {
       reply: cities.length
         ? `${heard}This trip covers ${cities.join(" and ")}. Which of these is closest to the days you want?`
@@ -42,23 +84,6 @@ export function localClarifyReply(
         { id: "value", label: "Fun days that do not waste money" },
         { id: "mix", label: "A mix of walking, food, and a few highlights" },
       ],
-    };
-  }
-
-  if (
-    asked(history, PACE_MARK) &&
-    asked(history, PARTY_MARK) &&
-    asked(history, WALK_MARK) &&
-    asked(history, SETTING_MARK) &&
-    (input.interests.length < 2 || asked(history, LEAD_MARK)) &&
-    budgetTopicAsked(history, "total") &&
-    budgetTopicAsked(history, "split") &&
-    budgetTopicAsked(history, "food")
-  ) {
-    return {
-      reply: `I have enough to shape ${place}. Add anything you want kept in the days, or generate when the brief looks right.`,
-      done: true,
-      choices: [],
     };
   }
 
@@ -78,13 +103,11 @@ export function localClarifyReply(
 
   // Per-city pace when multi-city and pace not yet collected per destination.
   const paceCityMark = "pace would you prefer in";
-  if (cities.length > 1) {
+  if (cities.length > 1 && paceDone) {
     const unanswered = cities.find(
       (city) => !asked(history, `${paceCityMark} ${city}`),
     );
-    if (unanswered && asked(history, PACE_MARK) === false) {
-      /* fall through to global pace below */
-    } else if (unanswered) {
+    if (unanswered) {
       return {
         reply: `${heard}For ${unanswered}, what pace would you prefer in ${unanswered}?`,
         done: false,
@@ -97,7 +120,7 @@ export function localClarifyReply(
     }
   }
 
-  if (!budgetTopicAsked(history, "total")) {
+  if (!budgetTotalDone) {
     return {
       reply: `${heard}How much is set aside for the whole trip?`,
       done: false,
@@ -110,7 +133,7 @@ export function localClarifyReply(
     };
   }
 
-  if (!budgetTopicAsked(history, "split")) {
+  if (!budgetSplitDone) {
     return {
       reply: `${heard}How should that money be used?`,
       done: false,
@@ -123,7 +146,7 @@ export function localClarifyReply(
     };
   }
 
-  if (!budgetTopicAsked(history, "food")) {
+  if (!budgetFoodDone) {
     return {
       reply: `${heard}What kind of restaurants should the days lean toward?`,
       done: false,
@@ -136,7 +159,7 @@ export function localClarifyReply(
     };
   }
 
-  if (!asked(history, PARTY_MARK)) {
+  if (!partyDone) {
     return {
       reply: `${heard}Who is traveling?`,
       done: false,
@@ -151,7 +174,7 @@ export function localClarifyReply(
     };
   }
 
-  if (!asked(history, WALK_MARK)) {
+  if (!walkDone) {
     return {
       reply: `${heard}How long a walk between stops feels comfortable?`,
       done: false,
@@ -163,7 +186,7 @@ export function localClarifyReply(
     };
   }
 
-  if (!asked(history, SETTING_MARK)) {
+  if (!settingDone) {
     return {
       reply: `${heard}Should the days lean indoors or outdoors?`,
       done: false,
@@ -175,7 +198,7 @@ export function localClarifyReply(
     };
   }
 
-  if (input.interests.length > 1 && !asked(history, LEAD_MARK)) {
+  if (!leadDone) {
     return {
       reply: `${heard}Which interest should lead the days?`,
       done: false,
@@ -186,7 +209,7 @@ export function localClarifyReply(
     };
   }
 
-  if (!asked(history, PACE_MARK)) {
+  if (!paceDone) {
     return {
       reply: `${heard}How full should the days feel in ${place}?`,
       done: false,
@@ -199,7 +222,7 @@ export function localClarifyReply(
   }
 
   return {
-    reply: `I have enough to shape ${place}. Add anything you want kept in the days, or generate when the brief looks right.`,
+    reply: readyReply(place, brief.summary),
     done: true,
     choices: [],
   };
@@ -243,8 +266,9 @@ function asked(history: ChatLine[], marker: string): boolean {
   );
 }
 
-function acknowledge(message: string): string {
+function acknowledge(message: string, summary: string): string {
   if (!message) return "";
+  if (summary) return `Got it — ${summary}. `;
   if (/small|not large|local place|restaurant/i.test(message)) {
     return "Small places, and not big restaurants. ";
   }
@@ -254,7 +278,17 @@ function acknowledge(message: string): string {
   if (/sight|famous|highlight/i.test(message)) {
     return "The well-known sights. ";
   }
+  if (message.length >= 80) {
+    return "Thanks — I pulled the details I could from that. ";
+  }
   return "I'll use that. ";
+}
+
+function readyReply(place: string, summary: string): string {
+  const lead = summary
+    ? `I have enough for ${place}: ${summary}.`
+    : `I have enough to shape ${place}.`;
+  return `${lead} Review the trip brief on the right, then tap Generate itinerary. You can still add a note below if something is missing.`;
 }
 
 function normalize(value: string): string {

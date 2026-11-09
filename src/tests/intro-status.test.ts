@@ -3,6 +3,7 @@ import {
   isIntroComplete,
   markIntroComplete,
   normalizeTravelerProfile,
+  shouldSkipIntro,
 } from "@/lib/profile/intro-status";
 
 describe("intro status for returning accounts", () => {
@@ -44,5 +45,44 @@ describe("intro status for returning accounts", () => {
     expect(markIntroComplete({ completed: false, answers: [] }).completed).toBe(
       true,
     );
+  });
+
+  it("skips intro for prior trips, dreams, wishlist, or older profiles", () => {
+    expect(
+      shouldSkipIntro({
+        profile: { completed: false, answers: [] },
+        tripCount: 1,
+      }),
+    ).toBe(true);
+    expect(
+      shouldSkipIntro({
+        profile: { completed: false, answers: [] },
+        futureTripCount: 2,
+      }),
+    ).toBe(true);
+    expect(
+      shouldSkipIntro({
+        profile: { completed: false, answers: [] },
+        wishlistCount: 1,
+      }),
+    ).toBe(true);
+    expect(
+      shouldSkipIntro({
+        profile: { completed: false, answers: [] },
+        profileAgeMs: 25 * 60 * 60 * 1000,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps intro for brand-new empty accounts", () => {
+    expect(
+      shouldSkipIntro({
+        profile: { completed: false, answers: [] },
+        tripCount: 0,
+        futureTripCount: 0,
+        wishlistCount: 0,
+        profileAgeMs: 60_000,
+      }),
+    ).toBe(false);
   });
 });

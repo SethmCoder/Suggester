@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { IconExternalLink } from "@/components/ui/Icons";
 import type { DestinationComparison } from "@/lib/discover/types";
 import { SCORING_METHODOLOGY } from "@/lib/discover/types";
 import { listItems } from "@/lib/wishlist/store";
@@ -141,8 +142,9 @@ export function CompareBoard() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <Link href="/discover" className="text-sm font-medium text-[#0400FF]">
+          <Link href="/discover" className="inline-flex items-center gap-1 text-sm font-medium text-[#0400FF]">
             ← Discover
+            <IconExternalLink size={11} className="opacity-80" aria-hidden />
           </Link>
           <h1 className="mt-2 text-[28px] font-bold tracking-tight text-[#1F2937]">
             Compare destinations

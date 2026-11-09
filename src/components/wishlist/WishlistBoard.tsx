@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { ExternalLink } from "@/components/ui/ExternalLink";
+import { LeavePageLink } from "@/components/ui/LeavePageLink";
 import { IconPin } from "@/components/ui/Icons";
 import { destinationImageUrl } from "@/lib/destination-image";
 import type { FutureTrip } from "@/lib/future-trips/types";
@@ -155,9 +157,9 @@ export function WishlistBoard() {
             Save destinations, places, and ideas for later. Organize them into collections and attach them to a future trip when you are ready.
           </p>
         </div>
-        <Link href="/future-trips">
-          <Button variant="secondary">Future trips</Button>
-        </Link>
+        <LeavePageLink href="/future-trips" variant="secondary">
+          Future trips
+        </LeavePageLink>
       </div>
 
       {error ? (
@@ -443,14 +445,12 @@ export function WishlistBoard() {
                         <p className="text-xs text-[#6B7280]">Cost not listed</p>
                       )}
                       {item.sourceUrl ? (
-                        <a
+                        <ExternalLink
                           href={item.sourceUrl}
-                          target="_blank"
-                          rel="noreferrer"
                           className="text-xs font-medium text-[#0400FF]"
                         >
                           Source
-                        </a>
+                        </ExternalLink>
                       ) : null}
                     </div>
                   </li>

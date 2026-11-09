@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { LeavePageLink } from "@/components/ui/LeavePageLink";
 import type { DestinationRecommendation } from "@/lib/discover/types";
 import { saveWishlistItem } from "@/lib/wishlist/sync";
 import { saveFutureTrip } from "@/lib/future-trips/sync";
@@ -146,18 +146,18 @@ export function DestinationCard({
           <Button type="button" variant="secondary" disabled={busy} onClick={() => void createFuture()}>
             Create Future Trip
           </Button>
-          <Link href={`/explore?city=${encodeURIComponent(destination.name)}`}>
-            <Button type="button" variant="ghost">
-              Explore
-            </Button>
-          </Link>
-          <Link
-            href={`/trips/new?destination=${encodeURIComponent(destination.name)}&days=${destination.durationNote.match(/\d+/)?.[0] || 5}`}
+          <LeavePageLink
+            href={`/explore?city=${encodeURIComponent(destination.name)}`}
+            variant="ghost"
           >
-            <Button type="button" variant="ghost">
-              Preliminary itinerary
-            </Button>
-          </Link>
+            Explore
+          </LeavePageLink>
+          <LeavePageLink
+            href={`/trips/new?destination=${encodeURIComponent(destination.name)}&days=${destination.durationNote.match(/\d+/)?.[0] || 5}`}
+            variant="ghost"
+          >
+            Preliminary itinerary
+          </LeavePageLink>
         </div>
         {note ? <p className="text-xs text-[#059669]">{note}</p> : null}
       </div>

@@ -1,9 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
+import { IconExternalLink } from "@/components/ui/Icons";
 import { countCreatedOfflineTrips } from "@/lib/offline/trips";
 import type { BillingSnapshot } from "@/lib/billing/plans";
+import Link from "next/link";
 
 function label(snapshot: BillingSnapshot) {
   if (snapshot.plan === "pro") {
@@ -33,9 +34,10 @@ export function PlanSummary({ tone = "dark" }: { tone?: "dark" | "light" }) {
       {text}{" "}
       <Link
         href="/plan"
-        className={`font-semibold underline ${light ? "text-white" : "text-[#0400FF]"}`}
+        className={`inline-flex items-center gap-1 font-semibold underline ${light ? "text-white" : "text-[#0400FF]"}`}
       >
         See plans
+        <IconExternalLink size={11} className="opacity-80" aria-hidden />
       </Link>
     </p>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { CreateAccountLink } from "@/components/auth/CreateAccountLink";
 import { TryDemoButton } from "@/components/demo/TryDemoButton";
@@ -10,7 +10,6 @@ import { Input, Label } from "@/components/ui/Input";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 function LoginForm() {
-  const router = useRouter();
   const params = useSearchParams();
   const next = params.get("next") ?? "/dashboard";
   const linkError = params.get("error_description") ?? params.get("error");
@@ -40,13 +39,19 @@ function LoginForm() {
       email,
       password,
     });
-    setLoading(false);
     if (err) {
+      setLoading(false);
       setError(err.message);
       return;
     }
-    router.push(next);
-    router.refresh();
+    // Returning sign-in: mark intro done and hard-navigate so middleware
+    // never bounces an existing account into the new-account survey.
+    await fetch("/api/profile/intro/complete", { method: "POST" }).catch(
+      () => null,
+    );
+    const safeNext =
+      next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
+    window.location.assign(safeNext);
   }
 
   return (

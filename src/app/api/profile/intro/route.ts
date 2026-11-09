@@ -8,9 +8,9 @@ import {
   type IntroTurn,
 } from "@/lib/profile/intro-chat";
 import {
-  isIntroComplete,
   markIntroComplete,
   normalizeTravelerProfile,
+  shouldSkipIntro,
 } from "@/lib/profile/intro-status";
 import { INTRO_COOKIE, emptyTraveler, type TravelerProfile } from "@/lib/profile/traveler";
 import { replyRepeats, type ClarifyChoice } from "@/lib/trips/clarify-chat";
@@ -36,12 +36,18 @@ After two questions beyond age and dream vacation, set done to true, leave choic
 Return JSON only: {"reply":"...","done":false,"choices":[{"id":"a","label":"..."}]}`;
 
 export async function GET() {
-  const profile = (await readProfile()) ?? emptyTraveler();
-  const returning = isIntroComplete(profile) || (await userHasTrips());
-  if (returning) {
+  const account = await readAccountSignals();
+  const profile = account.profile ?? emptyTraveler();
+  if (shouldSkipIntro(account)) {
     const completed = markIntroComplete(profile);
     if (!profile.completed) await saveProfile(completed);
-    const response = NextResponse.json({ profile: completed });
+    const response = NextResponse.json({
+      profile: completed,
+      skipIntro: true,
+      tripCount: account.tripCount ?? 0,
+      futureTripCount: account.futureTripCount ?? 0,
+      wishlistCount: account.wishlistCount ?? 0,
+    });
     response.cookies.set(INTRO_COOKIE, "1", {
       path: "/",
       sameSite: "lax",
@@ -49,7 +55,13 @@ export async function GET() {
     });
     return response;
   }
-  return NextResponse.json({ profile });
+  return NextResponse.json({
+    profile,
+    skipIntro: false,
+    tripCount: account.tripCount ?? 0,
+    futureTripCount: account.futureTripCount ?? 0,
+    wishlistCount: account.wishlistCount ?? 0,
+  });
 }
 
 export async function POST(req: Request) {
@@ -121,45 +133,63 @@ async function modelIntro(history: IntroLine[], message: string): Promise<IntroT
   }
 }
 
-async function readProfile(): Promise<TravelerProfile | null> {
+async function readAccountSignals(): Promise<{
+  profile: TravelerProfile | null;
+  tripCount: number;
+  futureTripCount: number;
+  wishlistCount: number;
+  profileAgeMs: number | null;
+}> {
+  const empty = {
+    profile: null as TravelerProfile | null,
+    tripCount: 0,
+    futureTripCount: 0,
+    wishlistCount: 0,
+    profileAgeMs: null as number | null,
+  };
   try {
     const { createSupabaseServerClient } = await import("@/lib/supabase/server");
     const supabase = await createSupabaseServerClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) return null;
+    if (!user) return empty;
     const svc = createServiceClient() ?? supabase;
-    const { data, error } = await svc
+    const { data: profileRow } = await svc
       .from("profiles")
-      .select("traveler_profile")
+      .select("traveler_profile, created_at")
       .eq("id", user.id)
       .maybeSingle();
-    if (error || !data) return null;
-    return normalizeTravelerProfile(
-      (data as { traveler_profile?: unknown }).traveler_profile,
-    );
+    const [{ count: tripCount }, { count: futureTripCount }, { count: wishlistCount }] =
+      await Promise.all([
+        svc
+          .from("trips")
+          .select("id", { count: "exact", head: true })
+          .eq("owner_id", user.id),
+        svc
+          .from("future_trips")
+          .select("id", { count: "exact", head: true })
+          .eq("owner_id", user.id),
+        svc
+          .from("wishlist_items")
+          .select("id", { count: "exact", head: true })
+          .eq("owner_id", user.id),
+      ]);
+    return {
+      profile: profileRow
+        ? normalizeTravelerProfile(
+            (profileRow as { traveler_profile?: unknown }).traveler_profile,
+          )
+        : null,
+      tripCount: typeof tripCount === "number" ? tripCount : 0,
+      futureTripCount: typeof futureTripCount === "number" ? futureTripCount : 0,
+      wishlistCount: typeof wishlistCount === "number" ? wishlistCount : 0,
+      profileAgeMs: profileRow?.created_at
+        ? Date.now() - Date.parse(String(profileRow.created_at))
+        : null,
+    };
   } catch {
-    return null;
-  }
-}
-
-async function userHasTrips(): Promise<boolean> {
-  try {
-    const { createSupabaseServerClient } = await import("@/lib/supabase/server");
-    const supabase = await createSupabaseServerClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return false;
-    const svc = createServiceClient() ?? supabase;
-    const { count } = await svc
-      .from("trips")
-      .select("id", { count: "exact", head: true })
-      .eq("owner_id", user.id);
-    return typeof count === "number" && count > 0;
-  } catch {
-    return false;
+    return empty;
   }
 }
 
