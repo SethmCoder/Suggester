@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { DemoCheckout } from "@/components/billing/DemoCheckout";
 import { countCreatedOfflineTrips } from "@/lib/offline/trips";
 import type { BillingSnapshot } from "@/lib/billing/plans";
 import { LIST_PRICES, planCopy } from "@/lib/billing/limits";
+import type { DemoCheckoutInterval } from "@/lib/billing/demo-checkout";
 
 async function syncPlan(action: "sync" | "upgrade" | "downgrade") {
   const created = countCreatedOfflineTrips();
@@ -25,13 +27,18 @@ export default function PlanPage() {
   >(null);
   const [busy, setBusy] = useState<"month" | "year" | "portal" | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [demoOpen, setDemoOpen] = useState(false);
+  const [demoInterval, setDemoInterval] =
+    useState<DemoCheckoutInterval>("month");
   const free = planCopy(false);
   const pro = planCopy(true);
 
   useEffect(() => {
     let cancelled = false;
-    const sessionId = new URLSearchParams(window.location.search).get("session_id");
-    const cancelledCheckout = new URLSearchParams(window.location.search).get("checkout");
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get("session_id");
+    const cancelledCheckout = params.get("checkout");
+    const demoIntervalParam = params.get("interval");
     async function load() {
       if (sessionId) {
         const confirmed = await fetch("/api/billing/confirm", {
@@ -40,14 +47,22 @@ export default function PlanPage() {
           body: JSON.stringify({ sessionId }),
         });
         if (!confirmed.ok) {
-          const data = (await confirmed.json().catch(() => ({}))) as { error?: string };
+          const data = (await confirmed.json().catch(() => ({}))) as {
+            error?: string;
+          };
           if (!cancelled) setNote(data.error ?? "Checkout could not be confirmed.");
         } else if (!cancelled) {
-          setNote("Pro is active on this account. Saved trips and research stay available.");
+          setNote(
+            "Pro is active on this account. Saved trips and research stay available.",
+          );
           window.history.replaceState(null, "", "/plan");
         }
       } else if (cancelledCheckout === "cancel" && !cancelled) {
         setNote("Checkout was cancelled. Pro was not turned on.");
+      } else if (cancelledCheckout === "demo" && !cancelled) {
+        setDemoInterval(demoIntervalParam === "year" ? "year" : "month");
+        setDemoOpen(true);
+        window.history.replaceState(null, "", "/plan");
       }
       const data = await syncPlan("sync");
       if (!cancelled) setBilling(data);
@@ -80,6 +95,12 @@ export default function PlanPage() {
     } finally {
       setBusy(null);
     }
+  }
+
+  function openDemo(interval: DemoCheckoutInterval) {
+    setDemoInterval(interval);
+    setDemoOpen(true);
+    setNote(null);
   }
 
   async function manage() {
@@ -164,40 +185,79 @@ export default function PlanPage() {
             ))}
           </ul>
           <div className="mt-4 flex flex-col gap-2">
-            <Button
+            {checkout ? (
+              <>
+                <Button
+                  type="button"
+                  disabled={entitled || busy !== null}
+                  onClick={() => void subscribe("month")}
+                >
+                  {entitled
+                    ? "Current plan"
+                    : busy === "month"
+                      ? "Opening checkout…"
+                      : `Subscribe · $${LIST_PRICES.proMonthlyUsd.toFixed(2)}/month`}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={entitled || busy !== null}
+                  onClick={() => void subscribe("year")}
+                >
+                  {busy === "year"
+                    ? "Opening checkout…"
+                    : `Annual · $${LIST_PRICES.proAnnualUsd.toFixed(2)}/year`}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  disabled={entitled}
+                  onClick={() => openDemo("month")}
+                >
+                  {entitled
+                    ? "Current plan"
+                    : `Preview checkout · $${LIST_PRICES.proMonthlyUsd.toFixed(2)}/month`}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={entitled}
+                  onClick={() => openDemo("year")}
+                >
+                  Preview annual · ${LIST_PRICES.proAnnualUsd.toFixed(2)}/year
+                </Button>
+              </>
+            )}
+            <button
               type="button"
-              disabled={entitled || busy !== null || !checkout}
-              onClick={() => void subscribe("month")}
+              className="pt-1 text-left text-xs font-semibold text-[#0400FF] underline-offset-2 hover:underline"
+              onClick={() => openDemo(demoInterval)}
             >
-              {entitled
-                ? "Current plan"
-                : busy === "month"
-                  ? "Opening checkout…"
-                  : checkout
-                    ? `Subscribe · $${LIST_PRICES.proMonthlyUsd.toFixed(2)}/month`
-                    : "Add a Stripe key to subscribe"}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={entitled || busy !== null || !checkout}
-              onClick={() => void subscribe("year")}
-            >
-              {busy === "year"
-                ? "Opening checkout…"
-                : `Annual · $${LIST_PRICES.proAnnualUsd.toFixed(2)}/year`}
-            </Button>
+              {checkout
+                ? "Preview the checkout flow without Stripe"
+                : "Demo only — opens a fake checkout, no charge"}
+            </button>
           </div>
         </section>
       </div>
 
       {note ? <p className="max-w-xl text-sm text-[#080B3A]">{note}</p> : null}
       <p className="max-w-xl text-xs leading-relaxed text-[#6B7280]">
-        Billing stays on the existing Stripe checkout. Prices are centralized in plan limits —
-        ${LIST_PRICES.proMonthlyUsd.toFixed(2)} monthly or ${LIST_PRICES.proAnnualUsd.toFixed(2)} annual.
+        {checkout
+          ? `Live billing uses Stripe Checkout at $${LIST_PRICES.proMonthlyUsd.toFixed(2)} monthly or $${LIST_PRICES.proAnnualUsd.toFixed(2)} annual.`
+          : `Stripe is not configured yet, so Plans offers a local checkout preview at $${LIST_PRICES.proMonthlyUsd.toFixed(2)} monthly or $${LIST_PRICES.proAnnualUsd.toFixed(2)} annual.`}{" "}
         Letting Pro lapse keeps your trips, wishlist, and future-trip research intact; only Pro
         generation features pause.
       </p>
+
+      <DemoCheckout
+        open={demoOpen}
+        interval={demoInterval}
+        onIntervalChange={setDemoInterval}
+        onClose={() => setDemoOpen(false)}
+      />
     </div>
   );
 }

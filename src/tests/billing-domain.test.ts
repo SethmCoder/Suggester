@@ -8,6 +8,11 @@ import {
   gateFeature,
   isAdvancedRequest,
 } from "@/lib/billing/entitlements";
+import {
+  DEMO_CARD_PLACEHOLDER,
+  demoCheckoutAmount,
+  demoCheckoutProductName,
+} from "@/lib/billing/demo-checkout";
 import { LIST_PRICES, PLAN_LIMITS, planCopy } from "@/lib/billing/limits";
 import { FREE_TRIP_LIMIT, canCreateTrip } from "@/lib/billing/plans";
 import { proPriceData } from "@/lib/billing/stripe";
@@ -75,5 +80,14 @@ describe("billing and entitlements domain", () => {
     expect(PRO_REQUIRED_MESSAGE).not.toMatch(/6\.99/);
     expect(PLAN_LIMITS.free.wishlistCollections).toBe(5);
     expect(PLAN_LIMITS.free.compareDestinations).toBe(2);
+  });
+
+  it("demo checkout mirrors list prices without Stripe", () => {
+    expect(demoCheckoutAmount("month").dollars).toBe(LIST_PRICES.proMonthlyUsd);
+    expect(demoCheckoutAmount("year").label).toBe(
+      `$${LIST_PRICES.proAnnualUsd.toFixed(2)}`,
+    );
+    expect(demoCheckoutProductName("month")).toMatch(/Pro/);
+    expect(DEMO_CARD_PLACEHOLDER).toMatch(/^4242/);
   });
 });
