@@ -18,6 +18,44 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { constraintsFromConversation } from "@/lib/ai/constraints";
 import { budgetFromConversation } from "@/lib/trips/budget";
 import type { InboundFlightPrefs } from "@/lib/types/trip";
+import { assertValidDateRange, nightsBetween } from "@/lib/trips/dates";
+import { applyTripDatesToLegs } from "@/lib/trips/legs";
+
+const legSchema = z.object({
+  city: z.string().min(1),
+  country: z.string().optional(),
+  days: z.number().int().min(1).max(30),
+  arrivalDate: z.string().optional(),
+  departureDate: z.string().optional(),
+  nights: z.number().int().min(0).max(60).optional(),
+  intensity: z.enum(["relaxed", "balanced", "packed"]).optional(),
+  hotel: z.string().optional(),
+  geonameId: z.number().optional(),
+  lat: z.number().optional(),
+  lng: z.number().optional(),
+  countryCode: z.string().optional(),
+  hotelLat: z.number().optional(),
+  hotelLng: z.number().optional(),
+  hotelPlaceId: z.string().optional(),
+  hotelAddress: z.string().optional(),
+  hotelBooked: z.boolean().optional(),
+  hotelMinRating: z.number().optional(),
+  hotelPlace: z
+    .enum(["any", "center", "beach", "sights", "transit"])
+    .optional(),
+  hotelBrand: z.string().optional(),
+  transitFromPrevious: z
+    .enum([
+      "auto",
+      "flight",
+      "major_train",
+      "regional_rail",
+      "coach",
+      "ferry",
+      "car",
+    ])
+    .optional(),
+});
 
 const bodySchema = z.object({
   destination: z.string().min(2),
@@ -33,7 +71,15 @@ const bodySchema = z.object({
   rejectedPlaceIds: z.array(z.string().max(120)).max(40).optional(),
   keptPlaceIds: z.array(z.string().max(120)).max(40).optional(),
   party: z.enum(["solo", "couple", "family", "multigen", "friends", "business"]).optional(),
+  travelerMode: z.enum(["business", "leisure"]).optional(),
+  planningClarity: z
+    .enum(["know_where_and_what", "know_where_not_what", "know_neither"])
+    .optional(),
+  cityIntensities: z
+    .record(z.string(), z.enum(["relaxed", "balanced", "packed"]))
+    .optional(),
   interestWeights: z.record(z.string(), z.number()).optional(),
+  downrankedInterests: z.array(z.string().max(80)).max(20).optional(),
   maxWalkMinutes: z.number().int().min(5).max(180).optional(),
   indoorOutdoor: z.enum(["indoor", "outdoor", "either"]).optional(),
   currency: z.string().optional(),
@@ -55,40 +101,9 @@ const bodySchema = z.object({
   preferredAirlines: z.string().optional(),
   flightPricePoint: z.enum(["any", "budget", "standard", "premium"]).optional(),
   chosenAirline: z.string().optional(),
-  legs: z
-    .array(
-      z.object({
-        city: z.string().min(1),
-        days: z.number().int().min(1).max(30),
-        hotel: z.string().optional(),
-        geonameId: z.number().optional(),
-        lat: z.number().optional(),
-        lng: z.number().optional(),
-        countryCode: z.string().optional(),
-        hotelLat: z.number().optional(),
-        hotelLng: z.number().optional(),
-        hotelPlaceId: z.string().optional(),
-        hotelAddress: z.string().optional(),
-        hotelBooked: z.boolean().optional(),
-        hotelMinRating: z.number().optional(),
-        hotelPlace: z
-          .enum(["any", "center", "beach", "sights", "transit"])
-          .optional(),
-        hotelBrand: z.string().optional(),
-        transitFromPrevious: z
-          .enum([
-            "auto",
-            "flight",
-            "major_train",
-            "regional_rail",
-            "coach",
-            "ferry",
-            "car",
-          ])
-          .optional(),
-      }),
-    )
-    .optional(),
+  idempotencyKey: z.string().max(120).optional(),
+  futureTripId: z.string().uuid().optional(),
+  legs: z.array(legSchema).optional(),
 });
 
 export async function POST(req: Request) {
@@ -132,11 +147,23 @@ export async function POST(req: Request) {
     }
 
     const parsed = bodySchema.parse(await req.json());
+    try {
+      assertValidDateRange(parsed.startDate, parsed.endDate);
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "Invalid dates" },
+        { status: 400 },
+      );
+    }
     let mergedInterests = parsed.interests ?? [];
+    let mergedWeights = parsed.interestWeights ?? {};
+    let downrankedInterests: string[] = [];
     try {
       const {
         loadTravelIntelligence,
         effectiveInterestsServer,
+        interestWeightsFromIntelligence,
+        downrankedInterestsServer,
       } = await import("@/lib/intelligence/server");
       const profile = await loadTravelIntelligence(supabase, user.id);
       mergedInterests = [
@@ -145,15 +172,25 @@ export async function POST(req: Request) {
           ...effectiveInterestsServer(profile),
         ]),
       ];
+      mergedWeights = {
+        ...interestWeightsFromIntelligence(profile),
+        ...(parsed.interestWeights ?? {}),
+      };
+      downrankedInterests = downrankedInterestsServer(profile);
     } catch {
       /* keep request interests */
     }
-    const legs = parsed.legs?.length
-      ? anchorUnbookedLegs(parsed.legs)
+    const datedLegs = parsed.legs?.length
+      ? applyTripDatesToLegs(parsed.legs, parsed.startDate, parsed.endDate)
       : parsed.legs;
+    const legs = datedLegs?.length
+      ? anchorUnbookedLegs(datedLegs)
+      : datedLegs;
     const body = {
       ...parsed,
       interests: mergedInterests,
+      interestWeights: mergedWeights,
+      downrankedInterests,
       legs,
       hotel: legs?.[0]?.hotel || parsed.hotel,
     };
@@ -214,32 +251,35 @@ export async function POST(req: Request) {
       ? body.legs.map((l) => l.city).join(" → ")
       : body.destination;
 
-    const tripId = await createTripRecord({
+    const defaultDays = Math.max(
+      1,
+      nightsBetween(body.startDate, body.endDate) + 1,
+    );
+    const resolvedLegs = body.legs?.length
+      ? body.legs
+      : [
+          {
+            city: body.destination,
+            days: defaultDays,
+            nights: nightsBetween(body.startDate, body.endDate),
+            arrivalDate: body.startDate,
+            departureDate: body.endDate,
+            hotel: body.hotel,
+          },
+        ];
+
+    const created = await createTripRecord({
       ownerId: user.id,
       destination: destinationLabel,
       startDate: body.startDate,
       endDate: body.endDate,
       preferences: {
-        destinations: (body.legs?.length
-          ? body.legs
-          : [{ city: body.destination, days: 1 }]
-        ).map((l) => ({ name: l.city, nights: l.days })),
-        legs: body.legs?.length
-          ? body.legs
-          : [
-              {
-                city: body.destination,
-                days: Math.max(
-                  1,
-                  Math.ceil(
-                    (new Date(body.endDate).getTime() -
-                      new Date(body.startDate).getTime()) /
-                      86_400_000,
-                  ) + 1,
-                ),
-                hotel: body.hotel,
-              },
-            ],
+        destinations: resolvedLegs.map((l) => ({
+          name: l.city,
+          nights: l.nights ?? Math.max(0, l.days - 1),
+          country: l.country,
+        })),
+        legs: resolvedLegs,
         departureCity: body.departureCity,
         originAirport: inboundFlight?.fromIata ?? body.originAirport,
         destinationAirport: inboundFlight?.toIata ?? body.destinationAirport,
@@ -252,7 +292,14 @@ export async function POST(req: Request) {
           body.restaurantStyle ?? budgetFromConversation(body.idealTrip).restaurantStyle,
         rejectedPlaceIds: body.rejectedPlaceIds,
         keptPlaceIds: body.keptPlaceIds,
-        party: body.party ?? constraintsFromConversation(body.idealTrip, body.interests).party,
+        party:
+          body.party ??
+          (body.travelerMode === "business"
+            ? "business"
+            : constraintsFromConversation(body.idealTrip, body.interests).party),
+        travelerMode: body.travelerMode,
+        planningClarity: body.planningClarity,
+        cityIntensities: body.cityIntensities,
         interestWeights:
           body.interestWeights ??
           constraintsFromConversation(body.idealTrip, body.interests).interestWeights,
@@ -284,7 +331,25 @@ export async function POST(req: Request) {
         avoid: body.avoid,
         idealTrip: body.idealTrip,
       },
+      idempotencyKey: body.idempotencyKey,
     });
+    const tripId = created.tripId;
+
+    if (body.futureTripId && !created.reused) {
+      await supabase
+        .from("future_trips")
+        .update({
+          converted_trip_id: tripId,
+          status: "planning",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", body.futureTripId)
+        .eq("owner_id", user.id);
+    }
+
+    if (created.reused) {
+      return NextResponse.json({ tripId, reused: true, warnings: [] as string[] });
+    }
 
     const generated = await generateItinerary({
       destination: destinationLabel,
@@ -309,6 +374,7 @@ export async function POST(req: Request) {
       interestWeights:
         body.interestWeights ??
         constraintsFromConversation(body.idealTrip, body.interests).interestWeights,
+      downrankedInterests: body.downrankedInterests,
       maxWalkMinutes:
         body.maxWalkMinutes ??
         constraintsFromConversation(body.idealTrip, body.interests).maxWalkMinutes,
@@ -322,22 +388,7 @@ export async function POST(req: Request) {
       dayStart,
       dayEnd: body.dayEnd,
       hotel: body.hotel,
-      legs: body.legs?.length
-        ? body.legs
-        : [
-            {
-              city: body.destination,
-              days: Math.max(
-                1,
-                Math.ceil(
-                  (new Date(body.endDate).getTime() -
-                    new Date(body.startDate).getTime()) /
-                    86_400_000,
-                ) + 1,
-              ),
-              hotel: body.hotel,
-            },
-          ],
+      legs: resolvedLegs,
       inboundFlight: inboundFlight
         ? { ...inboundFlight, ...arrivalCoords }
         : undefined,

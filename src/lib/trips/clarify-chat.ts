@@ -76,6 +76,27 @@ export function localClarifyReply(
     };
   }
 
+  // Per-city pace when multi-city and pace not yet collected per destination.
+  const paceCityMark = "pace would you prefer in";
+  if (cities.length > 1) {
+    const unanswered = cities.find(
+      (city) => !asked(history, `${paceCityMark} ${city}`),
+    );
+    if (unanswered && asked(history, PACE_MARK) === false) {
+      /* fall through to global pace below */
+    } else if (unanswered) {
+      return {
+        reply: `${heard}For ${unanswered}, what pace would you prefer in ${unanswered}?`,
+        done: false,
+        choices: [
+          { id: `pace-relaxed-${unanswered}`, label: "Relaxed" },
+          { id: `pace-moderate-${unanswered}`, label: "Moderate" },
+          { id: `pace-fast-${unanswered}`, label: "Fast-paced" },
+        ],
+      };
+    }
+  }
+
   if (!budgetTopicAsked(history, "total")) {
     return {
       reply: `${heard}How much is set aside for the whole trip?`,

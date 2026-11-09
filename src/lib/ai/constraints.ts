@@ -1,3 +1,5 @@
+import { interestSynonyms } from "./validate-day";
+
 export type TravelParty = "solo" | "couple" | "family" | "multigen" | "friends" | "business";
 export type SettingLean = "indoor" | "outdoor" | "either";
 
@@ -12,15 +14,24 @@ export function weightedInterestMatch(
 ): number {
   if (!interests.length) return 0.5;
   const lower = types.map((type) => type.toLowerCase());
+  const blob = lower.join(" ");
   let hit = 0;
   let sum = 0;
   for (const interest of interests) {
     const weight = clampWeight(weights?.[interest] ?? weights?.[interest.toLowerCase()]);
     sum += weight;
-    const token = interest.toLowerCase();
-    if (lower.some((type) => type.includes(token) || token.includes(type))) hit += weight;
+    const synonyms = interestSynonyms(interest);
+    if (
+      synonyms.some(
+        (token) =>
+          blob.includes(token) ||
+          lower.some((type) => type.includes(token) || token.includes(type)),
+      )
+    ) {
+      hit += weight;
+    }
   }
-  return Math.min(1, hit / sum);
+  return Math.min(1, hit / Math.max(sum, 1));
 }
 
 function clampWeight(value: number | undefined): number {

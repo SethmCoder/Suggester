@@ -1,10 +1,10 @@
-import { FutureTripDetail } from "@/components/future-trips/FutureTripDetail";
+import { redirect } from "next/navigation";
 
-export default async function FutureTripPage({
+export default async function FutureTripRedirectPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  return <FutureTripDetail id={id} />;
+  redirect(`/dreamer/${id}`);
 }

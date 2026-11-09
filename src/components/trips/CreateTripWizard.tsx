@@ -37,6 +37,12 @@ import {
   idealTripWithMajorStops,
   mergeTripStops,
 } from "@/lib/trips/major-stops";
+import {
+  addCalendarDays,
+  assertValidDateRange,
+  nightsBetween,
+} from "@/lib/trips/dates";
+import type { PlanningClarity, TravelerMode } from "@/lib/types/trip";
 
 const INTERCITY_MODES: { value: LegTransitMode; label: string }[] = [
   { value: "auto", label: "Auto (planner picks)" },
@@ -71,7 +77,11 @@ const INTERESTS = [
 
 type LegDraft = {
   city: string;
+  country?: string;
   days: number;
+  arrivalDate?: string;
+  departureDate?: string;
+  nights?: number;
   hotel: string;
   geonameId?: number;
   lat?: number;
@@ -88,6 +98,35 @@ type LegDraft = {
   hotelPlace: HotelPlacePreference;
   hotelBrand: string;
 };
+
+function emptyLeg(partial?: Partial<LegDraft>): LegDraft {
+  return {
+    city: "",
+    days: 3,
+    hotel: "",
+    transitFromPrevious: "auto",
+    hotelBooked: false,
+    hotelMinRating: 4,
+    hotelPlace: "center",
+    hotelBrand: "",
+    ...partial,
+  };
+}
+
+function legWithDates(
+  leg: LegDraft,
+  arrivalDate: string,
+  departureDate: string,
+): LegDraft {
+  const nights = nightsBetween(arrivalDate, departureDate);
+  return {
+    ...leg,
+    arrivalDate,
+    departureDate,
+    nights,
+    days: Math.max(1, nights + 1),
+  };
+}
 
 type CitySuggestion = {
   id: number;
@@ -167,6 +206,7 @@ export function CreateTripWizard({
     originAirport: "",
     destinationAirport: "",
     startDate: "",
+    endDate: "",
     travelers: 2,
     budget: "",
     currency: "USD",
@@ -188,21 +228,12 @@ export function CreateTripWizard({
     preferredAirlines: "",
     flightPricePoint: "any" as PricePoint,
     chosenAirline: "",
+    travelerMode: "" as TravelerMode | "",
+    planningClarity: "" as PlanningClarity | "",
   });
   const [routeAirlines, setRouteAirlines] = useState<AirlineOption[]>([]);
   const [majorStops, setMajorStops] = useState<string[]>([]);
-  const [legs, setLegs] = useState<LegDraft[]>([
-    {
-      city: "",
-      days: 3,
-      hotel: "",
-      transitFromPrevious: "auto",
-      hotelBooked: false,
-      hotelMinRating: 4,
-      hotelPlace: "center",
-      hotelBrand: "",
-    },
-  ]);
+  const [legs, setLegs] = useState<LegDraft[]>([emptyLeg()]);
   const futureLoaded = useRef(false);
 
   useEffect(() => {
@@ -300,17 +331,43 @@ export function CreateTripWizard({
     dest?: ReturnType<typeof setTimeout>;
   }>({});
 
-  const totalDays = useMemo(
-    () => legs.reduce((s, l) => s + Math.max(1, l.days || 1), 0),
-    [legs],
-  );
+  const endDate = form.endDate;
 
-  const endDate = useMemo(() => {
-    if (!form.startDate || totalDays < 1) return "";
-    const d = new Date(`${form.startDate}T12:00:00`);
-    d.setDate(d.getDate() + totalDays - 1);
-    return d.toISOString().slice(0, 10);
-  }, [form.startDate, totalDays]);
+  const tripNights = useMemo(() => {
+    if (!form.startDate || !form.endDate) return 0;
+    try {
+      return nightsBetween(form.startDate, form.endDate);
+    } catch {
+      return 0;
+    }
+  }, [form.startDate, form.endDate]);
+
+  function redistributeLegsFromTripDates(start: string, end: string) {
+    if (!start || !end) return;
+    try {
+      assertValidDateRange(start, end);
+    } catch {
+      return;
+    }
+    setLegs((prev) => {
+      if (!prev.length) return prev;
+      const totalNights = nightsBetween(start, end);
+      if (prev.length === 1) {
+        return [legWithDates(prev[0], start, end)];
+      }
+      const base = Math.floor(totalNights / prev.length);
+      const rem = totalNights % prev.length;
+      let cursor = start;
+      return prev.map((leg, i) => {
+        const nights = base + (i < rem ? 1 : 0);
+        const arrivalDate = cursor;
+        const departureDate =
+          i === prev.length - 1 ? end : addCalendarDays(arrivalDate, nights);
+        cursor = departureDate;
+        return legWithDates(leg, arrivalDate, departureDate);
+      });
+    });
+  }
 
   async function searchCities(legIndex: number, q: string) {
     if (q.trim().length < 2) {
@@ -521,6 +578,10 @@ export function CreateTripWizard({
     setPlanLimited(false);
     setProgress("Saving trip…");
     try {
+      if (!form.startDate || !form.endDate) {
+        throw new Error("Choose an arrival and departure date.");
+      }
+      assertValidDateRange(form.startDate, form.endDate);
       const created = countCreatedOfflineTrips();
       const gate = await fetch("/api/billing", {
         method: "POST",
@@ -569,7 +630,7 @@ export function CreateTripWizard({
       originAirport: form.originAirport || undefined,
       destinationAirport: form.destinationAirport || undefined,
       startDate: form.startDate,
-      endDate,
+      endDate: form.endDate,
       travelers: form.travelers,
       budget: form.budget ? Number(form.budget) : talked.total,
       budgetAllocation: talked.allocation,
@@ -577,6 +638,15 @@ export function CreateTripWizard({
       rejectedPlaceIds: feedback.removed,
       keptPlaceIds: feedback.added,
       ...constraintsFromConversation(Object.values(clarifyAnswers).join("\n"), interestList),
+      travelerMode: form.travelerMode || undefined,
+      planningClarity: form.planningClarity || undefined,
+      party:
+        form.travelerMode === "business"
+          ? "business"
+          : constraintsFromConversation(
+              Object.values(clarifyAnswers).join("\n"),
+              interestList,
+            ).party,
       currency: form.currency,
       interests: interestList,
       intensity: form.intensity,
@@ -590,7 +660,9 @@ export function CreateTripWizard({
       mustSee: stops.mustSee,
       preferred: stops.preferred,
       futureTripId: futureTripId || undefined,
-      idempotencyKey: futureTripId ? `future:${futureTripId}` : undefined,
+      idempotencyKey: futureTripId
+        ? `future:${futureTripId}`
+        : `create:${form.startDate}:${form.endDate}:${legs.map((l) => l.city).join("|")}`,
       optional: splitList(form.optional),
       avoid: splitList(form.avoid),
       preferredAirlines: form.preferredAirlines.trim() || undefined,
@@ -631,7 +703,11 @@ export function CreateTripWizard({
         .filter((l) => l.city.trim())
         .map((l, i) => ({
           city: l.city.trim(),
+          country: l.country,
           days: Math.max(1, Number(l.days) || 1),
+          arrivalDate: l.arrivalDate,
+          departureDate: l.departureDate,
+          nights: l.nights,
           hotel: l.hotel.trim() || undefined,
           geonameId: l.geonameId,
           lat: l.lat,
@@ -669,7 +745,7 @@ export function CreateTripWizard({
             tripId,
             destination: data.destination || destination || "Untitled trip",
             startDate: form.startDate,
-            endDate,
+            endDate: form.endDate,
             days: (data.days ?? []) as GeneratedDay[],
             legs: body.legs,
             title: form.tripTitle.trim() || undefined,
@@ -829,6 +905,10 @@ export function CreateTripWizard({
       places={legs.map((leg, index) => ({
         city: leg.city,
         days: leg.days,
+        arrivalDate: leg.arrivalDate,
+        departureDate: leg.departureDate,
+        nights: leg.nights,
+        country: leg.country,
         suggestions: (citySuggestions[index] ?? []).map((c) => ({
           key: String(c.id),
           label: c.label,
@@ -848,30 +928,104 @@ export function CreateTripWizard({
       }}
       onLegDays={(index, days) =>
         setLegs((prev) =>
-          prev.map((leg, i) => (i === index ? { ...leg, days } : leg)),
+          prev.map((leg, i) =>
+            i === index
+              ? {
+                  ...leg,
+                  days,
+                  nights: Math.max(0, days - 1),
+                }
+              : leg,
+          ),
         )
       }
-      onAddCity={() =>
-        setLegs((prev) => [
-          ...prev,
-          {
-            city: "",
-            days: 2,
-            hotel: "",
+      onLegDates={(index, dates) => {
+        try {
+          assertValidDateRange(dates.arrivalDate, dates.departureDate);
+        } catch {
+          return;
+        }
+        setLegs((prev) =>
+          prev.map((leg, i) =>
+            i === index
+              ? legWithDates(leg, dates.arrivalDate, dates.departureDate)
+              : leg,
+          ),
+        );
+        if (index === 0) {
+          setForm((current) => ({
+            ...current,
+            startDate: dates.arrivalDate,
+            endDate:
+              current.endDate && current.endDate >= dates.departureDate
+                ? current.endDate
+                : dates.departureDate,
+          }));
+        }
+        if (index === legs.length - 1) {
+          setForm((current) => ({
+            ...current,
+            endDate: dates.departureDate,
+            startDate:
+              current.startDate && current.startDate <= dates.arrivalDate
+                ? current.startDate
+                : dates.arrivalDate,
+          }));
+        }
+      }}
+      onAddCity={() => {
+        setLegs((prev) => {
+          const last = prev[prev.length - 1];
+          const arrival =
+            last?.departureDate || form.endDate || form.startDate || "";
+          const departure = arrival
+            ? addCalendarDays(arrival, 2)
+            : "";
+          const next = emptyLeg({
+            days: 3,
             transitFromPrevious: "auto",
-            hotelBooked: false,
-            hotelMinRating: 4,
-            hotelPlace: "center",
-            hotelBrand: "",
-          },
-        ])
-      }
+          });
+          const withDates =
+            arrival && departure ? legWithDates(next, arrival, departure) : next;
+          if (departure) {
+            setForm((current) => ({
+              ...current,
+              endDate:
+                !current.endDate || departure > current.endDate
+                  ? departure
+                  : current.endDate,
+            }));
+          }
+          return [...prev, withDates];
+        });
+      }}
       onRemoveCity={(index) =>
         setLegs((prev) => (prev.length < 2 ? prev : prev.filter((_, i) => i !== index)))
       }
       startDate={form.startDate}
       endDate={endDate}
-      onStartDate={(startDate) => setForm((current) => ({ ...current, startDate }))}
+      nights={tripNights}
+      onStartDate={(startDate) => {
+        setForm((current) => {
+          const end =
+            current.endDate && current.endDate >= startDate
+              ? current.endDate
+              : startDate
+                ? addCalendarDays(startDate, Math.max(1, tripNights || 3))
+                : current.endDate;
+          if (startDate && end) redistributeLegsFromTripDates(startDate, end);
+          return { ...current, startDate, endDate: end };
+        });
+      }}
+      onEndDate={(nextEnd) => {
+        setForm((current) => {
+          if (current.startDate && nextEnd < current.startDate) return current;
+          if (current.startDate && nextEnd) {
+            redistributeLegsFromTripDates(current.startDate, nextEnd);
+          }
+          return { ...current, endDate: nextEnd };
+        });
+      }}
       travelers={form.travelers}
       onTravelers={(travelers) => setForm((current) => ({ ...current, travelers }))}
       intensity={form.intensity}
@@ -879,6 +1033,14 @@ export function CreateTripWizard({
       transport={form.transport}
       onTransport={(transport) => setForm((current) => ({ ...current, transport }))}
       party={party}
+      travelerMode={form.travelerMode}
+      onTravelerMode={(travelerMode) =>
+        setForm((current) => ({ ...current, travelerMode }))
+      }
+      planningClarity={form.planningClarity}
+      onPlanningClarity={(planningClarity) =>
+        setForm((current) => ({ ...current, planningClarity }))
+      }
       destination={firstLeg?.city ?? ""}
       cities={legs.map((leg) => leg.city)}
       interests={[

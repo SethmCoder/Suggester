@@ -26,8 +26,18 @@ export type LegTransitMode =
 /** One stay segment in a (possibly multi-city) trip. */
 export interface TripLeg {
   city: string;
-  /** Number of itinerary days based in this city. */
+  /** Country name when known (e.g. France). */
+  country?: string;
+  /** Number of itinerary days based in this city (derived from arrival/departure when set). */
   days: number;
+  /** Arrival calendar date YYYY-MM-DD for this city. */
+  arrivalDate?: string;
+  /** Departure calendar date YYYY-MM-DD for this city. */
+  departureDate?: string;
+  /** Overnight stays in this city (derived; do not invent). */
+  nights?: number;
+  /** Per-city pace when the traveler set different intensities. */
+  intensity?: "relaxed" | "balanced" | "packed";
   /** Hotel name or address — activities are planned near this point when geocoded. */
   hotel?: string;
   geonameId?: number;
@@ -51,8 +61,14 @@ export interface TripLeg {
   transitFromPrevious?: LegTransitMode;
 }
 
+export type TravelerMode = "business" | "leisure";
+export type PlanningClarity =
+  | "know_where_and_what"
+  | "know_where_not_what"
+  | "know_neither";
+
 export interface TripPreferencesPayload {
-  destinations: { name: string; nights?: number }[];
+  destinations: { name: string; nights?: number; country?: string }[];
   /** Ordered multi-city stays (Paris → Toulouse → Paris). */
   legs?: TripLeg[];
   departureCity?: string;
@@ -64,6 +80,12 @@ export interface TripPreferencesPayload {
   inboundFlight?: InboundFlightPrefs;
   travelers?: number;
   party?: "solo" | "couple" | "family" | "multigen" | "friends" | "business";
+  /** Business vs leisure framing from the create form. */
+  travelerMode?: TravelerMode;
+  /** How clear the traveler is about destination and activities. */
+  planningClarity?: PlanningClarity;
+  /** Per-city intensity overrides keyed by city name. */
+  cityIntensities?: Record<string, "relaxed" | "balanced" | "packed">;
   interestWeights?: Record<string, number>;
   maxWalkMinutes?: number;
   indoorOutdoor?: "indoor" | "outdoor" | "either";

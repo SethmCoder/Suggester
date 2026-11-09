@@ -10,6 +10,7 @@ const PROTECTED = [
   "/saved-places",
   "/wishlist",
   "/future-trips",
+  "/dreamer",
   "/discover",
   "/explore",
   "/things",

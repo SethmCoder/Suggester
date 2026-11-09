@@ -55,8 +55,11 @@ import {
   dropRepeatedExperiences,
   expandInterestQueries,
   explainStop,
+  experienceBucket,
   noteIsGeneric,
+  validateAiDay,
 } from "./validate-day";
+import { interestSynonyms } from "./validate-day";
 import { anchorUnbookedLegs } from "../hotels/hotelrec";
 import type { TripLeg } from "../types/trip";
 import { expandLegsToDays, legsLabel } from "../trips/legs";
@@ -95,6 +98,8 @@ export interface TripPreferencesInput {
   keptPlaceIds?: string[];
   party?: TravelParty;
   interestWeights?: Record<string, number>;
+  /** Interests the traveler repeatedly rejected — demote matching place types. */
+  downrankedInterests?: string[];
   maxWalkMinutes?: number;
   indoorOutdoor?: SettingLean;
   dietary?: string;
@@ -211,6 +216,7 @@ async function callGroq(
     weatherBlock?: string;
   },
 ): Promise<ItineraryGeneration | null> {
+  // note: weatherBlock + personalization fields are passed through to the prompt below
   if (!process.env.GROQ_API_KEY) return null;
   const model = await plannerModel();
   const popConfig = getPopularityConfig();
@@ -291,6 +297,11 @@ async function callGroq(
           dayPlan: extra?.dayPlan,
           hotelNotes: extra?.hotelNotes,
           weatherBlock: extra?.weatherBlock,
+          interestWeights: prefs.interestWeights,
+          party: prefs.party,
+          dietary: prefs.dietary,
+          indoorOutdoor: prefs.indoorOutdoor,
+          maxWalkMinutes: prefs.maxWalkMinutes,
         }),
       },
     ],
@@ -656,6 +667,14 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
     discoveryRank *= 0.7 + 0.3 * partyFit(c.types, prefs.party);
     discoveryRank *= 0.75 + 0.25 * settingFit(c.types, prefs.indoorOutdoor);
     if (cuisineConflicts(prefs.dietary, c.cuisine)) discoveryRank *= 0.25;
+    const down = prefs.downrankedInterests ?? [];
+    if (down.length) {
+      const blob = c.types.join(" ").toLowerCase();
+      const hit = down.some((interest) =>
+        interestSynonyms(interest).some((token) => blob.includes(token)),
+      );
+      if (hit) discoveryRank *= 0.55;
+    }
     return {
       placeId: c.placeId,
       displayName: c.displayName,
@@ -733,6 +752,31 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       "The model was unavailable, so this plan was built from the researched places.",
     );
   }
+  const allowedPlaceIds = new Set(byId.keys());
+  const placeCity = new Map(
+    [...byId.entries()].map(([id, hit]) => [id, hit.city] as const),
+  );
+  ai = {
+    ...ai,
+    days: ai.days.map((day) => {
+      const assignment = dayPlan.find((row) => row.dayIndex === day.dayIndex);
+      const validated = validateAiDay({
+        dayIndex: day.dayIndex,
+        activities: day.activities,
+        allowedPlaceIds,
+        placeCity,
+        dayCity: assignment?.city,
+      });
+      warnings.push(...validated.warnings);
+      const byPlace = new Map(day.activities.map((row) => [row.placeId, row]));
+      return {
+        ...day,
+        activities: validated.kept
+          .map((row) => byPlace.get(row.placeId))
+          .filter(Boolean) as typeof day.activities,
+      };
+    }),
+  };
   if (weatherForecast?.days.some((day) => day.wet)) {
     warnings.push(
       "Wet-weather days will prefer indoor stops; outdoor parks and viewpoints are deferred when the forecast looks rainy.",
@@ -1057,6 +1101,49 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       );
     }
 
+    // Re-order sightseeing geographically after fills (keeps transit/flight anchors first).
+    const anchoredActs = activities.filter(
+      (a) => a.placeId.startsWith("transit:") || a.placeId.startsWith("flight:"),
+    );
+    const sightActs = activities.filter(
+      (a) => !a.placeId.startsWith("transit:") && !a.placeId.startsWith("flight:"),
+    );
+    if (sightActs.length > 1) {
+      const reordered = await orderByRoutedNeighbor(sightActs, startPt, routeMode);
+      // Prefer variety: soft demote consecutive same experience buckets after geo order.
+      const variedOrder: typeof reordered = [];
+      const leftover = [...reordered];
+      let prevBucket = "";
+      while (leftover.length) {
+        let pick = 0;
+        for (let i = 0; i < leftover.length; i++) {
+          const types = byId.get(leftover[i].placeId)?.types ?? [];
+          const bucket = experienceBucket(types, leftover[i].name);
+          if (bucket !== prevBucket || leftover[i].priority === "must_see") {
+            pick = i;
+            break;
+          }
+        }
+        const next = leftover.splice(pick, 1)[0];
+        prevBucket = experienceBucket(
+          byId.get(next.placeId)?.types ?? [],
+          next.name,
+        );
+        variedOrder.push(next);
+      }
+      activities.length = 0;
+      activities.push(...anchoredActs, ...variedOrder);
+      let cursor = defaultStart.slice(0, 5);
+      if (anchoredActs.length) {
+        const lastAnchor = anchoredActs[anchoredActs.length - 1];
+        cursor = addMinutes(lastAnchor.startTime, lastAnchor.durationMinutes + 30);
+      }
+      for (const stop of variedOrder) {
+        stop.startTime = cursor;
+        cursor = addMinutes(cursor, stop.durationMinutes + 15);
+      }
+    }
+
     // Route local sightseeing legs; keep intercity transit duration as estimated
     const localStartIdx = activities.findIndex(
       (a) => !a.placeId.startsWith("transit:") && !a.placeId.startsWith("flight:"),
@@ -1111,11 +1198,21 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
     }
 
     const clocked = fitDayClock(
-      activities.map((activity) => ({
-        ...activity,
-        hoursWindow: typeof activity.openingHours === "string" ? activity.openingHours : null,
-        types: byId.get(activity.placeId)?.types ?? [],
-      })),
+      activities.map((activity) => {
+        const details = detailsCache.get(activity.placeId);
+        const rawHours =
+          details && "regularOpeningHours" in (details as object)
+            ? (details as { regularOpeningHours?: unknown }).regularOpeningHours
+            : activity.openingHours;
+        return {
+          ...activity,
+          hoursWindow:
+            typeof activity.openingHours === "string" ? activity.openingHours : null,
+          openingHours: rawHours ?? activity.openingHours,
+          dayDate,
+          types: byId.get(activity.placeId)?.types ?? [],
+        };
+      }),
       {
         dayEnd,
         mealGapMinutes: 60,

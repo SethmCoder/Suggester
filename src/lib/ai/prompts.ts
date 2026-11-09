@@ -38,6 +38,11 @@ export function buildItineraryUserPrompt(input: {
   dayPlan?: DayCityAssignment[];
   hotelNotes?: string;
   weatherBlock?: string;
+  interestWeights?: Record<string, number>;
+  party?: string;
+  dietary?: string;
+  indoorOutdoor?: string;
+  maxWalkMinutes?: number;
 }): string {
   const candidateLines = input.candidates.slice(0, 60).map((c) => {
     const pop = c.popularity;
@@ -71,9 +76,21 @@ export function buildItineraryUserPrompt(input: {
       })
       .join("\n") ?? "";
 
+  const weightLines = Object.entries(input.interestWeights ?? {})
+    .filter(([, weight]) => Number.isFinite(weight))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([interest, weight]) => `${interest}=${weight}`)
+    .join(", ");
+
   return `Trip overview: ${input.destination}
 Dates: ${input.startDate} to ${input.endDate}
 Interests: ${input.interests.join(", ") || "general"}
+Interest weights (higher = lead the day): ${weightLines || "equal"}
+Party: ${input.party || "unspecified"}
+Dietary: ${input.dietary || "none"}
+Indoor/outdoor lean: ${input.indoorOutdoor || "either"}
+Max walk between stops: ${input.maxWalkMinutes ? `${input.maxWalkMinutes} minutes` : "flexible"}
 Pace: ${input.intensity}
 Local transport preference: ${input.transport}
 Major stops / must-see (hard — schedule from candidates when present): ${input.mustSee.join("; ") || "none"}

@@ -1,3 +1,5 @@
+import { fitVisit } from "./hours";
+
 export function haversineKm(
   lat1: number,
   lng1: number,
@@ -94,6 +96,34 @@ export async function orderByRoutedNeighbor<
     current = restIdx + 1;
   }
 
+  // 2-opt polish on the OSRM duration matrix (skip seed index 0).
+  if (ordered.length >= 3) {
+    const indexOf = (item: T) => rest.indexOf(item) + 1;
+    let improved = true;
+    let guard = 0;
+    while (improved && guard < 24) {
+      improved = false;
+      guard += 1;
+      for (let i = 0; i < ordered.length - 2; i++) {
+        for (let k = i + 1; k < ordered.length - 1; k++) {
+          const a = i === 0 ? 0 : indexOf(ordered[i - 1]);
+          const b = indexOf(ordered[i]);
+          const c = indexOf(ordered[k]);
+          const d = indexOf(ordered[k + 1]);
+          const before =
+            (matrix[a]?.[b] ?? 0) + (matrix[c]?.[d] ?? 0);
+          const after =
+            (matrix[a]?.[c] ?? 0) + (matrix[b]?.[d] ?? 0);
+          if (after + 0.5 < before) {
+            const slice = ordered.slice(i, k + 1).reverse();
+            ordered.splice(i, k - i + 1, ...slice);
+            improved = true;
+          }
+        }
+      }
+    }
+  }
+
   return ordered;
 }
 
@@ -103,6 +133,9 @@ export type ClockStop = {
   durationMinutes: number;
   travelMinutesFromPrev?: number;
   hoursWindow?: string | null;
+  /** Full OSM/Google hours blob when available — preferred over hoursWindow. */
+  openingHours?: unknown;
+  dayDate?: Date;
 };
 
 function clockMinutes(value: string): number {
@@ -159,13 +192,33 @@ export function fitDayClock<T extends ClockStop>(
       start += options.mealGapMinutes;
       mealUsed = true;
     }
-    const window = parseWindow(item.hoursWindow);
-    if (window && (start < window.open || start + item.durationMinutes > window.close)) {
-      dropped.push({
-        item,
-        reason: "A stop was dropped because travel time pushed it outside published hours.",
+    let startTime = clockFrom(start);
+    if (item.openingHours != null && item.dayDate) {
+      const fit = fitVisit({
+        openingHours: item.openingHours,
+        cursor: startTime,
+        durationMinutes: item.durationMinutes,
+        dayDate: item.dayDate,
+        dayEnd: options.dayEnd,
       });
-      continue;
+      if (fit.status === "closed") {
+        dropped.push({ item, reason: fit.reason });
+        continue;
+      }
+      if (fit.status === "open") {
+        start = clockMinutes(fit.start);
+        startTime = fit.start;
+      }
+    } else {
+      const window = parseWindow(item.hoursWindow);
+      if (window && (start < window.open || start + item.durationMinutes > window.close)) {
+        dropped.push({
+          item,
+          reason:
+            "A stop was dropped because travel time pushed it outside published hours.",
+        });
+        continue;
+      }
     }
     if (start + item.durationMinutes > dayEnd) {
       dropped.push({
@@ -174,7 +227,7 @@ export function fitDayClock<T extends ClockStop>(
       });
       continue;
     }
-    kept.push({ ...item, startTime: clockFrom(start) });
+    kept.push({ ...item, startTime });
     cursor = start + item.durationMinutes;
   }
   return { kept, dropped };

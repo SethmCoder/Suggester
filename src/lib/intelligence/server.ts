@@ -18,6 +18,34 @@ export function effectiveInterestsServer(profile: TravelIntelligence): string[] 
   );
 }
 
+/** Map intelligence weights into generateItinerary interestWeights (1–3). */
+export function interestWeightsFromIntelligence(
+  profile: TravelIntelligence,
+): Record<string, number> {
+  const weights: Record<string, number> = {};
+  for (const interest of profile.explicit.interests) {
+    weights[interest] = Math.max(weights[interest] ?? 1, 2);
+  }
+  if (!profile.personalizationEnabled) return weights;
+  for (const row of profile.inferred.interests) {
+    if (row.evidence < 2) continue;
+    const score = row.weight >= 2 ? 3 : row.weight >= 1.25 ? 2 : 1;
+    weights[row.interest] = Math.max(weights[row.interest] ?? 1, score);
+  }
+  for (const row of profile.inferred.downrankedInterests) {
+    if (row.evidence < 2 || row.weight < 1.25) continue;
+    weights[row.interest] = 0.5;
+  }
+  return weights;
+}
+
+export function downrankedInterestsServer(profile: TravelIntelligence): string[] {
+  if (!profile.personalizationEnabled) return [];
+  return profile.inferred.downrankedInterests
+    .filter((row) => row.evidence >= 2 && row.weight >= 1.25)
+    .map((row) => row.interest);
+}
+
 export function parseTravelIntelligence(raw: unknown): TravelIntelligence {
   if (!raw || typeof raw !== "object") return emptyIntelligence();
   const bag = raw as { travelIntelligence?: TravelIntelligence } & TravelIntelligence;

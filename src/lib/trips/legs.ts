@@ -1,4 +1,9 @@
 import type { TripLeg } from "@/lib/types/trip";
+import {
+  addCalendarDays,
+  calendarDaysInclusive,
+  nightsBetween,
+} from "@/lib/trips/dates";
 
 export type DayCityAssignment = {
   dayIndex: number;
@@ -12,12 +17,55 @@ export type DayCityAssignment = {
   anchorLng: number;
 };
 
+/**
+ * Fill nights/days from arrival/departure when present.
+ * Inclusive calendar days drive itinerary day count; nights = overnight stays.
+ */
+export function normalizeLegDates(leg: TripLeg): TripLeg {
+  if (leg.arrivalDate && leg.departureDate) {
+    const nights = nightsBetween(leg.arrivalDate, leg.departureDate);
+    const days = Math.max(1, calendarDaysInclusive(leg.arrivalDate, leg.departureDate));
+    return { ...leg, nights, days };
+  }
+  const days = Math.max(1, Math.floor(leg.days) || 1);
+  return {
+    ...leg,
+    nights: leg.nights ?? Math.max(0, days - 1),
+    days,
+  };
+}
+
+/** Spread trip start/end across legs that only have day counts. */
+export function applyTripDatesToLegs(
+  legs: TripLeg[],
+  startDate: string,
+  endDate: string,
+): TripLeg[] {
+  if (!legs.length) return legs;
+  const normalized = legs.map(normalizeLegDates);
+  const hasAllDates = normalized.every((l) => l.arrivalDate && l.departureDate);
+  if (hasAllDates) return normalized.map(normalizeLegDates);
+
+  let cursor = startDate;
+  return normalized.map((leg, i) => {
+    const days = Math.max(1, Math.floor(leg.days) || 1);
+    const arrivalDate = leg.arrivalDate ?? cursor;
+    const departureDate =
+      leg.departureDate ??
+      (i === normalized.length - 1
+        ? endDate
+        : addCalendarDays(arrivalDate, days - 1));
+    cursor = departureDate;
+    return normalizeLegDates({ ...leg, arrivalDate, departureDate });
+  });
+}
+
 /** Expand ordered legs into per-day city/hotel anchors. */
 export function expandLegsToDays(legs: TripLeg[]): DayCityAssignment[] {
   const out: DayCityAssignment[] = [];
   let dayIndex = 0;
   for (let legIndex = 0; legIndex < legs.length; legIndex++) {
-    const leg = legs[legIndex];
+    const leg = normalizeLegDates(legs[legIndex]);
     const days = Math.max(1, Math.floor(leg.days) || 1);
     const anchorLat = leg.hotelLat ?? leg.lat ?? 0;
     const anchorLng = leg.hotelLng ?? leg.lng ?? 0;
@@ -40,7 +88,11 @@ export function expandLegsToDays(legs: TripLeg[]): DayCityAssignment[] {
 
 export function legsLabel(legs: TripLeg[]): string {
   return legs
-    .map((l) => `${l.city} (${l.days}d)`)
+    .map((l) => {
+      const n = normalizeLegDates(l);
+      const nights = n.nights ?? Math.max(0, n.days - 1);
+      return `${n.city} (${nights} night${nights === 1 ? "" : "s"})`;
+    })
     .join(" → ");
 }
 

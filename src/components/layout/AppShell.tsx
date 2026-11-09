@@ -38,7 +38,7 @@ const PRIMARY: NavItem[] = [
   { href: "/explore", label: "Explorer", icon: IconMap },
   { href: "/things", label: "Things", icon: IconSpark },
   { href: "/wishlist", label: "Wishlist", icon: IconPin, tour: "tour-nav-saved" },
-  { href: "/future-trips", label: "Future Trips", icon: IconPlane },
+  { href: "/dreamer", label: "Dreamer", icon: IconPlane },
 ];
 
 const SECONDARY: NavItem[] = [

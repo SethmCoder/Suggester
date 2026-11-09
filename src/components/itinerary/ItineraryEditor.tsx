@@ -51,6 +51,13 @@ import { TripIntelligence } from "./TripIntelligence";
 import type { BudgetPlan } from "@/lib/trips/budget";
 import { rememberAddedPlace, rememberRemovedPlace } from "@/lib/trips/place-feedback";
 import type { ActivityRow, LegTransitMode, TripLeg } from "@/lib/types/trip";
+import {
+  reindexByChronology,
+  sortActivitiesChronologically,
+} from "@/lib/trips/activity-order";
+import { nightsBetween, nightsLabel } from "@/lib/trips/dates";
+import { TripPlanSidebar } from "@/components/trips/TripPlanSidebar";
+import { TripBookingsPanel } from "@/components/trips/TripBookingsPanel";
 
 const LEG_CARD_COLORS = [
   { border: "border-[#0400FF]/35", bg: "bg-[#F5F7FF]", tag: "bg-[#0400FF]" },
@@ -142,9 +149,9 @@ export function ItineraryEditor({
       .map((d) => ({
         dayId: d.id,
         dayIndex: d.day_index,
-        activities: initialActivities
-          .filter((a) => a.day_id === d.id)
-          .sort((a, b) => a.sort_order - b.sort_order),
+        activities: sortActivitiesChronologically(
+          initialActivities.filter((a) => a.day_id === d.id),
+        ),
       })),
   );
   const [hydratedOffline, setHydratedOffline] = useState(false);
@@ -199,9 +206,9 @@ export function ItineraryEditor({
               .map((d) => ({
                 dayId: d.id,
                 dayIndex: d.day_index,
-                activities: snap.activities
-                  .filter((a) => a.day_id === d.id)
-                  .sort((a, b) => a.sort_order - b.sort_order),
+                activities: sortActivitiesChronologically(
+                  snap.activities.filter((a) => a.day_id === d.id),
+                ),
               })),
           );
           if (snap.legs?.length) setLegs(snap.legs);
@@ -247,16 +254,23 @@ export function ItineraryEditor({
       }
 
       const payload = nextDays.flatMap((d) =>
-        d.activities.map((a, sort_order) => ({
+        reindexByChronology(d.activities).map((a) => ({
           id: a.id,
           day_id: d.dayId,
-          sort_order,
+          sort_order: a.sort_order,
           start_time: a.start_time,
           duration_minutes: a.duration_minutes,
           priority: a.priority,
           planning_note: a.planning_note,
           completed: a.completed,
           user_locked: true,
+          name: a.name,
+          address: a.address,
+          lat: a.lat,
+          lng: a.lng,
+          place_id: a.place_id,
+          source: a.source,
+          upsert: a.source === "user" || a.id.startsWith("stop-"),
         })),
       );
       try {
@@ -339,6 +353,27 @@ export function ItineraryEditor({
         if (snap) saveOfflineTrip({ ...snap, legs: next });
       } catch {
         /* ignore */
+      }
+      if (!isDemo && !tripId.startsWith("offline-") && navigator.onLine) {
+        void fetch(`/api/trips/${tripId}/preferences`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            payload: {
+              destinations: next.map((l) => ({
+                name: l.city,
+                nights: l.nights ?? Math.max(0, l.days - 1),
+                country: l.country,
+              })),
+              legs: next,
+              interests: interests ?? [],
+              intensity: "balanced",
+              transport: "walking",
+            },
+          }),
+        }).catch(() => {
+          /* offline ok */
+        });
       }
       return next;
     });
@@ -537,12 +572,18 @@ export function ItineraryEditor({
     patch: Partial<ActivityRow>,
   ) {
     setDays((prev) => {
-      const copy = prev.map((d) => ({
-        ...d,
-        activities: d.activities.map((a) =>
+      const copy = prev.map((d, i) => {
+        const activities = d.activities.map((a) =>
           a.id === activityId ? { ...a, ...patch, user_locked: true } : a,
-        ),
-      }));
+        );
+        return {
+          ...d,
+          activities:
+            i === dayIndex && ("start_time" in patch || "sort_order" in patch)
+              ? reindexByChronology(activities)
+              : activities,
+        };
+      });
       void persist(copy);
       return copy;
     });
@@ -604,13 +645,22 @@ export function ItineraryEditor({
   }
 
   function deleteActivity(dayIndex: number, activityId: string) {
+    const removed = days[dayIndex]?.activities.find(
+      (activity) => activity.id === activityId,
+    );
+    if (
+      !window.confirm(
+        `Remove “${removed?.name ?? "this stop"}” from the itinerary? Saved places elsewhere are kept.`,
+      )
+    ) {
+      return;
+    }
     setDays((prev) => {
       const copy = prev.map((d, i) =>
         i === dayIndex
           ? { ...d, activities: d.activities.filter((a) => a.id !== activityId) }
           : d,
       );
-      const removed = prev[dayIndex]?.activities.find((activity) => activity.id === activityId);
       rememberRemovedPlace(removed?.place_id || removed?.name);
       void persist(copy);
       return copy;
@@ -682,9 +732,28 @@ export function ItineraryEditor({
     };
   }, [areaKey]);
 
+  const tripNights =
+    startDate && endDate
+      ? (() => {
+          try {
+            return nightsBetween(startDate, endDate);
+          } catch {
+            return 0;
+          }
+        })()
+      : 0;
+
   return (
-    <div className="space-y-5" data-tour="tour-itinerary">
-      <section className="flex flex-col gap-3 rounded-[16px] border border-[#E1E5F0] bg-white px-5 py-5 shadow-[0_6px_18px_rgba(8,11,58,0.05)] sm:flex-row sm:items-end sm:justify-between sm:px-7">
+    <div className="flex flex-col gap-5 lg:flex-row lg:items-start" data-tour="tour-itinerary">
+      <TripPlanSidebar
+        tripId={tripId}
+        destination={destName}
+        startDate={startDate}
+        endDate={endDate}
+        cities={legs.map((l) => l.city).filter(Boolean)}
+      />
+      <div className="min-w-0 flex-1 space-y-5">
+      <section id="itinerary" className="flex flex-col gap-3 rounded-[16px] border border-[#E1E5F0] bg-white px-5 py-5 shadow-[0_6px_18px_rgba(8,11,58,0.05)] sm:flex-row sm:items-end sm:justify-between sm:px-7">
         <div>
           <h1 className="text-[28px] font-bold tracking-tight text-[#080B3A]">
             {destName}
@@ -701,6 +770,7 @@ export function ItineraryEditor({
             ) : null}
           </h1>
           <p className="mt-1 text-sm text-[#6B7280]">
+            {tripNights > 0 ? `${nightsLabel(tripNights)} · ` : ""}
             {days.length} days · {flatActivities.length} activities ·{" "}
             {saveState === "saving"
               ? "Saving…"
@@ -765,8 +835,15 @@ export function ItineraryEditor({
       >
         {(view === "schedule" || view === "split") && (
           <div className="min-w-0 space-y-2">
+            <TripBookingsPanel
+              legs={legs}
+              activities={days.flatMap((d) => d.activities)}
+            />
             {legs.length > 0 ? (
-              <section className="space-y-2 rounded-[14px] border border-[#E1E5F0] bg-white p-3 shadow-[0_2px_12px_rgba(8,11,58,0.04)]">
+              <section
+                id="hotels"
+                className="space-y-2 rounded-[14px] border border-[#E1E5F0] bg-white p-3 shadow-[0_2px_12px_rgba(8,11,58,0.04)]"
+              >
                 <div>
                   <h2 className="text-sm font-semibold text-[#080B3A]">
                     Cities & hotels
@@ -1094,6 +1171,7 @@ export function ItineraryEditor({
         isDemo={isDemo}
         onDemoApply={isDemo ? applyAssistantPatch : undefined}
       />
+      </div>
     </div>
   );
 }
@@ -1265,14 +1343,14 @@ function SortableActivity({
               className="rounded-full bg-[#F5F7FF] px-2.5 py-1 text-[11px] font-semibold text-[#0400FF]"
               onClick={() => onUpdate({ completed: !activity.completed })}
             >
-              {activity.completed ? "Undo" : "Done"}
+              {activity.completed ? "Undo" : "Mark done"}
             </button>
             <button
               type="button"
               className="rounded-full px-2.5 py-1 text-[11px] font-semibold text-[#DC2626]"
               onClick={onDelete}
             >
-              Remove
+              Remove from Itinerary
             </button>
             {dayCount > 1 ? (
               <select

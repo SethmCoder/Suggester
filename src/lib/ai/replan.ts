@@ -1,4 +1,5 @@
 import type { ActivityRow } from "@/lib/types/trip";
+import { checkVisitAgainstHours } from "./hours";
 import type { AssistantPatch } from "./patch";
 import { addMinutes } from "./scheduler";
 
@@ -147,7 +148,22 @@ export function planLongerVisit(input: {
     return { summary: "That day has no stop to extend.", operations: [] };
   }
   const extra = input.extraMinutes ?? 45;
-  const duration = (target.duration_minutes ?? 60) + extra;
+  let duration = (target.duration_minutes ?? 60) + extra;
+  if (target.opening_hours && input.days.length) {
+    const day = input.days.find((item) => item.day_index === dayIndex);
+    const dayDate = new Date();
+    const hoursCheck = checkVisitAgainstHours({
+      openingHours: target.opening_hours,
+      visitStartTime: target.start_time?.slice(0, 5) || "10:00",
+      durationMinutes: duration,
+      dayDate,
+    });
+    if (!hoursCheck.ok) {
+      // Cap extension so the visit still fits published hours when possible.
+      duration = Math.max(target.duration_minutes ?? 60, duration - 30);
+    }
+    void day;
+  }
   const endLimit = input.dayEnd?.slice(0, 5) ?? "21:00";
   const [eh, em] = endLimit.split(":").map(Number);
   const endMinutes = (eh || 21) * 60 + (em || 0);

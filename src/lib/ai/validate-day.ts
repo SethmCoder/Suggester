@@ -56,6 +56,31 @@ export function dropRepeatedExperiences<
   return { kept, dropped };
 }
 
+/** Synonyms so “museums” matches OSM type `museum`, etc. */
+export function interestSynonyms(interest: string): string[] {
+  const token = interest.trim().toLowerCase();
+  if (!token) return [];
+  const extras: string[] = [token];
+  if (/museum/.test(token)) extras.push("museum", "gallery");
+  if (/food|culin|restaurant|eat/.test(token)) {
+    extras.push("restaurant", "cafe", "food", "cuisine");
+  }
+  if (/nature|outdoor|park|hike/.test(token)) {
+    extras.push("park", "garden", "nature", "viewpoint");
+  }
+  if (/histor|cultur/.test(token)) {
+    extras.push("historic", "monument", "attraction", "museum");
+  }
+  if (/architect/.test(token)) extras.push("building", "historic", "monument");
+  if (/avi|aircraft|\bplane\b|\bflight\b/.test(token)) {
+    extras.push("aviation", "aircraft", "museum");
+  }
+  if (/night|bar|club/.test(token)) extras.push("bar", "pub", "nightclub");
+  if (/beach/.test(token)) extras.push("beach", "coast", "waterfront");
+  if (/shop/.test(token)) extras.push("shop", "mall", "market");
+  return [...new Set(extras)];
+}
+
 export function expandInterestQueries(interests: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -67,6 +92,7 @@ export function expandInterestQueries(interests: string[]): string[] {
   };
   for (const interest of interests) {
     add(interest);
+    for (const syn of interestSynonyms(interest)) add(syn);
     if (/avi|aircraft|\bplane\b|\bflight\b/i.test(interest)) {
       add("aviation museum");
       add("aircraft museum");
@@ -75,5 +101,41 @@ export function expandInterestQueries(interests: string[]): string[] {
     if (/histor/i.test(interest)) add("historic site");
   }
   if (!out.length) add("tourist attraction");
-  return out.slice(0, 6);
+  return out.slice(0, 8);
+}
+
+export function validateAiDay(input: {
+  dayIndex: number;
+  activities: { placeId: string }[];
+  allowedPlaceIds: Set<string>;
+  placeCity?: Map<string, string | undefined>;
+  dayCity?: string;
+}): { kept: { placeId: string }[]; warnings: string[] } {
+  const kept: { placeId: string }[] = [];
+  const warnings: string[] = [];
+  const seen = new Set<string>();
+  for (const activity of input.activities) {
+    if (!input.allowedPlaceIds.has(activity.placeId)) {
+      warnings.push(
+        `Day ${input.dayIndex + 1}: dropped unknown placeId ${activity.placeId}.`,
+      );
+      continue;
+    }
+    if (seen.has(activity.placeId)) {
+      warnings.push(
+        `Day ${input.dayIndex + 1}: dropped duplicate ${activity.placeId}.`,
+      );
+      continue;
+    }
+    const city = input.placeCity?.get(activity.placeId);
+    if (input.dayCity && city && city !== input.dayCity) {
+      warnings.push(
+        `Day ${input.dayIndex + 1}: dropped ${activity.placeId} (wrong city).`,
+      );
+      continue;
+    }
+    seen.add(activity.placeId);
+    kept.push(activity);
+  }
+  return { kept, warnings };
 }

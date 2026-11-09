@@ -78,9 +78,21 @@ export async function createTripRecord(input: {
     idealTrip: string;
   };
   idempotencyKey?: string;
-}) {
+}): Promise<{ tripId: string; reused: boolean }> {
   const supabase = createServiceClient();
   if (!supabase) throw new Error("Database not configured");
+
+  if (input.idempotencyKey) {
+    const { data: existing } = await supabase
+      .from("trips")
+      .select("id")
+      .eq("owner_id", input.ownerId)
+      .eq("idempotency_key", input.idempotencyKey)
+      .maybeSingle();
+    if (existing?.id) {
+      return { tripId: existing.id, reused: true };
+    }
+  }
 
   const { data: trip, error } = await supabase
     .from("trips")
@@ -95,7 +107,20 @@ export async function createTripRecord(input: {
     .select("id")
     .single();
 
-  if (error || !trip) throw error ?? new Error("trip create failed");
+  if (error) {
+    // Unique race on idempotency_key — return the winner.
+    if (input.idempotencyKey && (error as { code?: string }).code === "23505") {
+      const { data: raced } = await supabase
+        .from("trips")
+        .select("id")
+        .eq("owner_id", input.ownerId)
+        .eq("idempotency_key", input.idempotencyKey)
+        .maybeSingle();
+      if (raced?.id) return { tripId: raced.id, reused: true };
+    }
+    throw error;
+  }
+  if (!trip) throw new Error("trip create failed");
 
   await supabase.from("trip_preferences").insert({
     trip_id: trip.id,
@@ -111,7 +136,29 @@ export async function createTripRecord(input: {
     ideal_trip: input.priorities.idealTrip,
   });
 
-  return trip.id;
+  return { tripId: trip.id, reused: false };
+}
+
+export async function updateTripPreferences(
+  tripId: string,
+  ownerId: string,
+  payload: TripPreferencesPayload,
+) {
+  const supabase = createServiceClient();
+  if (!supabase) throw new Error("Database not configured");
+
+  const { data: trip } = await supabase
+    .from("trips")
+    .select("id")
+    .eq("id", tripId)
+    .eq("owner_id", ownerId)
+    .maybeSingle();
+  if (!trip) throw new Error("Trip not found");
+
+  const { error } = await supabase
+    .from("trip_preferences")
+    .upsert({ trip_id: tripId, payload }, { onConflict: "trip_id" });
+  if (error) throw error;
 }
 
 export async function fetchTripFull(tripId: string, userId: string) {

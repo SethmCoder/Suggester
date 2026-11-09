@@ -1,5 +1,5 @@
-import { FutureTripsBoard } from "@/components/future-trips/FutureTripsBoard";
+import { redirect } from "next/navigation";
 
-export default function FutureTripsPage() {
-  return <FutureTripsBoard />;
+export default function FutureTripsRedirectPage() {
+  redirect("/dreamer");
 }

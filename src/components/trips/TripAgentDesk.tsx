@@ -13,6 +13,10 @@ import {
 type PlaceDraft = {
   city: string;
   days: number;
+  arrivalDate?: string;
+  departureDate?: string;
+  nights?: number;
+  country?: string;
   suggestions: { key: string; label: string }[];
 };
 
@@ -25,11 +29,14 @@ export function TripAgentDesk({
   onCityInput,
   onPickSuggestion,
   onLegDays,
+  onLegDates,
   onAddCity,
   onRemoveCity,
   startDate,
   endDate,
+  nights,
   onStartDate,
+  onEndDate,
   travelers,
   onTravelers,
   intensity,
@@ -37,6 +44,10 @@ export function TripAgentDesk({
   transport,
   onTransport,
   party,
+  travelerMode,
+  onTravelerMode,
+  planningClarity,
+  onPlanningClarity,
   hotel,
   flights,
   destination,
@@ -58,11 +69,17 @@ export function TripAgentDesk({
   onCityInput: (index: number, value: string) => void;
   onPickSuggestion: (legIndex: number, suggestionIndex: number) => void;
   onLegDays: (index: number, days: number) => void;
+  onLegDates?: (
+    index: number,
+    dates: { arrivalDate: string; departureDate: string },
+  ) => void;
   onAddCity: () => void;
   onRemoveCity: (index: number) => void;
   startDate: string;
   endDate: string;
+  nights: number;
   onStartDate: (value: string) => void;
+  onEndDate: (value: string) => void;
   travelers: number;
   onTravelers: (count: number) => void;
   intensity: "relaxed" | "balanced" | "packed";
@@ -70,6 +87,16 @@ export function TripAgentDesk({
   transport: string;
   onTransport: (value: string) => void;
   party: string;
+  travelerMode: "business" | "leisure" | "";
+  onTravelerMode: (value: "business" | "leisure") => void;
+  planningClarity:
+    | "know_where_and_what"
+    | "know_where_not_what"
+    | "know_neither"
+    | "";
+  onPlanningClarity: (
+    value: "know_where_and_what" | "know_where_not_what" | "know_neither",
+  ) => void;
   hotel: ReactNode;
   flights: ReactNode;
   destination: string;
@@ -127,28 +154,103 @@ export function TripAgentDesk({
               placeholder={lead ? `A trip to ${lead}` : "Title of the trip"}
             />
           </div>
-          <div>
-            <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
-              Dates
-            </Label>
-            <Input
-              type="date"
-              value={startDate}
-              onChange={(e) => onStartDate(e.target.value)}
-            />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
+                Arrival
+              </Label>
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => onStartDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
+                Departure
+              </Label>
+              <Input
+                type="date"
+                value={endDate}
+                min={startDate || undefined}
+                onChange={(e) => onEndDate(e.target.value)}
+              />
+            </div>
             {startDate && endDate ? (
-              <p className="mt-1 text-xs text-[#6B7280]">
-                {startDate} – {endDate}
+              <p className="col-span-2 text-xs text-[#6B7280]">
+                {nights === 1 ? "1 night" : `${nights} nights`} on this trip
               </p>
             ) : null}
           </div>
         </div>
+        <div className="space-y-3 border-t border-[#F0F2F8] px-4 py-3 sm:px-5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
+            Who is this trip for?
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                { id: "leisure", label: "Leisure" },
+                { id: "business", label: "Business traveler" },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => onTravelerMode(opt.id)}
+                className={`rounded-full px-3 py-1.5 text-sm font-medium ${
+                  travelerMode === opt.id
+                    ? "bg-[#0400FF] text-white"
+                    : "bg-[#F5F7FF] text-[#080B3A]"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
+            When you plan a trip, do you…
+          </p>
+          <div className="flex flex-col gap-2">
+            {(
+              [
+                {
+                  id: "know_where_and_what",
+                  label: "Know where you want to go and what you want to do",
+                },
+                {
+                  id: "know_where_not_what",
+                  label: "Know where you want to go but not what to do",
+                },
+                {
+                  id: "know_neither",
+                  label: "Don't know where or what yet",
+                },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => onPlanningClarity(opt.id)}
+                className={`rounded-[10px] px-3 py-2 text-left text-sm font-medium ${
+                  planningClarity === opt.id
+                    ? "bg-[#0400FF] text-white"
+                    : "bg-[#F5F7FF] text-[#080B3A]"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
         {places.slice(1).map((place, offset) => {
           const index = offset + 1;
+          const placeNights =
+            place.nights ?? Math.max(0, (place.days || 1) - 1);
           return (
             <div
               key={index}
-              className="grid items-end gap-3 border-t border-[#F0F2F8] px-4 py-3 sm:grid-cols-[1.4fr_0.5fr_auto] sm:px-5"
+              className="grid items-end gap-3 border-t border-[#F0F2F8] px-4 py-3 sm:grid-cols-[1.2fr_1fr_1fr_auto] sm:px-5"
             >
               <CityField
                 label={`City ${index + 1}`}
@@ -159,17 +261,38 @@ export function TripAgentDesk({
               />
               <div>
                 <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
-                  Days
+                  Arrival
                 </Label>
                 <Input
-                  type="number"
-                  min={1}
-                  max={30}
-                  value={place.days}
-                  onChange={(e) =>
-                    onLegDays(index, Math.max(1, Number(e.target.value) || 1))
-                  }
+                  type="date"
+                  value={place.arrivalDate ?? ""}
+                  onChange={(e) => {
+                    const arrivalDate = e.target.value;
+                    const departureDate =
+                      place.departureDate && place.departureDate >= arrivalDate
+                        ? place.departureDate
+                        : arrivalDate;
+                    onLegDates?.(index, { arrivalDate, departureDate });
+                  }}
                 />
+              </div>
+              <div>
+                <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
+                  Departure
+                </Label>
+                <Input
+                  type="date"
+                  value={place.departureDate ?? ""}
+                  min={place.arrivalDate || undefined}
+                  onChange={(e) => {
+                    const departureDate = e.target.value;
+                    const arrivalDate = place.arrivalDate || departureDate;
+                    onLegDates?.(index, { arrivalDate, departureDate });
+                  }}
+                />
+                <p className="mt-1 text-xs text-[#6B7280]">
+                  {placeNights === 1 ? "1 night" : `${placeNights} nights`}
+                </p>
               </div>
               <button
                 type="button"
@@ -182,19 +305,48 @@ export function TripAgentDesk({
           );
         })}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#F0F2F8] px-4 py-3 sm:px-5">
-          <div className="flex items-center gap-2 text-sm text-[#6B7280]">
-            <span>Days in {places[0]?.city.trim() || "the first city"}</span>
-            <Input
-              type="number"
-              min={1}
-              max={30}
-              aria-label="Days in the first city"
-              value={places[0]?.days ?? 1}
-              onChange={(e) =>
-                onLegDays(0, Math.max(1, Number(e.target.value) || 1))
-              }
-              className="w-16"
-            />
+          <div className="flex flex-wrap items-end gap-3 text-sm text-[#6B7280]">
+            <div>
+              <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
+                Arrival in {places[0]?.city.trim() || "first city"}
+              </Label>
+              <Input
+                type="date"
+                value={places[0]?.arrivalDate ?? startDate}
+                onChange={(e) => {
+                  const arrivalDate = e.target.value;
+                  const departureDate =
+                    places[0]?.departureDate &&
+                    places[0].departureDate >= arrivalDate
+                      ? places[0].departureDate
+                      : endDate || arrivalDate;
+                  onLegDates?.(0, { arrivalDate, departureDate });
+                }}
+                className="w-40"
+              />
+            </div>
+            <div>
+              <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
+                Departure
+              </Label>
+              <Input
+                type="date"
+                value={places[0]?.departureDate ?? endDate}
+                min={places[0]?.arrivalDate || startDate || undefined}
+                onChange={(e) => {
+                  const departureDate = e.target.value;
+                  const arrivalDate =
+                    places[0]?.arrivalDate || startDate || departureDate;
+                  onLegDates?.(0, { arrivalDate, departureDate });
+                }}
+                className="w-40"
+              />
+            </div>
+            <p className="pb-2">
+              {(places[0]?.nights ?? Math.max(0, (places[0]?.days ?? 1) - 1)) === 1
+                ? "1 night"
+                : `${places[0]?.nights ?? Math.max(0, (places[0]?.days ?? 1) - 1)} nights`}
+            </p>
           </div>
           <button
             type="button"
@@ -227,9 +379,38 @@ export function TripAgentDesk({
               <BriefRow label="Cities" value={cities.filter(Boolean).join(" → ")} />
               <BriefRow
                 label="Dates"
-                value={startDate ? `${startDate}${endDate ? ` – ${endDate}` : ""}` : ""}
+                value={
+                  startDate
+                    ? `${startDate}${endDate ? ` – ${endDate}` : ""}${
+                        nights
+                          ? ` · ${nights === 1 ? "1 night" : `${nights} nights`}`
+                          : ""
+                      }`
+                    : ""
+                }
               />
-              <BriefRow label="Who" value={party} />
+              <BriefRow
+                label="Who"
+                value={
+                  travelerMode
+                    ? travelerMode === "business"
+                      ? "Business traveler"
+                      : "Leisure"
+                    : party
+                }
+              />
+              <BriefRow
+                label="Planning"
+                value={
+                  planningClarity === "know_where_and_what"
+                    ? "Know where and what"
+                    : planningClarity === "know_where_not_what"
+                      ? "Know where, not what"
+                      : planningClarity === "know_neither"
+                        ? "Exploring where and what"
+                        : ""
+                }
+              />
             </dl>
             {interests.length ? (
               <div>
