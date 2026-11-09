@@ -53,22 +53,23 @@ const bodySchema = z.object({
 export async function POST(req: Request) {
   const body = bodySchema.parse(await req.json());
   const cookieStore = await cookies();
-  let userId: string | null = null;
+  let accessUser: { id: string; email?: string | null } | null = null;
   try {
     const supabase = await createSupabaseServerClient();
-    userId = (await supabase.auth.getUser()).data.user?.id ?? null;
+    const user = (await supabase.auth.getUser()).data.user;
+    accessUser = user ? { id: user.id, email: user.email } : null;
   } catch {
-    userId = null;
+    accessUser = null;
   }
   const gate = gateFeature(
     "basic",
-    await withProfileEntitlement((name) => cookieStore.get(name)?.value, userId),
+    await withProfileEntitlement((name) => cookieStore.get(name)?.value, accessUser),
   );
   if (!gate.allowed) {
     return NextResponse.json({ error: PRO_REQUIRED_MESSAGE, code: "pro_required" }, { status: 402 });
   }
 
-  const stored = await tripContext(body.tripId, userId);
+  const stored = await tripContext(body.tripId, accessUser?.id ?? null);
   const preferences = {
     ...emptyPreferences(),
     ...stored.preferences,

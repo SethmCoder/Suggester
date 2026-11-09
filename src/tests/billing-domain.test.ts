@@ -15,6 +15,12 @@ import {
 } from "@/lib/billing/demo-checkout";
 import { LIST_PRICES, PLAN_LIMITS, planCopy } from "@/lib/billing/limits";
 import { FREE_TRIP_LIMIT, canCreateTrip } from "@/lib/billing/plans";
+import {
+  emailGrantedPro,
+  grantSecretMatches,
+  proEmailsFromEnv,
+  selfProGrantEnabled,
+} from "@/lib/billing/pro-grant";
 import { proPriceData } from "@/lib/billing/stripe";
 
 describe("billing and entitlements domain", () => {
@@ -89,5 +95,20 @@ describe("billing and entitlements domain", () => {
     );
     expect(demoCheckoutProductName("month")).toMatch(/Pro/);
     expect(DEMO_CARD_PLACEHOLDER).toMatch(/^4242/);
+  });
+
+  it("grants Pro to a single allowlisted email", () => {
+    const raw = "Seth@Example.com, other@test.com";
+    expect(proEmailsFromEnv(raw)).toEqual([
+      "seth@example.com",
+      "other@test.com",
+    ]);
+    expect(emailGrantedPro("seth@example.com", raw)).toBe(true);
+    expect(emailGrantedPro("nope@example.com", raw)).toBe(false);
+    expect(selfProGrantEnabled("1")).toBe(true);
+    expect(grantSecretMatches("long-enough-secret", "long-enough-secret")).toBe(
+      true,
+    );
+    expect(grantSecretMatches("wrong", "long-enough-secret")).toBe(false);
   });
 });

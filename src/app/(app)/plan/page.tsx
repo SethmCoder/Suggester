@@ -8,6 +8,14 @@ import type { BillingSnapshot } from "@/lib/billing/plans";
 import { LIST_PRICES, planCopy } from "@/lib/billing/limits";
 import type { DemoCheckoutInterval } from "@/lib/billing/demo-checkout";
 
+type BillingView = BillingSnapshot & {
+  entitled?: boolean;
+  checkoutAvailable?: boolean;
+  signedIn?: boolean;
+  selfGrantAvailable?: boolean;
+  allowlisted?: boolean;
+};
+
 async function syncPlan(action: "sync" | "upgrade" | "downgrade") {
   const created = countCreatedOfflineTrips();
   const res = await fetch("/api/billing", {
@@ -15,18 +23,16 @@ async function syncPlan(action: "sync" | "upgrade" | "downgrade") {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, created }),
   });
-  return (await res.json()) as BillingSnapshot & {
-    entitled?: boolean;
-    checkoutAvailable?: boolean;
-  };
+  return (await res.json()) as BillingView;
 }
 
 export default function PlanPage() {
-  const [billing, setBilling] = useState<
-    (BillingSnapshot & { entitled?: boolean; checkoutAvailable?: boolean }) | null
-  >(null);
-  const [busy, setBusy] = useState<"month" | "year" | "portal" | null>(null);
+  const [billing, setBilling] = useState<BillingView | null>(null);
+  const [busy, setBusy] = useState<"month" | "year" | "portal" | "grant" | null>(
+    null,
+  );
   const [note, setNote] = useState<string | null>(null);
+  const [grantSecret, setGrantSecret] = useState("");
   const [demoOpen, setDemoOpen] = useState(false);
   const [demoInterval, setDemoInterval] =
     useState<DemoCheckoutInterval>("month");
@@ -119,8 +125,36 @@ export default function PlanPage() {
     }
   }
 
+  async function unlockThisAccount() {
+    setBusy("grant");
+    setNote(null);
+    try {
+      const res = await fetch("/api/billing/grant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          self: true,
+          tier: "pro",
+          secret: grantSecret.trim() || undefined,
+        }),
+      });
+      const data = (await res.json()) as { error?: string; entitled?: boolean };
+      if (!res.ok) {
+        setNote(data.error ?? "Could not unlock Pro on this account.");
+        return;
+      }
+      setNote("Pro is active on this signed-in account.");
+      setGrantSecret("");
+      setBilling(await syncPlan("sync"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const entitled = Boolean(billing?.entitled);
   const checkout = Boolean(billing?.checkoutAvailable);
+  const canTrySelfGrant =
+    Boolean(billing?.signedIn) && !entitled && !checkout;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -242,6 +276,36 @@ export default function PlanPage() {
           </div>
         </section>
       </div>
+
+      {canTrySelfGrant ? (
+        <section className="rounded-[16px] border border-dashed border-[#0400FF]/35 bg-white p-5">
+          <h2 className="text-sm font-semibold text-[#080B3A]">
+            Unlock Pro on this account
+          </h2>
+          <p className="mt-1 text-sm text-[#6B7280]">
+            For a single signed-in account without Stripe: enable{" "}
+            <code className="text-xs">WAYPOINT_ALLOW_SELF_PRO_GRANT=1</code>, put
+            your email in <code className="text-xs">WAYPOINT_PRO_EMAILS</code>, or
+            enter <code className="text-xs">WAYPOINT_GRANT_SECRET</code> below.
+          </p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+            <input
+              type="password"
+              value={grantSecret}
+              onChange={(e) => setGrantSecret(e.target.value)}
+              placeholder="Grant secret (optional)"
+              className="h-11 w-full rounded-[12px] border border-[#D1D7E5] bg-white px-3.5 text-sm text-[#1F2937] placeholder:text-[#9299B5] focus:border-[#0400FF] focus:outline-none focus:ring-2 focus:ring-[#818CFF]/35 sm:max-w-xs"
+            />
+            <Button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void unlockThisAccount()}
+            >
+              {busy === "grant" ? "Unlocking…" : "Unlock Pro for me"}
+            </Button>
+          </div>
+        </section>
+      ) : null}
 
       {note ? <p className="max-w-xl text-sm text-[#080B3A]">{note}</p> : null}
       <p className="max-w-xl text-xs leading-relaxed text-[#6B7280]">

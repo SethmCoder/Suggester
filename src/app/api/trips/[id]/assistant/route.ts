@@ -41,18 +41,19 @@ export async function POST(
   const { message } = bodySchema.parse(await req.json());
   const cookieStore = await cookies();
   const feature = isAdvancedRequest(message) ? "advanced" : "basic";
-  let accessUserId: string | null = null;
+  let accessUser: { id: string; email?: string | null } | null = null;
   try {
     const supabase = await createSupabaseServerClient();
-    accessUserId = (await supabase.auth.getUser()).data.user?.id ?? null;
+    const user = (await supabase.auth.getUser()).data.user;
+    accessUser = user ? { id: user.id, email: user.email } : null;
   } catch {
-    accessUserId = null;
+    accessUser = null;
   }
   const gate = gateFeature(
     feature,
     await withProfileEntitlement(
       (name) => cookieStore.get(name)?.value,
-      accessUserId,
+      accessUser,
     ),
   );
   if (!gate.allowed) {

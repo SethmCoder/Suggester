@@ -116,7 +116,7 @@ export async function POST(req: Request) {
 
     const gate = gateFeature(
       "generate",
-      await withProfileEntitlement((name) => jar.get(name)?.value, user.id),
+      await withProfileEntitlement((name) => jar.get(name)?.value, { id: user.id, email: user.email }),
     );
     if (!gate.allowed) {
       return NextResponse.json(

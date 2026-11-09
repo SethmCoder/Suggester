@@ -23,18 +23,19 @@ const bodySchema = z.object({
 
 export async function POST(req: Request) {
   const cookieStore = await cookies();
-  let userId: string | null = null;
+  let accessUser: { id: string; email?: string | null } | null = null;
   try {
     const { createSupabaseServerClient } = await import("@/lib/supabase/server");
     const supabase = await createSupabaseServerClient();
-    userId = (await supabase.auth.getUser()).data.user?.id ?? null;
+    const user = (await supabase.auth.getUser()).data.user;
+    accessUser = user ? { id: user.id, email: user.email } : null;
   } catch {
-    userId = null;
+    accessUser = null;
   }
   // Comparison is deterministic scoring — allow even when AI quota is spent.
   void gateFeature(
     "basic",
-    await withProfileEntitlement((name) => cookieStore.get(name)?.value, userId),
+    await withProfileEntitlement((name) => cookieStore.get(name)?.value, accessUser),
   );
 
   const body = bodySchema.parse(await req.json());
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
   const { isProEntitled } = await import("@/lib/billing/entitlements");
   const access = await withProfileEntitlement(
     (name) => cookieStore.get(name)?.value,
-    userId,
+    accessUser,
   );
   const pro = isProEntitled(access);
   const compareCap = pro

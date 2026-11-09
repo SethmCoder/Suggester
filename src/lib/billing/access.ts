@@ -1,21 +1,32 @@
 import { ENTITLEMENT_COOKIE } from "@/lib/billing/entitlements";
+import { emailGrantedPro } from "@/lib/billing/pro-grant";
 import { createServiceClient } from "@/lib/supabase/server";
 
 type Getter = (name: string) => string | undefined;
 
-/** A paid profile counts as Pro even when this browser has no entitlement cookie. */
+export type EntitlementUser = {
+  id?: string | null;
+  email?: string | null;
+};
+
+/** A paid or allowlisted profile counts as Pro even without the entitlement cookie. */
 export async function withProfileEntitlement(
   get: Getter,
-  userId: string | null | undefined,
+  userIdOrUser?: string | null | EntitlementUser,
 ): Promise<Getter> {
-  let pro = false;
-  if (userId) {
+  const user: EntitlementUser =
+    typeof userIdOrUser === "string" || userIdOrUser == null
+      ? { id: userIdOrUser }
+      : userIdOrUser;
+
+  let pro = emailGrantedPro(user.email);
+  if (!pro && user.id) {
     const db = createServiceClient();
     if (db) {
       const { data } = await db
         .from("profiles")
         .select("subscription_tier")
-        .eq("id", userId)
+        .eq("id", user.id)
         .maybeSingle();
       pro = data?.subscription_tier === "pro";
     }
@@ -32,7 +43,7 @@ export async function setSubscriptionTier(
   customerId?: string | null,
 ) {
   const db = createServiceClient();
-  if (!db) return;
+  if (!db) return { ok: false as const, error: "Service role is not configured" };
   const row: Record<string, string> = {
     id: userId,
     subscription_tier: tier,
@@ -41,10 +52,26 @@ export async function setSubscriptionTier(
   if (customerId) row.stripe_customer_id = customerId;
   const { error } = await db.from("profiles").upsert(row);
   if (error && customerId) {
-    await db.from("profiles").upsert({
+    const retry = await db.from("profiles").upsert({
       id: userId,
       subscription_tier: tier,
       subscription_period: tier === "pro" ? "month" : "",
     });
+    if (retry.error) return { ok: false as const, error: retry.error.message };
+    return { ok: true as const };
   }
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const };
+}
+
+export async function findAuthUserIdByEmail(email: string): Promise<string | null> {
+  const db = createServiceClient();
+  if (!db) return null;
+  const normalized = email.trim().toLowerCase();
+  const { data, error } = await db.auth.admin.listUsers({ page: 1, perPage: 200 });
+  if (error || !data?.users) return null;
+  const match = data.users.find(
+    (user) => user.email?.trim().toLowerCase() === normalized,
+  );
+  return match?.id ?? null;
 }

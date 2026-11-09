@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   const { cookies } = await import("next/headers");
   const jar = await cookies();
   const pro = isProEntitled(
-    await withProfileEntitlement((name) => jar.get(name)?.value, auth.user.id),
+    await withProfileEntitlement((name) => jar.get(name)?.value, { id: auth.user.id, email: auth.user.email }),
   );
   if (!pro) {
     const { count } = await auth.supabase

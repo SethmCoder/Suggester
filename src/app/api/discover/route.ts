@@ -82,14 +82,16 @@ async function loadIntelligenceContext(userId: string | null) {
 
 export async function POST(req: Request) {
   const cookieStore = await cookies();
-  let userId: string | null = null;
+  let accessUser: { id: string; email?: string | null } | null = null;
   try {
     const { createSupabaseServerClient } = await import("@/lib/supabase/server");
     const supabase = await createSupabaseServerClient();
-    userId = (await supabase.auth.getUser()).data.user?.id ?? null;
+    const user = (await supabase.auth.getUser()).data.user;
+    accessUser = user ? { id: user.id, email: user.email } : null;
   } catch {
-    userId = null;
+    accessUser = null;
   }
+  const userId = accessUser?.id ?? null;
   const intelligence = await loadIntelligenceContext(userId);
 
   function mergeContext(
@@ -126,7 +128,7 @@ export async function POST(req: Request) {
 
   const gate = gateFeature(
     "basic",
-    await withProfileEntitlement((name) => cookieStore.get(name)?.value, userId),
+    await withProfileEntitlement((name) => cookieStore.get(name)?.value, accessUser),
   );
   if (!gate.allowed) {
     // Still return local rule-based discovery without consuming AI.

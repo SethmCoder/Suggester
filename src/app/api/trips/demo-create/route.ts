@@ -109,17 +109,18 @@ export async function POST(req: Request) {
       "@/lib/billing/entitlements"
     );
     const { withProfileEntitlement } = await import("@/lib/billing/access");
-    let userId: string | null = null;
+    let accessUser: { id: string; email?: string | null } | null = null;
     try {
       const { createSupabaseServerClient } = await import("@/lib/supabase/server");
       const supabase = await createSupabaseServerClient();
-      userId = (await supabase.auth.getUser()).data.user?.id ?? null;
+      const user = (await supabase.auth.getUser()).data.user;
+      accessUser = user ? { id: user.id, email: user.email } : null;
     } catch {
-      userId = null;
+      accessUser = null;
     }
     const gate = gateFeature(
       "generate",
-      await withProfileEntitlement((name) => jar.get(name)?.value, userId),
+      await withProfileEntitlement((name) => jar.get(name)?.value, accessUser),
     );
     if (!gate.allowed) {
       return NextResponse.json(
