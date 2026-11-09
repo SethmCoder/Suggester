@@ -65,6 +65,7 @@ import {
   primaryDestinationLabel,
   resolveTripLegs,
 } from "../trips/resolve-legs";
+import { nameMatchesStop } from "../trips/major-stops";
 
 export interface TripPreferencesInput {
   destination: string;
@@ -74,6 +75,8 @@ export interface TripPreferencesInput {
   intensity: "relaxed" | "balanced" | "packed";
   transport: string;
   mustSee: string[];
+  /** Soft boosts — sought when filling days, not hard-required like mustSee. */
+  preferred?: string[];
   avoid: string[];
   idealTrip: string;
   prefersHiddenGems?: boolean;
@@ -268,6 +271,7 @@ async function callGroq(
           intensity: prefs.intensity,
           transport: prefs.transport,
           mustSee: prefs.mustSee,
+          preferred: prefs.preferred ?? [],
           avoid: prefs.avoid,
           idealTrip: prefs.idealTrip,
           candidates,
@@ -315,6 +319,8 @@ function fallbackScheduleMultiCity(
   const perDay =
     prefs.intensity === "packed" ? 4 : prefs.intensity === "relaxed" ? 2 : 3;
   const used = new Set<string>();
+  const must = prefs.mustSee ?? [];
+  const soft = prefs.preferred ?? [];
   const result = [];
   for (const day of dayPlan) {
     const pool = candidates.filter(
@@ -325,22 +331,41 @@ function fallbackScheduleMultiCity(
       placeId: string;
       startTime: string;
       durationMinutes: number;
-      priority: "preferred";
+      priority: "must_see" | "preferred" | "optional";
       planningNote: string;
     }[] = [];
-    // Leave morning free on transit arrival days
-    const startSlot = day.isArrivalTransitDay ? 1 : 0;
-    for (let a = startSlot; a < perDay && activities.length < perDay; a++) {
-      const pick = pool[activities.length];
-      if (!pick) break;
+    const take = (
+      pick: RankedCandidate | undefined,
+      priority: "must_see" | "preferred" | "optional",
+      slot: number,
+    ) => {
+      if (!pick || activities.length >= perDay) return;
       used.add(pick.placeId);
       activities.push({
         placeId: pick.placeId,
-        startTime: `${String(10 + a * 2).padStart(2, "0")}:00`,
+        startTime: `${String(10 + slot * 2).padStart(2, "0")}:00`,
         durationMinutes: 90,
-        priority: "preferred",
+        priority,
         planningNote: `Scheduled in ${day.city}${day.hotel ? ` near ${day.hotel}` : ""}`,
       });
+    };
+    // Major stops first, then soft preferred, then fill from ranked pool.
+    for (const name of must) {
+      const hit = pool.find(
+        (c) => !used.has(c.placeId) && nameMatchesStop(c.displayName, name),
+      );
+      take(hit, "must_see", activities.length);
+    }
+    for (const name of soft) {
+      const hit = pool.find(
+        (c) => !used.has(c.placeId) && nameMatchesStop(c.displayName, name),
+      );
+      take(hit, "preferred", activities.length);
+    }
+    const startSlot = day.isArrivalTransitDay ? Math.max(1, activities.length) : activities.length;
+    for (let a = startSlot; a < perDay && activities.length < perDay; a++) {
+      const pick = pool.find((c) => !used.has(c.placeId));
+      take(pick, "preferred", activities.length);
     }
     result.push({ dayIndex: day.dayIndex, activities });
   }
@@ -489,6 +514,20 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
     }
 
     try {
+      const preferredHits = await resolveMustSees(
+        prefs.preferred ?? [],
+        city,
+        centerLat,
+        centerLng,
+      );
+      for (const h of preferredHits) {
+        if (!byId.has(h.placeId)) byId.set(h.placeId, { ...h, city });
+      }
+    } catch {
+      /* soft */
+    }
+
+    try {
       const sortedCtx = await fetchSortedDestinationContext(city);
       const block = formatDestinationContextForPrompt(sortedCtx);
       if (block) {
@@ -579,6 +618,13 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
     }
     if (kept.has(c.placeId.toLowerCase()) || kept.has(c.displayName.toLowerCase())) {
       discoveryRank += 0.35;
+    }
+    if ((prefs.mustSee ?? []).some((stop) => nameMatchesStop(c.displayName, stop))) {
+      discoveryRank += 0.55;
+    } else if (
+      (prefs.preferred ?? []).some((stop) => nameMatchesStop(c.displayName, stop))
+    ) {
+      discoveryRank += 0.28;
     }
     discoveryRank *= 0.7 + 0.3 * partyFit(c.types, prefs.party);
     discoveryRank *= 0.75 + 0.25 * settingFit(c.types, prefs.indoorOutdoor);
@@ -888,6 +934,29 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
         (candidate.city ?? assignment.city) === assignment.city &&
         !usedAcross.has(candidate.placeId),
     );
+    // Lock major stops into the day before filling the rest from interests.
+    for (const stop of prefs.mustSee ?? []) {
+      if (sightseeing() >= target) break;
+      const hit = cityPool.find(
+        (candidate) =>
+          !usedAcross.has(candidate.placeId) &&
+          nameMatchesStop(candidate.displayName, stop),
+      );
+      if (hit) {
+        await placeOne(hit.placeId, 105, "must_see", `Major stop: ${stop}`, false);
+      }
+    }
+    for (const stop of prefs.preferred ?? []) {
+      if (sightseeing() >= target) break;
+      const hit = cityPool.find(
+        (candidate) =>
+          !usedAcross.has(candidate.placeId) &&
+          nameMatchesStop(candidate.displayName, stop),
+      );
+      if (hit) {
+        await placeOne(hit.placeId, 90, "preferred", `Preferred stop: ${stop}`, false);
+      }
+    }
     const sightsFirst = [
       ...cityPool.filter((candidate) => !isSitDown(candidate.types)),
       ...cityPool.filter((candidate) => isSitDown(candidate.types)),

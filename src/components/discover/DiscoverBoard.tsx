@@ -131,15 +131,16 @@ export function DiscoverBoard() {
   function toggleCompare(id: string) {
     setCompareIds((current) => {
       if (current.includes(id)) return current.filter((value) => value !== id);
+      // Client soft-cap at Pro max; API enforces Free (2) vs Pro (4).
       if (current.length >= 4) return current;
       return [...current, id];
     });
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-[28px] font-bold tracking-tight text-[#1F2937]">Discover</h1>
           <p className="mt-1 max-w-2xl text-sm text-[#6B7280]">
             Find destinations from your interests, budget, season, and saved places — not a generic top-ten list.

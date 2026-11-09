@@ -211,9 +211,12 @@ export function FutureTripsBoard() {
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#DDE1FF] text-[#0400FF]">
             <IconPlane size={22} />
           </div>
-          <p className="text-lg font-semibold">No future trips yet</p>
+          <p className="text-lg font-semibold text-[#1F2937]">No future trips yet</p>
           <p className="mx-auto mt-2 max-w-md text-sm text-[#6B7280]">
             Start a project for a place you want to visit. You do not need exact dates.
+          </p>
+          <p className="mx-auto mt-2 max-w-md text-sm text-[#6B7280]">
+            Use the form above, or continue from Discover after saving a destination.
           </p>
         </div>
       ) : (

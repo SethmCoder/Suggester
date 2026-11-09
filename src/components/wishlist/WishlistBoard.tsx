@@ -310,10 +310,13 @@ export function WishlistBoard() {
               <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#DDE1FF] text-[#0400FF]">
                 <IconPin size={22} />
               </div>
-              <p className="text-lg font-semibold">No wishlist items yet</p>
+              <p className="text-lg font-semibold text-[#1F2937]">No wishlist items yet</p>
               <p className="mx-auto mt-2 max-w-md text-sm text-[#6B7280]">
-                Save a place from a trip card, Local Explorer, or add a custom idea above.
+                Save a place from a trip card, Local Explorer, Discover, or add a custom idea above.
               </p>
+              <Link href="/discover" className="mt-4 inline-flex">
+                <Button variant="secondary">Discover destinations</Button>
+              </Link>
             </div>
           ) : (
             <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

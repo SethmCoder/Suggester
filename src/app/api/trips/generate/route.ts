@@ -10,6 +10,7 @@ const bodySchema = z.object({
   intensity: z.enum(["relaxed", "balanced", "packed"]).default("balanced"),
   transport: z.string().default("walking"),
   mustSee: z.array(z.string()).default([]),
+  preferred: z.array(z.string()).default([]),
   avoid: z.array(z.string()).default([]),
   idealTrip: z.string().default(""),
   prefersHiddenGems: z.boolean().optional(),

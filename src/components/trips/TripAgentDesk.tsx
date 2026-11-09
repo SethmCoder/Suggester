@@ -42,6 +42,8 @@ export function TripAgentDesk({
   destination,
   cities,
   interests,
+  majorStops,
+  onMajorStopsChange,
   idealTrip,
   onExchange,
   canGenerate,
@@ -73,6 +75,8 @@ export function TripAgentDesk({
   destination: string;
   cities: string[];
   interests: string[];
+  majorStops: string[];
+  onMajorStopsChange: (stops: string[]) => void;
   idealTrip: string;
   onExchange: (userText: string, reply: string) => void;
   canGenerate: boolean | null;
@@ -227,6 +231,24 @@ export function TripAgentDesk({
               />
               <BriefRow label="Who" value={party} />
             </dl>
+            {interests.length ? (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
+                  Interests
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {interests.slice(0, 8).map((interest) => (
+                    <span
+                      key={interest}
+                      className="rounded-full bg-[#F5F7FF] px-2.5 py-1 text-xs font-medium text-[#080B3A]"
+                    >
+                      {interest}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <MajorStopsField stops={majorStops} onChange={onMajorStopsChange} />
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
                 Pace
@@ -290,11 +312,15 @@ export function TripAgentDesk({
           </div>
           <div className="shrink-0 space-y-2 border-t border-[#F0F2F8] bg-white pt-4">
             <p className="text-xs leading-relaxed text-[#6B7280]">
-              {canGenerate === null
-                ? "Checking whether generation is included."
-                : canGenerate
-                  ? "Generation is included on this account."
-                  : "Generation is part of Pro. Subscribe from Plans."}
+              {!lead || !startDate
+                ? "Add a city and start date to generate."
+                : canGenerate === null
+                  ? "Checking whether generation is included."
+                  : canGenerate
+                    ? majorStops.length
+                      ? "Major stops stay locked in. Waypoint fills the rest of each day from your interests."
+                      : "Generation is included on this account."
+                    : "Generation is part of Pro. Subscribe from Plans."}
             </p>
             {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
             {progress ? <p className="text-sm text-[#0400FF]">{progress}</p> : null}
@@ -371,6 +397,80 @@ function BriefRow({ label, value }: { label: string; value: string }) {
     <div className="flex items-start justify-between gap-3">
       <dt className="text-[#6B7280]">{label}</dt>
       <dd className="line-clamp-2 text-right font-medium text-[#080B3A]">{value}</dd>
+    </div>
+  );
+}
+
+function MajorStopsField({
+  stops,
+  onChange,
+}: {
+  stops: string[];
+  onChange: (stops: string[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+
+  function addStop(raw: string) {
+    const value = raw.trim();
+    if (!value) return;
+    if (stops.some((stop) => stop.toLowerCase() === value.toLowerCase())) {
+      setDraft("");
+      return;
+    }
+    onChange([...stops, value].slice(0, 16));
+    setDraft("");
+  }
+
+  return (
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
+        Major stops
+      </p>
+      <p className="mt-1 text-xs leading-relaxed text-[#6B7280]">
+        Add places you already know. Waypoint will schedule them and fill the rest of each day
+        from your interests.
+      </p>
+      <div className="mt-2 flex gap-2">
+        <Input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addStop(draft);
+            }
+          }}
+          placeholder="e.g. Colosseum, Vatican Museums"
+          aria-label="Add a major stop"
+        />
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => addStop(draft)}
+          disabled={!draft.trim()}
+        >
+          Add
+        </Button>
+      </div>
+      {stops.length ? (
+        <ul className="mt-2 flex flex-wrap gap-1.5">
+          {stops.map((stop) => (
+            <li key={stop}>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-full border border-[#D7DEFF] bg-[#F5F7FF] px-2.5 py-1 text-xs font-medium text-[#0400FF]"
+                onClick={() => onChange(stops.filter((item) => item !== stop))}
+                aria-label={`Remove ${stop}`}
+              >
+                {stop}
+                <span aria-hidden>×</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-xs text-[#9299B5]">Optional — leave empty to plan from interests only.</p>
+      )}
     </div>
   );
 }

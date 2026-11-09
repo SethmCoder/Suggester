@@ -1,12 +1,27 @@
 ---
-description: End every completed change with a ~25-word summary
+description: End completed work with a bold Summary in the required format
 alwaysApply: true
 ---
 
-# Change summary
+# Reply summary format
 
-After finishing a set of code or config changes in a turn, end the reply with a roughly 25-word summary of what changed and why.
+After finishing a set of code or config changes in a turn, end the reply with a summary in exactly this format:
 
-- Keep it one short paragraph (about 20–30 words).
+```markdown
+**Summary** Short title
+One sentence under 25 words describing what changed and why.
+```
+
+Rules:
+
+- `**Summary**` is bold, then a short title on the same line (a few words).
+- The next line is a single description under 25 words.
 - Cover the outcome, not a file laundry list.
 - Skip the summary only when no changes were made (e.g. pure Q&A).
+
+Example:
+
+```markdown
+**Summary** Destination photo fix
+Replaced the shared travel flatlay so Discover and Wishlist cards show distinct city images.
+```

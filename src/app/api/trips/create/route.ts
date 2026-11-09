@@ -288,6 +288,7 @@ export async function POST(req: Request) {
       intensity: body.intensity,
       transport: body.transport,
       mustSee: body.mustSee,
+      preferred: body.preferred,
       avoid: body.avoid,
       idealTrip: body.idealTrip,
       prefersHiddenGems: body.prefersHiddenGems,

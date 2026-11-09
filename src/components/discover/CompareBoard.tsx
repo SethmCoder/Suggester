@@ -10,6 +10,7 @@ import { listItems } from "@/lib/wishlist/store";
 import { saveWishlistItem } from "@/lib/wishlist/sync";
 import { saveFutureTrip } from "@/lib/future-trips/sync";
 import { TRAVELER_STORAGE_KEY, emptyTraveler, type TravelerProfile } from "@/lib/profile/traveler";
+import { PLAN_LIMITS } from "@/lib/billing/limits";
 
 const INTEREST_OPTIONS = [
   "architecture",
@@ -35,11 +36,13 @@ function readTraveler(): TravelerProfile {
 
 export function CompareBoard() {
   const searchParams = useSearchParams();
-  const initialIds = (searchParams.get("ids") || "tokyo,rome,barcelona")
+  const [compareCap, setCompareCap] = useState<number>(PLAN_LIMITS.free.compareDestinations);
+  const defaultSeed = "tokyo,rome";
+  const initialIds = (searchParams.get("ids") || defaultSeed)
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean)
-    .slice(0, 4);
+    .slice(0, PLAN_LIMITS.pro.compareDestinations);
 
   const [ids, setIds] = useState(initialIds.join(", "));
   const [interests, setInterests] = useState<string[]>(["architecture", "history", "food"]);
@@ -73,7 +76,10 @@ export function CompareBoard() {
         .split(/[,]+/)
         .map((value) => value.trim())
         .filter(Boolean)
-        .slice(0, 4);
+        .slice(0, compareCap);
+      if (destinations.length < 2) {
+        throw new Error("Enter at least two destinations to compare.");
+      }
       const res = await fetch("/api/discover/compare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -99,9 +105,29 @@ export function CompareBoard() {
   }
 
   useEffect(() => {
+    void fetch("/api/billing")
+      .then((res) => res.json())
+      .then((data: { entitled?: boolean }) => {
+        const cap = data.entitled
+          ? PLAN_LIMITS.pro.compareDestinations
+          : PLAN_LIMITS.free.compareDestinations;
+        setCompareCap(cap);
+        setIds((current) =>
+          current
+            .split(/[,]+/)
+            .map((value) => value.trim())
+            .filter(Boolean)
+            .slice(0, cap)
+            .join(", "),
+        );
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     void run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [compareCap]);
 
   function toggleInterest(interest: string) {
     setInterests((current) =>
@@ -123,17 +149,21 @@ export function CompareBoard() {
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-[#6B7280]">
             Side-by-side fit against your interests, budget ceiling, and available days. Scores are transparent and catalog-based.
+            Free compares up to {PLAN_LIMITS.free.compareDestinations}; Pro up to{" "}
+            {PLAN_LIMITS.pro.compareDestinations}.
           </p>
         </div>
       </div>
 
       <section className="rounded-[16px] border border-[#E1E5F0] bg-white p-5 shadow-[0_4px_20px_rgba(8,11,58,0.04)]">
-        <label className="text-sm font-semibold text-[#080B3A]">Destinations (2–4)</label>
+        <label className="text-sm font-semibold text-[#080B3A]">
+          Destinations (2–{compareCap})
+        </label>
         <input
           value={ids}
           onChange={(event) => setIds(event.target.value)}
           className="mt-2 w-full rounded-[10px] border border-[#E1E5F0] px-3 py-2 text-sm"
-          placeholder="tokyo, rome, barcelona"
+          placeholder="tokyo, rome"
         />
         <div className="mt-3 flex flex-wrap gap-2">
           {INTEREST_OPTIONS.map((interest) => {

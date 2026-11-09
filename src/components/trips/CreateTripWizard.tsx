@@ -33,6 +33,10 @@ import {
   effectiveInterests,
   readIntelligence,
 } from "@/lib/intelligence/store";
+import {
+  idealTripWithMajorStops,
+  mergeTripStops,
+} from "@/lib/trips/major-stops";
 
 const INTERCITY_MODES: { value: LegTransitMode; label: string }[] = [
   { value: "auto", label: "Auto (planner picks)" },
@@ -186,6 +190,7 @@ export function CreateTripWizard({
     chosenAirline: "",
   });
   const [routeAirlines, setRouteAirlines] = useState<AirlineOption[]>([]);
+  const [majorStops, setMajorStops] = useState<string[]>([]);
   const [legs, setLegs] = useState<LegDraft[]>([
     {
       city: "",
@@ -544,6 +549,20 @@ export function CreateTripWizard({
     const approvedPreferred = approved
       .filter((item) => item.priority !== "high")
       .map((item) => item.name);
+    const stops = mergeTripStops({
+      majorStops,
+      mustSeeText: form.mustSee,
+      preferredText: form.preferred,
+      wishlistMust: approvedMust,
+      wishlistPreferred: approvedPreferred,
+    });
+    const interestList = [
+      ...new Set([
+        ...form.interests,
+        ...(form.customInterest ? [form.customInterest] : []),
+        ...effectiveInterests(readIntelligence()),
+      ]),
+    ];
     const body = {
       destination,
       departureCity: form.departureCity,
@@ -557,15 +576,9 @@ export function CreateTripWizard({
       restaurantStyle: talked.restaurantStyle,
       rejectedPlaceIds: feedback.removed,
       keptPlaceIds: feedback.added,
-      ...constraintsFromConversation(Object.values(clarifyAnswers).join("\n"), form.interests),
+      ...constraintsFromConversation(Object.values(clarifyAnswers).join("\n"), interestList),
       currency: form.currency,
-      interests: [
-        ...new Set([
-          ...form.interests,
-          ...(form.customInterest ? [form.customInterest] : []),
-          ...effectiveInterests(readIntelligence()),
-        ]),
-      ],
+      interests: interestList,
       intensity: form.intensity,
       transport: form.transport,
       hotel: legs[0]?.hotel || undefined,
@@ -574,10 +587,8 @@ export function CreateTripWizard({
       dayStart: form.dayStart,
       dayEnd: form.dayEnd,
       prefersHiddenGems: form.prefersHiddenGems,
-      mustSee: [...new Set([...splitList(form.mustSee), ...approvedMust])],
-      preferred: [
-        ...new Set([...splitList(form.preferred), ...approvedPreferred]),
-      ],
+      mustSee: stops.mustSee,
+      preferred: stops.preferred,
       futureTripId: futureTripId || undefined,
       idempotencyKey: futureTripId ? `future:${futureTripId}` : undefined,
       optional: splitList(form.optional),
@@ -586,33 +597,36 @@ export function CreateTripWizard({
       flightPricePoint: form.flightPricePoint,
       chosenAirline: form.chosenAirline || undefined,
       tripTitle: form.tripTitle.trim() || undefined,
-      idealTrip: [
-        form.tripTitle.trim() ? `Trip title: ${form.tripTitle.trim()}` : "",
-        form.idealTrip.trim(),
-        legs
-          .filter((l) => !l.hotelBooked && l.hotel.trim())
-          .map(
-            (l) =>
-              `Build the ${l.city} days around ${l.hotel.trim()}${
-                l.hotelBrand.trim() ? ` (${l.hotelBrand.trim()})` : ""
-              }. Do not switch to a different hotel.`,
-          )
-          .join("\n"),
-        form.chosenAirline
-          ? `Inbound flight preference: ${form.chosenAirline}. Price point: ${form.flightPricePoint}. Do not invent a fare or a booking.`
-          : form.preferredAirlines.trim() || form.flightPricePoint !== "any"
-            ? `Flight restrictions: airlines ${form.preferredAirlines.trim() || "any"}, price point ${form.flightPricePoint}. Use only a published match. Do not invent a fare.`
-            : "",
-        Object.entries(clarifyAnswers)
-          .map(([id, answer]) => {
-            const trimmed = answer.trim();
-            return trimmed ? `Q: ${clarifyPrompts[id] ?? id}\nA: ${trimmed}` : "";
-          })
+      idealTrip: idealTripWithMajorStops(
+        [
+          form.tripTitle.trim() ? `Trip title: ${form.tripTitle.trim()}` : "",
+          form.idealTrip.trim(),
+          legs
+            .filter((l) => !l.hotelBooked && l.hotel.trim())
+            .map(
+              (l) =>
+                `Build the ${l.city} days around ${l.hotel.trim()}${
+                  l.hotelBrand.trim() ? ` (${l.hotelBrand.trim()})` : ""
+                }. Do not switch to a different hotel.`,
+            )
+            .join("\n"),
+          form.chosenAirline
+            ? `Inbound flight preference: ${form.chosenAirline}. Price point: ${form.flightPricePoint}. Do not invent a fare or a booking.`
+            : form.preferredAirlines.trim() || form.flightPricePoint !== "any"
+              ? `Flight restrictions: airlines ${form.preferredAirlines.trim() || "any"}, price point ${form.flightPricePoint}. Use only a published match. Do not invent a fare.`
+              : "",
+          Object.entries(clarifyAnswers)
+            .map(([id, answer]) => {
+              const trimmed = answer.trim();
+              return trimmed ? `Q: ${clarifyPrompts[id] ?? id}\nA: ${trimmed}` : "";
+            })
+            .filter(Boolean)
+            .join("\n"),
+        ]
           .filter(Boolean)
-          .join("\n"),
-      ]
-        .filter(Boolean)
-        .join("\n\n"),
+          .join("\n\n"),
+        stops.mustSee,
+      ),
       legs: legs
         .filter((l) => l.city.trim())
         .map((l, i) => ({
@@ -780,13 +794,22 @@ export function CreateTripWizard({
                     type="checkbox"
                     className="mt-1"
                     checked={checked}
-                    onChange={() =>
+                    onChange={() => {
                       setAcceptedWishlistIds((current) =>
                         checked
                           ? current.filter((id) => id !== item.id)
                           : [...current, item.id],
-                      )
-                    }
+                      );
+                      if (item.priority === "high") {
+                        setMajorStops((current) =>
+                          checked
+                            ? current.filter((name) => name !== item.name)
+                            : current.includes(item.name)
+                              ? current
+                              : [...current, item.name].slice(0, 16),
+                        );
+                      }
+                    }}
                   />
                   <div>
                     <p className="font-medium text-[#1F2937]">{item.name}</p>
@@ -858,7 +881,15 @@ export function CreateTripWizard({
       party={party}
       destination={firstLeg?.city ?? ""}
       cities={legs.map((leg) => leg.city)}
-      interests={form.interests}
+      interests={[
+        ...new Set([
+          ...form.interests,
+          ...(form.customInterest ? [form.customInterest] : []),
+          ...effectiveInterests(readIntelligence()),
+        ]),
+      ]}
+      majorStops={majorStops}
+      onMajorStopsChange={setMajorStops}
       idealTrip={form.idealTrip}
       onExchange={onExchange}
       canGenerate={canGenerate}
