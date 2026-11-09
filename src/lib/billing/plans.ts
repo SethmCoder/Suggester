@@ -37,7 +37,7 @@ export function canCreateTrip(state: Pick<BillingSnapshot, "plan" | "used">): bo
 }
 
 export const PLAN_LIMIT_MESSAGE =
-  "Free includes 3 trips. Upgrade to Pro for unlimited trips and the full planner.";
+  "Free includes 3 generated trips. Upgrade to Pro for unlimited trips and advanced Trip Wizard.";
 
 const EUROZONE = new Set([
   "AD", "AT", "BE", "CY", "DE", "EE", "ES", "FI", "FR", "GR", "HR", "IE",

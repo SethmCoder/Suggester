@@ -55,7 +55,8 @@ export function gateFeature(
   const pro = isProEntitled(get);
   const used = readAiUsed(get, now);
   const limit = aiLimit(pro);
-  if (feature === "basic") {
+  // Free may generate itineraries (trip create still capped at FREE_TRIP_LIMIT).
+  if (feature === "basic" || feature === "generate") {
     if (used >= limit) {
       return { allowed: false, consumes: false, used, limit };
     }
@@ -63,7 +64,7 @@ export function gateFeature(
   }
   if (!pro) return { allowed: false, consumes: false, used, limit };
   if (used >= limit) return { allowed: false, consumes: false, used, limit };
-  const consumes = feature === "generate" || feature === "import" || feature === "advanced";
+  const consumes = feature === "import" || feature === "advanced";
   return { allowed: true, consumes, used, limit };
 }
 
@@ -74,4 +75,4 @@ export function isAdvancedRequest(message: string): boolean {
 }
 
 export const PRO_REQUIRED_MESSAGE =
-  "Full itinerary generation, advanced Trip Wizard, optimize, what-if, and import are part of Pro. Subscribe from Plans.";
+  "Advanced Trip Wizard, optimize, what-if, and import are part of Pro. Free includes up to 3 generated trips. Subscribe from Plans for more.";

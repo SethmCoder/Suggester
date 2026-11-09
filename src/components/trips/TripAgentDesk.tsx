@@ -320,7 +320,7 @@ export function TripAgentDesk({
                     ? majorStops.length
                       ? "Major stops stay locked in. Waypoint fills the rest of each day from your interests."
                       : "Generation is included on this account."
-                    : "Generation is part of Pro. Subscribe from Plans."}
+                    : "Free includes 3 generated trips. Upgrade on Plans for more, or your AI allowance may be used up."}
             </p>
             {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
             {progress ? <p className="text-sm text-[#0400FF]">{progress}</p> : null}

@@ -56,13 +56,23 @@ describe("billing and entitlements domain", () => {
     expect(annual.recurring?.interval).toBe("year");
   });
 
-  it("blocks Free generate and allows Pro generate", () => {
-    expect(gateFeature("generate", () => undefined).allowed).toBe(false);
+  it("allows Free and Pro generate within AI quota", () => {
+    expect(gateFeature("generate", () => undefined).allowed).toBe(true);
     expect(
       gateFeature("generate", (name) =>
         name === "waypoint_entitlement" ? "pro" : undefined,
       ).allowed,
     ).toBe(true);
+    expect(
+      gateFeature("generate", (name) =>
+        name === "waypoint_ai_used"
+          ? String(FREE_AI_LIMIT)
+          : name === "waypoint_ai_month"
+            ? "2026-11"
+            : undefined,
+        new Date("2026-11-05T12:00:00Z"),
+      ).allowed,
+    ).toBe(false);
   });
 
   it("detects advanced Trip Wizard requests", () => {

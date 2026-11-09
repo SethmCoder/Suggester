@@ -81,7 +81,8 @@ describe("trip engine", () => {
 
   it("refuses Pro features for a Free caller and ignores the old plan cookie", () => {
     const free = () => undefined;
-    for (const feature of ["generate", "quality", "optimize", "import", "whatif"] as const) {
+    expect(gateFeature("generate", free).allowed).toBe(true);
+    for (const feature of ["quality", "optimize", "import", "whatif"] as const) {
       expect(gateFeature(feature, free).allowed).toBe(false);
     }
     let used = 0;
@@ -104,7 +105,8 @@ describe("trip engine", () => {
     expect(sixth.allowed).toBe(false);
     const legacy = (name: string) => (name === PLAN_COOKIE ? "pro" : undefined);
     expect(isProEntitled(legacy)).toBe(false);
-    expect(gateFeature("generate", legacy).allowed).toBe(false);
+    // Legacy plan cookie alone is not Pro, but Free may still generate.
+    expect(gateFeature("generate", legacy).allowed).toBe(true);
     const granted = (name: string) => (name === ENTITLEMENT_COOKIE ? "pro" : undefined);
     expect(gateFeature("generate", granted).allowed).toBe(true);
   });

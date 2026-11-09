@@ -16,7 +16,7 @@ export const PLAN_LIMITS = {
     discoverSections: "basic" as const,
     advancedWizard: false,
     multiCity: true,
-    generate: false,
+    generate: true,
     personalizedDiscovery: "basic" as const,
   },
   pro: {
@@ -46,7 +46,7 @@ export function planCopy(pro: boolean) {
       bullets: [
         "Advanced personalized discovery and comparisons",
         "Expanded Wishlist and Future Trip tools",
-        "Full itinerary generation and Trip Wizard",
+        "Unlimited generated trips and Trip Wizard",
         "Constraint-aware planning and multi-city trips",
         `${PLAN_LIMITS.pro.aiRequestsPerMonth} AI requests / month`,
       ],
@@ -57,10 +57,10 @@ export function planCopy(pro: boolean) {
     priceMonthly: 0,
     priceAnnual: 0,
     bullets: [
-      `${PLAN_LIMITS.free.trips} trips`,
+      `${PLAN_LIMITS.free.trips} generated trips`,
       "Basic Discover, Wishlist, and Future Trips",
       "Basic traveler preferences",
-      `${PLAN_LIMITS.free.aiRequestsPerMonth} basic AI requests / month`,
+      `${PLAN_LIMITS.free.aiRequestsPerMonth} AI requests / month`,
       "Map and manual editing",
     ],
   };

@@ -105,7 +105,7 @@ describe("pro list prices and limits", () => {
     expect(PRO_PRICE_ANNUAL_USD).toBe(49.99);
     expect(LIST_PRICES.proMonthlyUsd).toBe(5.99);
     expect(LIST_PRICES.proAnnualUsd).toBe(49.99);
-    expect(PLAN_LIMITS.free.generate).toBe(false);
+    expect(PLAN_LIMITS.free.generate).toBe(true);
     expect(PLAN_LIMITS.pro.generate).toBe(true);
     expect(PLAN_LIMITS.free.wishlistCollections).toBe(5);
     expect(PLAN_LIMITS.pro.wishlistCollections).toBeNull();

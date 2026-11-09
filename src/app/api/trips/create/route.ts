@@ -120,7 +120,13 @@ export async function POST(req: Request) {
     );
     if (!gate.allowed) {
       return NextResponse.json(
-        { error: PRO_REQUIRED_MESSAGE, code: "pro_required" },
+        {
+          error:
+            gate.used >= gate.limit
+              ? `Free includes ${gate.limit} AI requests this month. Upgrade to Pro for more generation.`
+              : PRO_REQUIRED_MESSAGE,
+          code: gate.used >= gate.limit ? "ai_limit" : "pro_required",
+        },
         { status: 402 },
       );
     }
@@ -361,6 +367,13 @@ export async function POST(req: Request) {
     };
     res.cookies.set(PLAN_COOKIE, billing.plan, options);
     res.cookies.set(USED_COOKIE, String(billing.used + 1), options);
+    if (gate.consumes) {
+      const { AI_USED_COOKIE, AI_MONTH_COOKIE, currentMonthKey } = await import(
+        "@/lib/billing/entitlements"
+      );
+      res.cookies.set(AI_USED_COOKIE, String(gate.used + 1), options);
+      res.cookies.set(AI_MONTH_COOKIE, currentMonthKey(), options);
+    }
     return res;
   } catch (err) {
     const message = err instanceof Error ? err.message : "Create failed";
