@@ -3,6 +3,7 @@ import {
   assertValidDateRange,
   nightsBetween,
   nightsLabel,
+  sanitizeTripDate,
 } from "@/lib/trips/dates";
 import {
   applyTripDatesToLegs,
@@ -27,12 +28,14 @@ import {
 import type { ActivityRow, TripPreferencesPayload } from "@/lib/types/trip";
 
 describe("Plan Trips P1–P10", () => {
-  it("P1 nights from dates; rejects inverted range", () => {
+  it("P1 nights from dates; rejects inverted range and absurd years", () => {
     expect(nightsBetween("2026-06-08", "2026-06-13")).toBe(5);
     expect(nightsLabel(5)).toBe("5 nights");
     expect(() => assertValidDateRange("2026-06-13", "2026-06-08")).toThrow(
       /end date/i,
     );
+    expect(sanitizeTripDate("3726-01-19")).toBe("");
+    expect(sanitizeTripDate("2026-01-19")).toBe("2026-01-19");
   });
 
   it("P2 idempotent create key shape is stable", () => {

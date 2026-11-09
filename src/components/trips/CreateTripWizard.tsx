@@ -40,7 +40,10 @@ import {
 import {
   addCalendarDays,
   assertValidDateRange,
+  defaultTripEnd,
+  defaultTripStart,
   nightsBetween,
+  sanitizeTripDate,
 } from "@/lib/trips/dates";
 import type { PlanningClarity, TravelerMode } from "@/lib/types/trip";
 
@@ -240,23 +243,22 @@ export function CreateTripWizard({
     if (destinationParam && !futureTripId && !futureLoaded.current) {
       futureLoaded.current = true;
       const days = Math.max(1, Number(daysParam) || 5);
+      const start = defaultTripStart(30);
+      const end = defaultTripEnd(start, Math.max(1, days - 1));
       setLegs([
-        {
-          city: destinationParam,
-          days,
-          hotel: "",
-          transitFromPrevious: "auto",
-          hotelBooked: false,
-          hotelMinRating: 4,
-          hotelPlace: "center",
-          hotelBrand: "",
-        },
+        legWithDates(
+          emptyLeg({
+            city: destinationParam,
+            days,
+          }),
+          start,
+          end,
+        ),
       ]);
       setForm((current) => ({
         ...current,
-        startDate:
-          current.startDate ||
-          new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+        startDate: current.startDate || start,
+        endDate: current.endDate || end,
       }));
     }
   }, [destinationParam, daysParam, futureTripId]);
@@ -268,12 +270,15 @@ export function CreateTripWizard({
     futureLoaded.current = true;
     const days = Math.max(1, trip.estimatedDurationDays || 3);
     const start =
-      trip.potentialStart ||
-      new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+      sanitizeTripDate(trip.potentialStart) || defaultTripStart(30);
+    const end =
+      sanitizeTripDate(trip.potentialEnd) ||
+      defaultTripEnd(start, Math.max(1, days - 1));
     setForm((current) => ({
       ...current,
       tripTitle: trip.title || current.tripTitle,
       startDate: start,
+      endDate: end,
       travelers: trip.travelers || current.travelers,
       budget: trip.budget != null ? String(trip.budget) : current.budget,
       currency: trip.currency || current.currency,
@@ -284,16 +289,14 @@ export function CreateTripWizard({
       preferred: current.preferred,
     }));
     setLegs([
-      {
-        city: trip.destination,
-        days,
-        hotel: "",
-        transitFromPrevious: "auto",
-        hotelBooked: false,
-        hotelMinRating: 4,
-        hotelPlace: "center",
-        hotelBrand: "",
-      },
+      legWithDates(
+        emptyLeg({
+          city: trip.destination,
+          days,
+        }),
+        start,
+        end,
+      ),
     ]);
     const linked = trip.wishlistItemIds
       .map((id) => getItem(id))
@@ -577,11 +580,28 @@ export function CreateTripWizard({
     setError(null);
     setPlanLimited(false);
     setProgress("Saving trip…");
+
+    const startDate = sanitizeTripDate(form.startDate);
+    const endDate = sanitizeTripDate(form.endDate);
+    if (!startDate || !endDate) {
+      setError("Choose a valid arrival and departure date (year 2000–2100).");
+      setLoading(false);
+      setProgress("");
+      return;
+    }
     try {
-      if (!form.startDate || !form.endDate) {
-        throw new Error("Choose an arrival and departure date.");
-      }
-      assertValidDateRange(form.startDate, form.endDate);
+      assertValidDateRange(startDate, endDate);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Invalid dates");
+      setLoading(false);
+      setProgress("");
+      return;
+    }
+    if (startDate !== form.startDate || endDate !== form.endDate) {
+      setForm((current) => ({ ...current, startDate, endDate }));
+    }
+
+    try {
       const created = countCreatedOfflineTrips();
       const gate = await fetch("/api/billing", {
         method: "POST",
@@ -629,8 +649,8 @@ export function CreateTripWizard({
       departureCity: form.departureCity,
       originAirport: form.originAirport || undefined,
       destinationAirport: form.destinationAirport || undefined,
-      startDate: form.startDate,
-      endDate: form.endDate,
+      startDate,
+      endDate,
       travelers: form.travelers,
       budget: form.budget ? Number(form.budget) : talked.total,
       budgetAllocation: talked.allocation,
@@ -662,7 +682,7 @@ export function CreateTripWizard({
       futureTripId: futureTripId || undefined,
       idempotencyKey: futureTripId
         ? `future:${futureTripId}`
-        : `create:${form.startDate}:${form.endDate}:${legs.map((l) => l.city).join("|")}`,
+        : undefined,
       optional: splitList(form.optional),
       avoid: splitList(form.avoid),
       preferredAirlines: form.preferredAirlines.trim() || undefined,
@@ -744,8 +764,8 @@ export function CreateTripWizard({
           offlineSnapshotFromGenerated({
             tripId,
             destination: data.destination || destination || "Untitled trip",
-            startDate: form.startDate,
-            endDate: form.endDate,
+            startDate,
+            endDate,
             days: (data.days ?? []) as GeneratedDay[],
             legs: body.legs,
             title: form.tripTitle.trim() || undefined,
@@ -940,36 +960,39 @@ export function CreateTripWizard({
         )
       }
       onLegDates={(index, dates) => {
+        const arrivalDate = sanitizeTripDate(dates.arrivalDate);
+        const departureDate = sanitizeTripDate(dates.departureDate);
+        if (!arrivalDate || !departureDate) return;
         try {
-          assertValidDateRange(dates.arrivalDate, dates.departureDate);
+          assertValidDateRange(arrivalDate, departureDate);
         } catch {
           return;
         }
         setLegs((prev) =>
           prev.map((leg, i) =>
-            i === index
-              ? legWithDates(leg, dates.arrivalDate, dates.departureDate)
-              : leg,
+            i === index ? legWithDates(leg, arrivalDate, departureDate) : leg,
           ),
         );
         if (index === 0) {
           setForm((current) => ({
             ...current,
-            startDate: dates.arrivalDate,
+            startDate: arrivalDate,
             endDate:
-              current.endDate && current.endDate >= dates.departureDate
-                ? current.endDate
-                : dates.departureDate,
+              sanitizeTripDate(current.endDate) &&
+              sanitizeTripDate(current.endDate)! >= departureDate
+                ? sanitizeTripDate(current.endDate)
+                : departureDate,
           }));
         }
         if (index === legs.length - 1) {
           setForm((current) => ({
             ...current,
-            endDate: dates.departureDate,
+            endDate: departureDate,
             startDate:
-              current.startDate && current.startDate <= dates.arrivalDate
-                ? current.startDate
-                : dates.arrivalDate,
+              sanitizeTripDate(current.startDate) &&
+              sanitizeTripDate(current.startDate)! <= arrivalDate
+                ? sanitizeTripDate(current.startDate)
+                : arrivalDate,
           }));
         }
       }}
@@ -1005,24 +1028,26 @@ export function CreateTripWizard({
       startDate={form.startDate}
       endDate={endDate}
       nights={tripNights}
-      onStartDate={(startDate) => {
+      onStartDate={(raw) => {
+        const startDate = sanitizeTripDate(raw);
+        if (!startDate) return;
         setForm((current) => {
+          const currentEnd = sanitizeTripDate(current.endDate);
           const end =
-            current.endDate && current.endDate >= startDate
-              ? current.endDate
-              : startDate
-                ? addCalendarDays(startDate, Math.max(1, tripNights || 3))
-                : current.endDate;
-          if (startDate && end) redistributeLegsFromTripDates(startDate, end);
+            currentEnd && currentEnd >= startDate
+              ? currentEnd
+              : defaultTripEnd(startDate, Math.max(1, tripNights || 3));
+          redistributeLegsFromTripDates(startDate, end);
           return { ...current, startDate, endDate: end };
         });
       }}
-      onEndDate={(nextEnd) => {
+      onEndDate={(raw) => {
+        const nextEnd = sanitizeTripDate(raw);
+        if (!nextEnd) return;
         setForm((current) => {
-          if (current.startDate && nextEnd < current.startDate) return current;
-          if (current.startDate && nextEnd) {
-            redistributeLegsFromTripDates(current.startDate, nextEnd);
-          }
+          const start = sanitizeTripDate(current.startDate);
+          if (start && nextEnd < start) return current;
+          if (start) redistributeLegsFromTripDates(start, nextEnd);
           return { ...current, endDate: nextEnd };
         });
       }}

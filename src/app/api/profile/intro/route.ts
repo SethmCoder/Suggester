@@ -7,8 +7,14 @@ import {
   type IntroLine,
   type IntroTurn,
 } from "@/lib/profile/intro-chat";
+import {
+  isIntroComplete,
+  markIntroComplete,
+  normalizeTravelerProfile,
+} from "@/lib/profile/intro-status";
 import { INTRO_COOKIE, emptyTraveler, type TravelerProfile } from "@/lib/profile/traveler";
 import { replyRepeats, type ClarifyChoice } from "@/lib/trips/clarify-chat";
+import { createServiceClient } from "@/lib/supabase/server";
 
 const lineSchema = z.object({
   role: z.enum(["user", "assistant"]),
@@ -30,8 +36,20 @@ After two questions beyond age and dream vacation, set done to true, leave choic
 Return JSON only: {"reply":"...","done":false,"choices":[{"id":"a","label":"..."}]}`;
 
 export async function GET() {
-  const profile = await readProfile();
-  return NextResponse.json({ profile: profile ?? emptyTraveler() });
+  const profile = (await readProfile()) ?? emptyTraveler();
+  const returning = isIntroComplete(profile) || (await userHasTrips());
+  if (returning) {
+    const completed = markIntroComplete(profile);
+    if (!profile.completed) await saveProfile(completed);
+    const response = NextResponse.json({ profile: completed });
+    response.cookies.set(INTRO_COOKIE, "1", {
+      path: "/",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 365,
+    });
+    return response;
+  }
+  return NextResponse.json({ profile });
 }
 
 export async function POST(req: Request) {
@@ -111,17 +129,37 @@ async function readProfile(): Promise<TravelerProfile | null> {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) return null;
-    const { data, error } = await supabase
+    const svc = createServiceClient() ?? supabase;
+    const { data, error } = await svc
       .from("profiles")
       .select("traveler_profile")
       .eq("id", user.id)
       .maybeSingle();
     if (error || !data) return null;
-    const raw = (data as { traveler_profile?: TravelerProfile | null }).traveler_profile;
-    if (!raw || typeof raw !== "object") return null;
-    return { ...emptyTraveler(), ...raw, answers: raw.answers ?? [] };
+    return normalizeTravelerProfile(
+      (data as { traveler_profile?: unknown }).traveler_profile,
+    );
   } catch {
     return null;
+  }
+}
+
+async function userHasTrips(): Promise<boolean> {
+  try {
+    const { createSupabaseServerClient } = await import("@/lib/supabase/server");
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return false;
+    const svc = createServiceClient() ?? supabase;
+    const { count } = await svc
+      .from("trips")
+      .select("id", { count: "exact", head: true })
+      .eq("owner_id", user.id);
+    return typeof count === "number" && count > 0;
+  } catch {
+    return false;
   }
 }
 

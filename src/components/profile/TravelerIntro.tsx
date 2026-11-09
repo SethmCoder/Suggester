@@ -15,31 +15,40 @@ export function TravelerIntro({ nextPath }: { nextPath: string }) {
   const [choices, setChoices] = useState<Choice[]>([]);
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [needsIntro, setNeedsIntro] = useState(false);
   const [other, setOther] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
   const started = useRef(false);
+
+  function finishAndGo(profile?: TravelerProfile) {
+    if (profile) writeLocal(profile);
+    document.cookie = `${INTRO_COOKIE}=1; path=/; max-age=31536000; samesite=lax`;
+    router.replace(nextPath);
+  }
 
   useEffect(() => {
     if (started.current) return;
     started.current = true;
     const saved = readLocal();
     if (saved?.completed) {
-      document.cookie = `${INTRO_COOKIE}=1; path=/; max-age=31536000; samesite=lax`;
-      router.replace(nextPath);
+      finishAndGo(saved);
       return;
     }
     void fetch("/api/profile/intro")
       .then((res) => res.json())
       .then((data: { profile?: TravelerProfile }) => {
         if (data.profile?.completed) {
-          writeLocal(data.profile);
-          document.cookie = `${INTRO_COOKIE}=1; path=/; max-age=31536000; samesite=lax`;
-          router.replace(nextPath);
+          finishAndGo(data.profile);
           return;
         }
+        setNeedsIntro(true);
         return ask([], "");
       })
-      .catch(() => setStatus("error"));
+      .catch(() => {
+        setNeedsIntro(true);
+        setStatus("error");
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
   }, [nextPath, router]);
 
   async function ask(history: { role: "user" | "assistant"; text: string }[], message: string) {
@@ -79,6 +88,14 @@ export function TravelerIntro({ nextPath }: { nextPath: string }) {
     }
   }
 
+  if (!needsIntro) {
+    return (
+      <section className="mx-auto max-w-2xl rounded-[20px] border border-[#E1E5F0] bg-white p-5 sm:p-7">
+        <p className="text-sm text-[#6B7280]">Checking your account…</p>
+      </section>
+    );
+  }
+
   return (
     <section className="mx-auto max-w-2xl rounded-[20px] border border-[#E1E5F0] bg-white p-5 shadow-[0_8px_24px_rgba(8,11,58,0.05)] sm:p-7">
       <p className="text-xs font-semibold uppercase tracking-wide text-[#0400FF]">New account</p>
@@ -86,6 +103,17 @@ export function TravelerIntro({ nextPath }: { nextPath: string }) {
       <p className="mt-2 text-sm text-[#6B7280]">
         A few choices, then the planner uses them on your trips. Pick Other if none of the answers fit.
       </p>
+      <button
+        type="button"
+        className="mt-2 text-sm font-semibold text-[#0400FF]"
+        onClick={() => {
+          void fetch("/api/profile/intro/complete", { method: "POST" })
+            .then(() => finishAndGo({ completed: true, answers: [] }))
+            .catch(() => finishAndGo({ completed: true, answers: [] }));
+        }}
+      >
+        Skip — I’ve used Waypoint before
+      </button>
       <div className="mt-5 space-y-3">
         {log.map((line, index) => (
           <p

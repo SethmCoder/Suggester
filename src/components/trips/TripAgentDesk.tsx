@@ -9,6 +9,7 @@ import {
   destinationImageUrl,
   hasCuratedCityImage,
 } from "@/lib/destination-image";
+import { tripDateInputBounds } from "@/lib/trips/dates";
 
 type PlaceDraft = {
   city: string;
@@ -114,6 +115,7 @@ export function TripAgentDesk({
 }) {
   const lead = places[0]?.city.trim() || "";
   const photo = lead && hasCuratedCityImage(lead);
+  const dateBounds = tripDateInputBounds();
 
   return (
     <div className="mx-auto max-w-6xl" data-tour="tour-create-wizard">
@@ -136,7 +138,7 @@ export function TripAgentDesk({
             <p className="text-2xl font-bold">{lead || "Where are you going?"}</p>
           </div>
         )}
-        <div className="grid gap-3 p-4 sm:grid-cols-[1.2fr_1.2fr_1fr] sm:p-5">
+        <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5">
           <CityField
             label="Place"
             city={places[0]?.city ?? ""}
@@ -154,33 +156,39 @@ export function TripAgentDesk({
               placeholder={lead ? `A trip to ${lead}` : "Title of the trip"}
             />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
-                Arrival
-              </Label>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => onStartDate(e.target.value)}
-              />
-            </div>
-            <div>
-              <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
-                Departure
-              </Label>
-              <Input
-                type="date"
-                value={endDate}
-                min={startDate || undefined}
-                onChange={(e) => onEndDate(e.target.value)}
-              />
-            </div>
+          <div>
+            <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
+              Arrival
+            </Label>
+            <Input
+              type="date"
+              value={startDate}
+              min={dateBounds.min}
+              max={dateBounds.max}
+              onChange={(e) => onStartDate(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
+              Departure
+            </Label>
+            <Input
+              type="date"
+              value={endDate}
+              min={startDate || dateBounds.min}
+              max={dateBounds.max}
+              onChange={(e) => onEndDate(e.target.value)}
+            />
             {startDate && endDate ? (
-              <p className="col-span-2 text-xs text-[#6B7280]">
+              <p className="mt-1 text-xs text-[#6B7280]">
                 {nights === 1 ? "1 night" : `${nights} nights`} on this trip
               </p>
-            ) : null}
+            ) : (
+              <p className="mt-1 text-xs text-[#6B7280]">
+                Pick arrival and departure (year {dateBounds.min.slice(0, 4)}–
+                {dateBounds.max.slice(0, 4)}).
+              </p>
+            )}
           </div>
         </div>
         <div className="space-y-3 border-t border-[#F0F2F8] px-4 py-3 sm:px-5">
@@ -266,6 +274,8 @@ export function TripAgentDesk({
                 <Input
                   type="date"
                   value={place.arrivalDate ?? ""}
+                  min={dateBounds.min}
+                  max={dateBounds.max}
                   onChange={(e) => {
                     const arrivalDate = e.target.value;
                     const departureDate =
@@ -283,7 +293,8 @@ export function TripAgentDesk({
                 <Input
                   type="date"
                   value={place.departureDate ?? ""}
-                  min={place.arrivalDate || undefined}
+                  min={place.arrivalDate || dateBounds.min}
+                  max={dateBounds.max}
                   onChange={(e) => {
                     const departureDate = e.target.value;
                     const arrivalDate = place.arrivalDate || departureDate;
@@ -313,6 +324,8 @@ export function TripAgentDesk({
               <Input
                 type="date"
                 value={places[0]?.arrivalDate ?? startDate}
+                min={dateBounds.min}
+                max={dateBounds.max}
                 onChange={(e) => {
                   const arrivalDate = e.target.value;
                   const departureDate =
@@ -322,7 +335,7 @@ export function TripAgentDesk({
                       : endDate || arrivalDate;
                   onLegDates?.(0, { arrivalDate, departureDate });
                 }}
-                className="w-40"
+                className="w-44"
               />
             </div>
             <div>
@@ -332,14 +345,15 @@ export function TripAgentDesk({
               <Input
                 type="date"
                 value={places[0]?.departureDate ?? endDate}
-                min={places[0]?.arrivalDate || startDate || undefined}
+                min={places[0]?.arrivalDate || startDate || dateBounds.min}
+                max={dateBounds.max}
                 onChange={(e) => {
                   const departureDate = e.target.value;
                   const arrivalDate =
                     places[0]?.arrivalDate || startDate || departureDate;
                   onLegDates?.(0, { arrivalDate, departureDate });
                 }}
-                className="w-40"
+                className="w-44"
               />
             </div>
             <p className="pb-2">
