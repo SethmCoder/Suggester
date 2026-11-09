@@ -67,7 +67,7 @@ export async function POST(req: Request) {
   let intelDream: string | undefined;
   let intelBudget: number | undefined;
   let intelDuration: number | undefined;
-  if (userId) {
+  if (accessUser?.id) {
     try {
       const { createSupabaseServerClient } = await import("@/lib/supabase/server");
       const {
@@ -75,7 +75,7 @@ export async function POST(req: Request) {
         effectiveInterestsServer,
       } = await import("@/lib/intelligence/server");
       const supabase = await createSupabaseServerClient();
-      const profile = await loadTravelIntelligence(supabase, userId);
+      const profile = await loadTravelIntelligence(supabase, accessUser.id);
       intelInterests = effectiveInterestsServer(profile);
       preferredDestinations = profile.inferred.preferredDestinations;
       downrankedInterests = profile.inferred.downrankedInterests
