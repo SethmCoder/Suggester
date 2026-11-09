@@ -1031,6 +1031,26 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
         false,
       );
     }
+    // If wet-weather filtering left the day empty, allow outdoor fills with a warning.
+    if (dayWet && sightseeing() === 0) {
+      warnings.push(
+        `Day ${assignment.dayIndex + 1} is wet, but few indoor OpenStreetMap places were listed — outdoor stops were kept as a fallback.`,
+      );
+      for (const candidate of cityPool) {
+        if (sightseeing() >= target) break;
+        if (!isOutdoorPlace(candidate.types, candidate.displayName)) continue;
+        const hit = byId.get(candidate.placeId);
+        if (!hit || usedAcross.has(candidate.placeId)) continue;
+        // Bypass the wet outdoor skip inside placeOne by treating as must_see fallback.
+        await placeOne(
+          candidate.placeId,
+          isSitDown(candidate.types) ? 75 : 90,
+          "must_see",
+          "Outdoor fallback — few indoor places were listed for this wet day.",
+          false,
+        );
+      }
+    }
     if (sightseeing() === 0) {
       warnings.push(
         `No OpenStreetMap places were available to schedule in ${assignment.city} on day ${assignment.dayIndex + 1}.`,
