@@ -10,9 +10,16 @@ import {
   setMapsProviderPreference,
 } from "@/lib/maps/settings";
 import type { MapsProviderId } from "@/lib/maps/types";
+import { notifyAvatarChanged } from "@/components/layout/UserAvatar";
+import { UserAvatar } from "@/components/layout/UserAvatar";
+import {
+  AVATAR_STORAGE_KEY,
+  avatarInitial,
+  letterAvatarDataUrl,
+  writeStoredAvatar,
+} from "@/lib/avatar";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
-const AVATAR_KEY = "waypoint:avatarDataUrl";
 const USERNAME_KEY = "waypoint:username";
 
 export default function SettingsPage() {
@@ -35,7 +42,7 @@ export default function SettingsPage() {
     setMounted(true);
     setMapsProvider(getMapsProviderPreference());
     try {
-      setAvatarUrl(localStorage.getItem(AVATAR_KEY));
+      setAvatarUrl(localStorage.getItem(AVATAR_STORAGE_KEY));
       setUsername(localStorage.getItem(USERNAME_KEY) ?? "");
     } catch {
       /* ignore */
@@ -88,6 +95,19 @@ export default function SettingsPage() {
     );
   }
 
+  function setAvatar(dataUrl: string | null) {
+    setAvatarUrl(dataUrl);
+    writeStoredAvatar(dataUrl);
+    notifyAvatarChanged();
+  }
+
+  function useLetterAvatar() {
+    const letter = avatarInitial(displayName, email || newEmail, "M");
+    setAvatar(letterAvatarDataUrl(letter));
+    setStatus(`Letter avatar set to ${letter}.`);
+    setError(null);
+  }
+
   function onAvatarFile(file: File | null) {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
@@ -100,10 +120,10 @@ export default function SettingsPage() {
     }
     const reader = new FileReader();
     reader.onload = () => {
-      const dataUrl = String(reader.result);
-      setAvatarUrl(dataUrl);
       try {
-        localStorage.setItem(AVATAR_KEY, dataUrl);
+        setAvatar(String(reader.result));
+        setError(null);
+        setStatus("Photo avatar saved on this device.");
       } catch {
         setError("Could not store avatar locally");
       }
@@ -220,20 +240,18 @@ export default function SettingsPage() {
       {/* Avatar */}
       <section className="rounded-2xl border border-[#E1E5F0] bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold">Avatar</h2>
+        <p className="mt-1 text-sm text-[#6B7280]">
+          The blue letter mark is the default Waypoint avatar. Set it once, or
+          replace it with a photo.
+        </p>
         <div className="mt-4 flex items-center gap-4">
-          <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-[#DDE1FF] text-2xl font-semibold text-[#0400FF]">
-            {avatarUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={avatarUrl}
-                alt=""
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              (displayName || username || email || "U").charAt(0).toUpperCase()
-            )}
-          </div>
-          <div>
+          <UserAvatar
+            displayName={displayName || username}
+            email={email || newEmail}
+            imageUrl={avatarUrl}
+            size="lg"
+          />
+          <div className="flex flex-wrap gap-2">
             <input
               ref={fileRef}
               type="file"
@@ -241,6 +259,9 @@ export default function SettingsPage() {
               className="hidden"
               onChange={(e) => onAvatarFile(e.target.files?.[0] ?? null)}
             />
+            <Button type="button" onClick={useLetterAvatar}>
+              Use letter avatar
+            </Button>
             <Button
               type="button"
               variant="secondary"
@@ -251,10 +272,10 @@ export default function SettingsPage() {
             {avatarUrl ? (
               <button
                 type="button"
-                className="ml-3 text-sm text-[#DC2626]"
+                className="text-sm font-semibold text-[#DC2626]"
                 onClick={() => {
-                  setAvatarUrl(null);
-                  localStorage.removeItem(AVATAR_KEY);
+                  setAvatar(null);
+                  setStatus("Avatar cleared. Header will show your letter again.");
                 }}
               >
                 Remove

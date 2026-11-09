@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ComponentType, type SVGProps } from "react";
 import { AvatarMenu } from "./AvatarMenu";
+import { UserAvatar } from "./UserAvatar";
 import { FirstRunTour } from "@/components/tutorial/FirstRunTour";
 import {
   IconBell,
@@ -121,7 +122,6 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const first = (displayName || userEmail || "S").charAt(0).toUpperCase();
   const closeMobile = () => setMobileOpen(false);
 
   const sidebar = (
@@ -215,12 +215,22 @@ export function AppShell({
             </button>
 
             <div className="hidden items-center gap-2 sm:flex">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#0400FF] text-sm font-bold text-white">
-                {first}
-              </div>
+              <UserAvatar
+                displayName={displayName}
+                email={userEmail}
+                size="sm"
+                listenForStorage
+              />
               <AvatarMenu email={userEmail} displayName={displayName} />
             </div>
             <div className="sm:hidden">
+              <UserAvatar
+                displayName={displayName}
+                email={userEmail}
+                size="sm"
+                className="mr-1"
+                listenForStorage
+              />
               <AvatarMenu email={userEmail} displayName={displayName} />
             </div>
           </div>

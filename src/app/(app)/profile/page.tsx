@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { UserAvatar } from "@/components/layout/UserAvatar";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { TravelPreferences } from "@/components/profile/TravelPreferences";
@@ -69,9 +70,12 @@ export default function ProfilePage() {
       <TravelPreferences />
       <div className="rounded-[16px] border border-[#E1E5F0] bg-white p-6 shadow-[0_4px_20px_rgba(8,11,58,0.05)]">
         <div className="mb-6 flex items-center gap-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#0400FF] text-xl font-bold text-white">
-            {(displayName || email || "U").charAt(0).toUpperCase()}
-          </div>
+          <UserAvatar
+            displayName={displayName}
+            email={email}
+            size="md"
+            listenForStorage
+          />
           <div>
             <p className="font-semibold text-[#1F2937]">
               {displayName || "Traveler"}

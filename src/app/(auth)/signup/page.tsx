@@ -1,29 +1,49 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
-export default function SignupPage() {
+function SignupForm() {
   const router = useRouter();
+  const params = useSearchParams();
+  const next = params.get("next") ?? "/dashboard";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [existingEmail, setExistingEmail] = useState<string | null>(null);
 
-  if (!isSupabaseConfigured()) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#080B3A] px-4">
-        <p className="rounded-[14px] bg-white px-6 py-4 text-[#DC2626]">
-          Accounts aren’t available yet. Try the demo to plan a trip on this device.
-        </p>
-      </div>
-    );
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    try {
+      const supabase = createClient();
+      void supabase.auth.getUser().then(({ data: { user } }) => {
+        if (user?.email) setExistingEmail(user.email);
+      });
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  async function signOutToCreateNew() {
+    setLoading(true);
+    try {
+      await fetch("/api/demo/end", { method: "POST" }).catch(() => null);
+      if (isSupabaseConfigured()) {
+        const supabase = createClient();
+        await supabase.auth.signOut();
+      }
+      setExistingEmail(null);
+      router.refresh();
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -93,8 +113,88 @@ export default function SignupPage() {
     }
     await fetch("/api/demo/end", { method: "POST" }).catch(() => null);
     setLoading(false);
-    router.push("/dashboard");
+    router.push(next.startsWith("/") ? next : "/dashboard");
     router.refresh();
+  }
+
+  if (existingEmail) {
+    return (
+      <div className="mt-6 space-y-4">
+        <p className="text-sm text-[#1F2937]">
+          You’re already signed in as{" "}
+          <span className="font-semibold">{existingEmail}</span>.
+        </p>
+        <Button
+          type="button"
+          className="w-full"
+          onClick={() => {
+            router.push("/dashboard");
+            router.refresh();
+          }}
+        >
+          Continue to dashboard
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          className="w-full"
+          disabled={loading}
+          onClick={() => void signOutToCreateNew()}
+        >
+          {loading ? "Signing out…" : "Sign out and create a new account"}
+        </Button>
+      </div>
+    );
+  }
+
+  return notice ? (
+    <p className="mt-6 text-sm leading-relaxed text-[#1F2937]">{notice}</p>
+  ) : (
+    <form onSubmit={onSubmit} className="mt-6 space-y-4">
+      <div>
+        <Label>Display name</Label>
+        <Input
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          placeholder="Seth"
+        />
+      </div>
+      <div>
+        <Label>Email</Label>
+        <Input
+          type="email"
+          required
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+      </div>
+      <div>
+        <Label>Password</Label>
+        <Input
+          type="password"
+          required
+          minLength={8}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+      </div>
+      {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
+      <Button type="submit" disabled={loading} className="w-full">
+        {loading ? "Creating…" : "Sign up"}
+      </Button>
+    </form>
+  );
+}
+
+export default function SignupPage() {
+  if (!isSupabaseConfigured()) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#080B3A] px-4">
+        <p className="rounded-[14px] bg-white px-6 py-4 text-[#DC2626]">
+          Accounts aren’t available yet. Try the demo to plan a trip on this device.
+        </p>
+      </div>
+    );
   }
 
   return (
@@ -108,44 +208,11 @@ export default function SignupPage() {
           <p className="mt-1 text-sm text-[#6B7280]">
             Join Waypoint and start planning smarter trips.
           </p>
-          {notice ? (
-            <p className="mt-6 text-sm leading-relaxed text-[#1F2937]">{notice}</p>
-          ) : (
-          <form onSubmit={onSubmit} className="mt-6 space-y-4">
-            <div>
-              <Label>Display name</Label>
-              <Input
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Seth"
-              />
-            </div>
-            <div>
-              <Label>Email</Label>
-              <Input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div>
-              <Label>Password</Label>
-              <Input
-                type="password"
-                required
-                minLength={8}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-            {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
-            <Button type="submit" disabled={loading} className="w-full">
-              {loading ? "Creating…" : "Sign up"}
-            </Button>
-          </form>
-          )}
+          <Suspense>
+            <SignupForm />
+          </Suspense>
           <p className="mt-6 text-center text-sm text-[#6B7280]">
+            Already have an account?{" "}
             <Link href="/login" className="font-semibold text-[#0400FF]">
               Sign in
             </Link>

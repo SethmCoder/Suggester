@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
+import { CreateAccountLink } from "@/components/auth/CreateAccountLink";
 import { TryDemoButton } from "@/components/demo/TryDemoButton";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
@@ -129,12 +130,9 @@ export default function LoginPage() {
           <TryDemoButton className="w-full" variant="secondary" />
           <p className="mt-6 text-center text-sm text-[#6B7280]">
             No account?{" "}
-            <Link
-              href="/signup"
-              className="font-semibold text-[#0400FF] hover:text-[#0A0080]"
-            >
+            <CreateAccountLink className="font-semibold text-[#0400FF] hover:text-[#0A0080]">
               Create account
-            </Link>
+            </CreateAccountLink>
           </p>
         </div>
       </div>

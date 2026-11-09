@@ -100,7 +100,9 @@ export async function middleware(request: NextRequest) {
       });
     }
     const introDone = request.cookies.get(INTRO_COOKIE)?.value === "1";
-    if (path === "/login" || path === "/signup") {
+    // Signed-in users who open login go home. Signup stays reachable so
+    // "Create account" can clear the session and show the new-account form.
+    if (path === "/login") {
       const redirect = NextResponse.redirect(
         new URL(introDone ? "/dashboard" : "/welcome", request.url),
       );

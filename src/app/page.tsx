@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CreateAccountLink } from "@/components/auth/CreateAccountLink";
 import { TryDemoButton } from "@/components/demo/TryDemoButton";
 import { LocalHeroBackground } from "@/components/home/LocalHero";
 
@@ -40,12 +41,9 @@ export default function Home() {
             >
               Sign in
             </Link>
-            <Link
-              href="/signup"
-              className="inline-flex items-center justify-center rounded-[12px] px-4 py-2.5 text-sm font-semibold text-[#C5CAE5] hover:text-white"
-            >
+            <CreateAccountLink className="inline-flex items-center justify-center rounded-[12px] px-4 py-2.5 text-sm font-semibold text-[#C5CAE5] hover:text-white">
               Create account
-            </Link>
+            </CreateAccountLink>
           </div>
           <p className="mt-5 text-xs text-[#9299B5]">
             Try a sample trip now. Sign in when you want trips saved to your

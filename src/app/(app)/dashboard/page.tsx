@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { CreateAccountLink } from "@/components/auth/CreateAccountLink";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { Button } from "@/components/ui/Button";
 import { IconArrowRight, IconPlane, IconSearch } from "@/components/ui/Icons";
@@ -152,9 +153,9 @@ export default function DashboardPage() {
             </Button>
           </Link>
             {isDemo ? (
-              <Link href="/signup" className="inline-flex">
-                <Button variant="secondary">Sign up to save trips</Button>
-              </Link>
+              <CreateAccountLink className="inline-flex items-center justify-center rounded-[12px] border border-[#E1E5F0] bg-white px-4 py-2.5 text-sm font-semibold text-[#1F2937] shadow-sm transition-colors hover:bg-[#DDE1FF]/60">
+                Sign up to save trips
+              </CreateAccountLink>
             ) : null}
           </div>
       </section>
