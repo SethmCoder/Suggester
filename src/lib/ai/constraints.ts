@@ -116,6 +116,7 @@ export type ConstraintStop = {
   wheelchair?: string | null;
   fee?: string | null;
   cuisine?: string | null;
+  priority?: "must_see" | "preferred" | "optional" | string;
 };
 
 export function applyDayConstraints<T extends ConstraintStop>(
@@ -126,6 +127,10 @@ export function applyDayConstraints<T extends ConstraintStop>(
     stepFree: boolean;
     dietary?: string;
     transit?: { start: string; durationMinutes: number }[];
+    /** When true, drop outdoor sightseeing that is not a must-see. */
+    wetWeather?: boolean;
+    isOutdoor?: (stop: T) => boolean;
+    isMustSee?: (stop: T) => boolean;
   },
 ): {
   kept: T[];
@@ -139,6 +144,18 @@ export function applyDayConstraints<T extends ConstraintStop>(
     const anchored = stop.placeId.startsWith("flight:") || stop.placeId.startsWith("transit:");
     if (!anchored && input.transit?.some((block) => overlaps(stop.startTime, stop.durationMinutes, block.start, block.durationMinutes))) {
       dropped.push({ item: stop, reason: `${stop.name} overlaps the intercity trip, so it was left off.` });
+      continue;
+    }
+    if (
+      !anchored &&
+      input.wetWeather &&
+      input.isOutdoor?.(stop) &&
+      !input.isMustSee?.(stop)
+    ) {
+      dropped.push({
+        item: stop,
+        reason: `${stop.name} looks outdoor and the forecast is wet, so it was left off for an indoor day.`,
+      });
       continue;
     }
     const access = accessNote({ wheelchair: stop.wheelchair, stepFree: input.stepFree });

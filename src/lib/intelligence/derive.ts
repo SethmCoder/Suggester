@@ -75,7 +75,7 @@ export function applySignal(
     };
   }
 
-  let next = { ...profile, inferred: { ...profile.inferred } };
+  const next = { ...profile, inferred: { ...profile.inferred } };
 
   if (signal.type === "wishlist_save" || signal.type === "discover_save") {
     const category = signal.type === "wishlist_save" ? signal.category : null;

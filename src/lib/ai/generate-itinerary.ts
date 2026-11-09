@@ -66,6 +66,14 @@ import {
   resolveTripLegs,
 } from "../trips/resolve-legs";
 import { nameMatchesStop } from "../trips/major-stops";
+import {
+  fetchDailyWeather,
+  formatWeatherLine,
+  weatherForDate,
+  weatherPromptBlock,
+} from "../weather/open-meteo";
+import { isOutdoorPlace } from "../weather/codes";
+import type { WeatherForecast } from "../weather/types";
 
 export interface TripPreferencesInput {
   destination: string;
@@ -138,6 +146,8 @@ export interface GeneratedDay {
   totalTravelMinutes?: number;
   totalWalkMeters?: number;
   routePolyline?: string;
+  weatherSummary?: string;
+  weatherWet?: boolean;
 }
 
 function isSitDown(types: string[]): boolean {
@@ -198,6 +208,7 @@ async function callGroq(
   extra?: {
     dayPlan?: ReturnType<typeof expandLegsToDays>;
     hotelNotes?: string;
+    weatherBlock?: string;
   },
 ): Promise<ItineraryGeneration | null> {
   if (!process.env.GROQ_API_KEY) return null;
@@ -279,6 +290,7 @@ async function callGroq(
           destinationContextBlock,
           dayPlan: extra?.dayPlan,
           hotelNotes: extra?.hotelNotes,
+          weatherBlock: extra?.weatherBlock,
         }),
       },
     ],
@@ -415,6 +427,21 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
     geo.lng = fallback.lng;
   }
 
+  let weatherForecast: WeatherForecast | null = null;
+  try {
+    weatherForecast = await fetchDailyWeather({
+      lat: geo.lat,
+      lng: geo.lng,
+      startDate: prefs.startDate,
+      endDate: prefs.endDate,
+    });
+  } catch (err) {
+    logger.warn("weather_skipped", {
+      error: err instanceof Error ? err.message : "unknown",
+    });
+  }
+  const weatherBlock = weatherPromptBlock(weatherForecast);
+
   const popConfig = getPopularityConfig();
   let popularityMap = new Map<string, PopularitySignals>();
   if (popConfig.enabled) {
@@ -448,7 +475,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
 
   const byId = new Map<string, Hit>();
   const wikiByPlace = new Map<string, string | null>();
-  let onlineInterest = new Map<string, OnlineInterestSignal>();
+  const onlineInterest = new Map<string, OnlineInterestSignal>();
   let destinationContextBlock = "";
 
   // Discover candidates per unique city, anchored on hotel when available
@@ -692,7 +719,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
     prefs,
     filtered,
     destinationContextBlock || undefined,
-    { dayPlan, hotelNotes },
+    { dayPlan, hotelNotes, weatherBlock: weatherBlock || undefined },
   );
   let modelUnavailable = false;
   if (!ai) {
@@ -704,6 +731,15 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
   if (modelUnavailable) {
     warnings.push(
       "The model was unavailable, so this plan was built from the researched places.",
+    );
+  }
+  if (weatherForecast?.days.some((day) => day.wet)) {
+    warnings.push(
+      "Wet-weather days will prefer indoor stops; outdoor parks and viewpoints are deferred when the forecast looks rainy.",
+    );
+  } else if (!weatherForecast) {
+    warnings.push(
+      "Live weather was unavailable for these dates, so outdoor/indoor balance followed traveler preferences only.",
     );
   }
   const detailsCache = new Map<string, Awaited<ReturnType<typeof getPlaceDetails>>>();
@@ -822,6 +858,8 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
     }
 
     const dayDate = localTripDate(prefs.startDate, assignment.dayIndex);
+    const dayWeather = weatherForDate(weatherForecast, dayDate);
+    const dayWet = Boolean(dayWeather?.wet);
     const dayEnd = (prefs.dayEnd ?? "21:00").slice(0, 5);
     const usedPlaces = new Set<string>();
 
@@ -833,6 +871,14 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       requireKnownHours: boolean,
     ) => {
       if (usedAcross.has(placeId) || usedPlaces.has(placeId) || !byId.has(placeId)) return false;
+      const candidate = byId.get(placeId)!;
+      if (
+        dayWet &&
+        priority !== "must_see" &&
+        isOutdoorPlace(candidate.types, candidate.displayName)
+      ) {
+        return false;
+      }
       if (!detailsCache.has(placeId)) {
         detailsCache.set(placeId, await getPlaceDetails(placeId));
       }
@@ -957,17 +1003,31 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
         await placeOne(hit.placeId, 90, "preferred", `Preferred stop: ${stop}`, false);
       }
     }
-    const sightsFirst = [
-      ...cityPool.filter((candidate) => !isSitDown(candidate.types)),
-      ...cityPool.filter((candidate) => isSitDown(candidate.types)),
-    ];
-    for (const candidate of sightsFirst) {
+    const indoorFirst = dayWet
+      ? [
+          ...cityPool.filter(
+            (candidate) =>
+              !isOutdoorPlace(candidate.types, candidate.displayName) &&
+              !isSitDown(candidate.types),
+          ),
+          ...cityPool.filter((candidate) => isSitDown(candidate.types)),
+          ...cityPool.filter((candidate) =>
+            isOutdoorPlace(candidate.types, candidate.displayName),
+          ),
+        ]
+      : [
+          ...cityPool.filter((candidate) => !isSitDown(candidate.types)),
+          ...cityPool.filter((candidate) => isSitDown(candidate.types)),
+        ];
+    for (const candidate of indoorFirst) {
       if (sightseeing() >= target) break;
       await placeOne(
         candidate.placeId,
         isSitDown(candidate.types) ? 75 : 90,
         "preferred",
-        undefined,
+        dayWet && !isOutdoorPlace(candidate.types, candidate.displayName)
+          ? "Indoor pick for a wet-weather day."
+          : undefined,
         false,
       );
     }
@@ -1091,6 +1151,9 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
         walking: prefs.transport !== "driving" && prefs.transport !== "transit",
         stepFree: wantsStepFree(prefs.accessibility),
         dietary: prefs.dietary,
+        wetWeather: dayWet,
+        isOutdoor: (stop) => isOutdoorPlace(stop.types, stop.name),
+        isMustSee: (stop) => stop.priority === "must_see",
         transit: scheduled
           .filter((activity) => activity.placeId.startsWith("transit:"))
           .map((activity) => ({
@@ -1116,6 +1179,12 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       };
     });
 
+    if (dayWeather) {
+      warnings.push(
+        `Day ${assignment.dayIndex + 1} weather: ${formatWeatherLine(dayWeather)}.`,
+      );
+    }
+
     days.push({
       dayIndex: assignment.dayIndex,
       activities: finished,
@@ -1123,6 +1192,8 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       totalWalkMeters:
         routeMode === "WALK" ? route?.totalDistanceMeters : undefined,
       routePolyline: route?.polyline,
+      weatherSummary: dayWeather ? formatWeatherLine(dayWeather) : undefined,
+      weatherWet: dayWet,
     });
   }
 

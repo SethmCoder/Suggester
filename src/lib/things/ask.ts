@@ -52,7 +52,7 @@ export async function searchThings(input: {
   const local = localThingsQuery(input.message, input.city);
   let city = local.city;
   let query = local.query;
-  let category = local.category;
+  const category = local.category;
   if (local.ask) {
     return { reply: local.ask, city: "", places: [], notice: null, center: null };
   }

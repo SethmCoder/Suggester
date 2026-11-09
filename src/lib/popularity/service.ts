@@ -72,7 +72,7 @@ export async function getPopularityForDestination(input: {
   }
 
   const providers = config.providers;
-  let mentions: RawMention[] = [];
+  const mentions: RawMention[] = [];
   let extractedNames: string[] = [];
 
   try {

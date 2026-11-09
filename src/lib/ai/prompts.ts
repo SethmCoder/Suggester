@@ -16,6 +16,7 @@ The system inserts intercity transit blocks (flight, major train, ferry, coach, 
 Major train means long-distance / high-speed rail that typically needs booking; regional rail is local/commuter.
 Respect must-see (major stops) and avoid lists. Prefer soft "preferred" names when filling remaining slots, but do not leave days empty if a preferred place is missing from candidates.
 When the traveler named major stops, schedule those first from the candidate list, then fill the rest of each day from interests — do not drop unrelated days to rewrite the whole trip.
+When a weather forecast marks a day as wet/rainy, do NOT schedule outdoor parks, beaches, viewpoints, or trails that day — prefer museums, markets, galleries, and indoor food. Only keep an outdoor must-see on a wet day if no indoor alternative exists.
 Do not repeat the same attraction across days unless unavoidable.
 Return JSON matching the schema exactly.`;
 }
@@ -36,6 +37,7 @@ export function buildItineraryUserPrompt(input: {
   destinationContextBlock?: string;
   dayPlan?: DayCityAssignment[];
   hotelNotes?: string;
+  weatherBlock?: string;
 }): string {
   const candidateLines = input.candidates.slice(0, 60).map((c) => {
     const pop = c.popularity;
@@ -78,7 +80,9 @@ Major stops / must-see (hard — schedule from candidates when present): ${input
 Preferred stops (soft — use when filling remaining day slots): ${(input.preferred ?? []).join("; ") || "none"}
 Avoid: ${input.avoid.join("; ") || "none"}
 Ideal trip: ${input.idealTrip || "none"}
-${input.hotelNotes ? `Hotels / anchors:\n${input.hotelNotes}\n` : ""}${destCtx}
+${input.hotelNotes ? `Hotels / anchors:\n${input.hotelNotes}\n` : ""}${destCtx}${
+    input.weatherBlock ? `\n${input.weatherBlock}\n` : ""
+  }
 Day plan (assign only candidates for that day's city):
 ${dayLines || "(single destination — all days same city)"}
 
@@ -87,7 +91,8 @@ ${candidateLines.join("\n")}
 
 Rules:
 - Schedule major stops first (priority must_see). Then fill remaining slots from preferred stops and traveler interests.
-- Online-interest hints are SECONDARY. Prefer traveler interests, hotel proximity, and a realistic schedule.
+- On wet forecast days, fill with indoor candidates; skip outdoor parks/beaches/viewpoints unless they are hard must-sees with no indoor substitute.
+- Online-interest hints are SECONDARY. Prefer traveler interests, hotel proximity, weather fit, and a realistic schedule.
 - Never invent social-media virality or vague "near hotel" fillers.
 - Intercity transit blocks may already be inserted by the system (labeled Flight / Major train / Ferry / etc.); schedule sightseeing after the transit arrival window. Do not invent stations unless their placeId is listed.
 Popularity data present: ${input.popularityEnabled ? "yes" : "no"}.`;

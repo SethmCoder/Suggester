@@ -38,6 +38,7 @@ import {
   type IntercityMode,
 } from "@/lib/trips/intercity-transit";
 import { CityCard } from "./CityCard";
+import { DayWeatherBadge } from "./DayWeather";
 import { DistrictCard } from "./DistrictCard";
 import { StopBlurb } from "./StopBlurb";
 import { CityHotelField } from "./CityHotelField";
@@ -927,6 +928,20 @@ export function ItineraryEditor({
                     <span className="ml-2 font-normal text-[#6B7280]">
                       · {day.activities.length} stops
                     </span>
+                    <DayWeatherBadge
+                      startDate={startDate}
+                      dayIndex={day.dayIndex}
+                      city={
+                        dayCities?.[day.dayIndex]?.city ||
+                        destination.split(",")[0]
+                      }
+                      lat={
+                        day.activities.find((a) => a.lat != null)?.lat ?? null
+                      }
+                      lng={
+                        day.activities.find((a) => a.lng != null)?.lng ?? null
+                      }
+                    />
                   </span>
                   <button
                     type="button"
