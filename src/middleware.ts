@@ -154,6 +154,8 @@ export const config = {
     "/saved-places/:path*",
     "/wishlist/:path*",
     "/future-trips/:path*",
+    "/dreamer",
+    "/dreamer/:path*",
     "/discover",
     "/discover/:path*",
     "/explore",

@@ -114,6 +114,8 @@ export async function POST(req: Request) {
   }
 
   const status = ownerId ? "received" : "unassigned";
+  const parsedEarly = parseBookingFromEmailText({ subject, text: textBody });
+
   const { data: row, error } = await svc
     .from("inbound_emails")
     .insert({
@@ -129,9 +131,18 @@ export async function POST(req: Request) {
     .single();
 
   if (error || !row) {
+    // Migration 009 not applied yet — still return a parse so local/dev can proceed.
+    const missingTable = /inbound_emails|schema cache/i.test(error?.message ?? "");
     return NextResponse.json(
-      { error: error?.message ?? "insert failed" },
-      { status: 400 },
+      {
+        error: error?.message ?? "insert failed",
+        needsMigration: missingTable ? "009_dreamer_inbound.sql" : undefined,
+        parsed: parsedEarly,
+        status: missingTable ? "parsed_offline" : "failed",
+        ownerId,
+        matchedBy,
+      },
+      { status: missingTable ? 503 : 400 },
     );
   }
 
