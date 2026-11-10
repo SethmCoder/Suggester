@@ -111,6 +111,8 @@ export interface TripPreferencesPayload {
   idealTrip?: string;
   /** Traveler's name for this trip, shown beside the destination. */
   title?: string;
+  /** Fact labels from Dreamer confirmations (flight #, arrival, hotel). */
+  evidenceProvenance?: string[];
 }
 
 export interface ActivityRow {
