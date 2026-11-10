@@ -10,6 +10,7 @@ import {
 } from "@/lib/demo/data";
 import { loadOfflineTrip, saveOfflineTrip } from "@/lib/offline/trips";
 import type { BudgetPlan } from "@/lib/trips/budget";
+import type { TripExpense } from "@/lib/trips/expenses";
 import { expandLegsToDays, type DayCityAssignment } from "@/lib/trips/legs";
 
 export function OfflineTripLoader({ tripId }: { tripId: string }) {
@@ -29,6 +30,7 @@ export function OfflineTripLoader({ tripId }: { tripId: string }) {
         tripTitle?: string;
         interests?: string[];
         budget?: BudgetPlan;
+        expenses?: TripExpense[];
       }
   >({ status: "loading" });
 
@@ -49,6 +51,8 @@ export function OfflineTripLoader({ tripId }: { tripId: string }) {
         updatedAt: new Date().toISOString(),
         contentVersion: DEMO_CONTENT_VERSION,
         legs: data.legs,
+        expenses: offlineFresh ? offline.expenses : undefined,
+        budget: offlineFresh ? offline.budget : undefined,
       });
       setState({
         status: "ready",
@@ -62,7 +66,8 @@ export function OfflineTripLoader({ tripId }: { tripId: string }) {
         legs: data.legs,
         tripTitle: offline?.trip.title,
         interests: data.preferences.interests,
-        budget: undefined,
+        budget: offlineFresh ? offline?.budget : undefined,
+        expenses: offlineFresh ? offline?.expenses : undefined,
       });
       return;
     }
@@ -85,6 +90,7 @@ export function OfflineTripLoader({ tripId }: { tripId: string }) {
         tripTitle: snap.trip.title,
         interests: undefined,
         budget: snap.budget,
+        expenses: snap.expenses,
     });
   }, [tripId]);
 
@@ -128,6 +134,7 @@ export function OfflineTripLoader({ tripId }: { tripId: string }) {
       tripTitle={state.tripTitle}
       interests={state.interests}
       budgetPlan={state.budget}
+      initialExpenses={state.expenses}
     />
   );
 }

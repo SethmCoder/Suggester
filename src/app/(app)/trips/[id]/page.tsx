@@ -3,6 +3,10 @@ import { notFound, redirect } from "next/navigation";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { ItineraryEditor } from "@/components/itinerary/ItineraryEditor";
 import type { BudgetPlan } from "@/lib/trips/budget";
+import {
+  normalizeExpenses,
+  type TripExpense,
+} from "@/lib/trips/expenses";
 
 function budgetPlanFrom(preferences: unknown): BudgetPlan | undefined {
   if (!preferences || typeof preferences !== "object") return undefined;
@@ -25,6 +29,11 @@ function budgetPlanFrom(preferences: unknown): BudgetPlan | undefined {
     party: prefs.party,
     maxWalkMinutes: prefs.maxWalkMinutes,
   };
+}
+
+function expensesFrom(preferences: unknown): TripExpense[] {
+  if (!preferences || typeof preferences !== "object") return [];
+  return normalizeExpenses((preferences as { expenses?: unknown }).expenses);
 }
 import { OfflineTripLoader } from "@/components/trips/OfflineTripLoader";
 import {
@@ -131,6 +140,7 @@ export default async function TripItineraryPage({
           )?.interests
         }
         budgetPlan={budgetPlanFrom(data.preferences)}
+        initialExpenses={expensesFrom(data.preferences)}
       />
     );
   } catch {

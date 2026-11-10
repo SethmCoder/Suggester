@@ -27,6 +27,7 @@ import {
 import {
   loadOfflineTrip,
   saveOfflineDayGroups,
+  saveOfflineExpenses,
   saveOfflineTrip,
 } from "@/lib/offline/trips";
 import { formatTripDate } from "@/lib/format-date";
@@ -53,6 +54,10 @@ import {
   type CalendarNewStop,
 } from "./WeekCalendarView";
 import type { BudgetPlan } from "@/lib/trips/budget";
+import {
+  normalizeExpenses,
+  type TripExpense,
+} from "@/lib/trips/expenses";
 import { rememberAddedPlace, rememberRemovedPlace } from "@/lib/trips/place-feedback";
 import type { ActivityRow, LegTransitMode, TripLeg } from "@/lib/types/trip";
 import {
@@ -133,6 +138,7 @@ export function ItineraryEditor({
   tripTitle,
   interests = [],
   budgetPlan,
+  initialExpenses = [],
 }: {
   tripId: string;
   destination: string;
@@ -146,6 +152,7 @@ export function ItineraryEditor({
   tripTitle?: string;
   interests?: string[];
   budgetPlan?: BudgetPlan;
+  initialExpenses?: TripExpense[];
 }) {
   const [days, setDays] = useState<DayGroup[]>(() =>
     initialDays
@@ -194,6 +201,10 @@ export function ItineraryEditor({
   const [cityPins, setCityPins] = useState<MapPin[]>([]);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [expenses, setExpenses] = useState<TripExpense[]>(() =>
+    normalizeExpenses(initialExpenses),
+  );
+  const [expensesHydrated, setExpensesHydrated] = useState(false);
   const router = useRouter();
 
   async function removeTrip() {
@@ -237,6 +248,9 @@ export function ItineraryEditor({
               })),
           );
           if (snap.legs?.length) setLegs(snap.legs);
+          if (snap.expenses?.length) {
+            setExpenses(normalizeExpenses(snap.expenses));
+          }
           setOfflineSaved(true);
         } else if (isDemoTripId(tripId) && initialLegs?.length) {
           // Stale demo cache — use fresh legs from payload
@@ -245,11 +259,70 @@ export function ItineraryEditor({
       } else if (initialLegs?.length) {
         setLegs(initialLegs);
       }
+      if (!expensesHydrated) {
+        const localExpenses = loadOfflineTrip(tripId)?.expenses;
+        if (localExpenses?.length) {
+          setExpenses(normalizeExpenses(localExpenses));
+        }
+        setExpensesHydrated(true);
+      }
     } catch {
       /* ignore */
     }
     setHydratedOffline(true);
-  }, [tripId, hydratedOffline, initialLegs]);
+  }, [tripId, hydratedOffline, initialLegs, expensesHydrated]);
+
+  function persistExpenses(next: TripExpense[]) {
+    setExpenses(next);
+    try {
+      saveOfflineExpenses(tripId, next);
+      // Ensure a snapshot exists for cloud trips that never edited the schedule.
+      const snap = loadOfflineTrip(tripId);
+      if (!snap) {
+        saveOfflineTrip({
+          trip: {
+            id: tripId,
+            destination,
+            start_date: startDate ?? "",
+            end_date: endDate ?? "",
+            cover_image_url: null,
+            created_at: new Date().toISOString(),
+            day_count: days.length,
+            title: tripTitle,
+          },
+          days: days.map((d) => ({ id: d.dayId, day_index: d.dayIndex })),
+          activities: days.flatMap((d) => d.activities),
+          updatedAt: new Date().toISOString(),
+          legs,
+          budget: budgetPlan
+            ? {
+                total: budgetPlan.total,
+                currency: budgetPlan.currency,
+                allocation: budgetPlan.allocation,
+                restaurantStyle: budgetPlan.restaurantStyle,
+              }
+            : undefined,
+          expenses: next,
+        });
+      }
+    } catch {
+      /* localStorage may be unavailable */
+    }
+    if (isDemo || tripId.startsWith("offline-") || !navigator.onLine) return;
+    void fetch(`/api/trips/${tripId}/preferences`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        payload: {
+          expenses: next,
+          ...(budgetPlan?.total != null ? { budget: budgetPlan.total } : {}),
+          ...(budgetPlan?.currency ? { currency: budgetPlan.currency } : {}),
+        },
+      }),
+    }).catch(() => {
+      /* offline ok */
+    });
+  }
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -899,6 +972,8 @@ export function ItineraryEditor({
       </section>
       <BudgetPanel
         plan={budgetPlan}
+        expenses={expenses}
+        onExpensesChange={persistExpenses}
         stops={(days[selectedDay]?.activities ?? []).map((activity) => ({
           id: activity.id,
           name: activity.name,
