@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { formatCityOverlay, resolveCityMeta } from "@/lib/trips/city-label";
 import { sortLegsByArrivalDate } from "@/lib/trips/sort-legs";
 import { localClarifyReply } from "@/lib/trips/clarify-chat";
-import { hasAviationStackKey, lookupFlightByNumber } from "@/lib/flights/aviationstack";
+import {
+  parseBookingFromEmailText,
+  parseClockToHHMM,
+} from "@/lib/dreamer/parse-email";
 import { hasCuratedCityImage } from "@/lib/destination-image";
 
 describe("Plan trip redesign helpers", () => {
@@ -59,16 +62,27 @@ describe("Plan trip redesign helpers", () => {
     expect(turn.choices.length).toBeGreaterThan(0);
   });
 
-  it("AviationStack falls back without inventing status when key missing", async () => {
-    const prev = process.env.AVIATIONSTACK_API_KEY;
-    delete process.env.AVIATIONSTACK_API_KEY;
-    expect(hasAviationStackKey()).toBe(false);
-    const result = await lookupFlightByNumber({ flightNumber: "NH118" });
-    expect(result.found).toBe(false);
-    expect(result.source).toBe("none");
-    expect(result.rawNote).toMatch(/AVIATIONSTACK_API_KEY/i);
-    if (prev == null) delete process.env.AVIATIONSTACK_API_KEY;
-    else process.env.AVIATIONSTACK_API_KEY = prev;
+  it("confirmation email supplies flight number and times — no lookup", () => {
+    expect(parseClockToHHMM("9:15 PM")).toBe("21:15");
+    expect(parseClockToHHMM("1:20 PM")).toBe("13:20");
+    const parsed = parseBookingFromEmailText({
+      subject: "Your ANA e-ticket — NH118 Tokyo to Seattle",
+      text: `
+Flight number: NH118
+Route: HND → SEA
+Travel date: 2026-11-10
+Confirmation code: K2P8NH
+Cabin: Economy
+Scheduled departure: 9:15 PM (Tokyo local)
+Scheduled arrival: 1:20 PM (Seattle local)
+`,
+    });
+    expect(parsed.flightNumber).toBe("NH118");
+    expect(parsed.fromIata).toBe("HND");
+    expect(parsed.toIata).toBe("SEA");
+    expect(parsed.departureLocal).toBe("21:15");
+    expect(parsed.arrivalLocal).toBe("13:20");
+    expect(parsed.confirmation).toBe("K2P8NH");
   });
 
   it("landmark heroes exist for London Paris Tokyo", () => {

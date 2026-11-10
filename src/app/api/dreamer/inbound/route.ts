@@ -14,6 +14,7 @@ import {
 } from "@/lib/dreamer/ingest";
 import { verifyInboundSignature } from "@/lib/dreamer/parse-email";
 import { datesFromDreamAndBooking } from "@/lib/dreamer/materialize";
+import { recordConfirmationEvidence } from "@/lib/dreamer/record-evidence";
 
 export async function POST(req: Request) {
   const raw = await req.text();
@@ -234,6 +235,14 @@ export async function POST(req: Request) {
       parse_error: bookErr?.message ?? null,
     })
     .eq("id", row.id);
+
+  if (!bookErr && ownerId) {
+    await recordConfirmationEvidence({
+      svc,
+      userId: ownerId,
+      parsed,
+    }).catch(() => null);
+  }
 
   let planShift = false;
   if (

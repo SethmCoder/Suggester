@@ -9,6 +9,7 @@ import {
 import type { MatchCandidate } from "@/lib/dreamer/match-booking";
 import type { ParsedBooking } from "@/lib/dreamer/types";
 import { datesFromDreamAndBooking } from "@/lib/dreamer/materialize";
+import { recordConfirmationEvidence } from "@/lib/dreamer/record-evidence";
 
 function localPasteResponse(input: {
   ownerId: string;
@@ -258,6 +259,13 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+
+  // Grow traveler flight/stay DBs + booking-grounded intelligence (no PNR).
+  await recordConfirmationEvidence({
+    svc,
+    userId: user.id,
+    parsed,
+  }).catch(() => null);
 
   const matchedDreamId =
     best?.candidate.kind === "dream"

@@ -6,7 +6,7 @@ AI-powered travel itinerary planner built with Next.js, Supabase, Groq, and Goog
 
 1. Copy `.env.example` to `.env` (or `.env.local`) and fill in keys.
 2. Run Supabase SQL migrations (or `supabase/FULL_SCHEMA.sql`), including
-   `011_analytics_events.sql` for signup→plan funnel stats.
+   `011_analytics_events.sql`, `012_user_flights.sql`, and `013_user_stays.sql`.
 3. Set a **$1 budget alert** on Google Cloud (Maps still requires billing).
 4. `npm install && npm run dev`
 

@@ -45,6 +45,14 @@ export type IntelligenceSignal =
   | { type: "discover_save"; destinationId: string; interests?: string[] }
   | { type: "activity_keep"; name: string; types?: string[] }
   | { type: "activity_dismiss"; name: string; types?: string[] }
+  /** Real confirmation paste/forward — stronger than a Discover click. */
+  | {
+      type: "booking_confirmation";
+      kind: "flight" | "hotel" | "rail" | "other";
+      cities?: string[];
+      cabin?: string | null;
+      route?: string | null;
+    }
   | { type: "explicit_set"; patch: Partial<TravelIntelligence["explicit"]> }
   | { type: "reset" }
   | { type: "toggle"; enabled: boolean };

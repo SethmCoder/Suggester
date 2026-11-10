@@ -19,6 +19,12 @@ export type ParsedBooking = {
   hotelName?: string | null;
   vendor?: string | null;
   nights?: number | null;
+  /** Explicit flight number from the confirmation, e.g. NH118. */
+  flightNumber?: string | null;
+  /** Local departure time HH:MM when the email states it. */
+  departureLocal?: string | null;
+  /** Local arrival time HH:MM when the email states it. */
+  arrivalLocal?: string | null;
 };
 
 export type DreamerMailbox = {

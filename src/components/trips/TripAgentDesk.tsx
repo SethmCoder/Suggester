@@ -73,11 +73,13 @@ export function TripAgentDesk({
   hotel,
   flightNumber,
   onFlightNumber,
-  flightLookup,
-  onLookupFlight,
   manualArrival,
   onManualArrival,
   flightSummary,
+  confirmationPaste,
+  onConfirmationPaste,
+  onApplyConfirmation,
+  onFillSavedFlight,
   destination,
   cities,
   interests,
@@ -134,11 +136,13 @@ export function TripAgentDesk({
   hotel: ReactNode;
   flightNumber: string;
   onFlightNumber: (value: string) => void;
-  flightLookup: "idle" | "loading" | "found" | "miss";
-  onLookupFlight: () => void;
   manualArrival: string;
   onManualArrival: (value: string) => void;
   flightSummary: string | null;
+  confirmationPaste: string;
+  onConfirmationPaste: (value: string) => void;
+  onApplyConfirmation: () => void;
+  onFillSavedFlight: () => void;
   destination: string;
   cities: string[];
   interests: string[];
@@ -617,45 +621,62 @@ export function TripAgentDesk({
 
               <div className="space-y-2 rounded-[12px] border border-[#F0F2F8] p-3">
                 <p className="text-[11px] font-semibold uppercase text-[#6B7280]">
-                  Flight number
+                  Inbound flight (from your confirmation)
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  <Input
-                    value={flightNumber}
-                    onChange={(e) => onFlightNumber(e.target.value)}
-                    placeholder="e.g. NH118"
-                    className="max-w-[10rem]"
-                  />
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={
-                      flightLookup === "loading" || flightNumber.trim().length < 3
-                    }
-                    onClick={onLookupFlight}
-                  >
-                    {flightLookup === "loading" ? "Looking up…" : "Look up"}
-                  </Button>
-                </div>
-                {flightSummary ? (
-                  <p className="text-sm text-[#080B3A]">{flightSummary}</p>
-                ) : null}
-                {(flightLookup === "miss" || !flightSummary) && (
+                <p className="text-xs text-[#6B7280]">
+                  Paste the airline confirmation — we read the flight number and
+                  times from the email. No live flight lookup.
+                </p>
+                <textarea
+                  value={confirmationPaste}
+                  onChange={(e) => onConfirmationPaste(e.target.value)}
+                  rows={4}
+                  className="w-full rounded-[10px] border border-[#E1E5F0] px-3 py-2 text-sm"
+                  placeholder="Paste confirmation email text here…"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={confirmationPaste.trim().length < 8}
+                  onClick={onApplyConfirmation}
+                >
+                  Use confirmation times
+                </Button>
+                <div className="flex flex-wrap items-end gap-2">
                   <div>
                     <Label className="text-xs uppercase text-[#6B7280]">
-                      Arrival time (manual)
+                      Flight number
+                    </Label>
+                    <Input
+                      value={flightNumber}
+                      onChange={(e) => onFlightNumber(e.target.value)}
+                      placeholder="e.g. NH118"
+                      className="mt-1 max-w-[10rem]"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs uppercase text-[#6B7280]">
+                      Arrival (local)
                     </Label>
                     <Input
                       type="time"
                       value={manualArrival}
                       onChange={(e) => onManualArrival(e.target.value)}
+                      className="mt-1"
                     />
-                    <p className="mt-1 text-xs text-[#9CA3AF]">
-                      Used when AviationStack has no key or the flight is not
-                      found.
-                    </p>
                   </div>
-                )}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={flightNumber.trim().length < 3}
+                    onClick={onFillSavedFlight}
+                  >
+                    Use saved flight
+                  </Button>
+                </div>
+                {flightSummary ? (
+                  <p className="text-sm text-[#080B3A]">{flightSummary}</p>
+                ) : null}
               </div>
 
               <div>

@@ -138,6 +138,32 @@ export function applySignal(
     }
   }
 
+  if (signal.type === "booking_confirmation") {
+    // Prepend in reverse so the first listed city stays most recent.
+    for (const city of [...(signal.cities ?? [])].reverse()) {
+      next.inferred.preferredDestinations = [
+        city,
+        ...next.inferred.preferredDestinations.filter((item) => item !== city),
+      ].slice(0, 40);
+      next.inferred.previousDestinations = [
+        city,
+        ...next.inferred.previousDestinations.filter((item) => item !== city),
+      ].slice(0, 40);
+    }
+    if (signal.kind === "flight") {
+      next.inferred.interests = bump(next.inferred.interests, "aviation", 0.35);
+    }
+    if (signal.cabin && /business|first/i.test(signal.cabin)) {
+      next.inferred.interests = bump(next.inferred.interests, "culture", 0.15);
+    }
+    if (signal.route) {
+      next.explanations = [
+        `Confirmation evidence: ${signal.route}.`,
+        ...next.explanations.filter((line) => !line.startsWith("Confirmation evidence:")),
+      ].slice(0, 8);
+    }
+  }
+
   return next;
 }
 
@@ -188,9 +214,18 @@ export function buildExplanations(profile: TravelIntelligence): string[] {
       `You usually plan about ${profile.explicit.preferredDurationDays} days.`,
     );
   }
+  if (
+    profile.explanations.some((line) => line.startsWith("Confirmation evidence:"))
+  ) {
+    lines.unshift(
+      ...profile.explanations.filter((line) =>
+        line.startsWith("Confirmation evidence:"),
+      ),
+    );
+  }
   if (!lines.length) {
     lines.push(
-      "No strong personalization yet. Save places, create future trips, or set interests in Profile.",
+      "No strong personalization yet. Paste a confirmation, save places, or set interests in Profile.",
     );
   }
   return lines.slice(0, 8);

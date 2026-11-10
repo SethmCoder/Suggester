@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
-import { createServiceClient, createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  createServiceClient,
+  createSupabaseServerClient,
+} from "@/lib/supabase/server";
 import { datesFromDreamAndBooking } from "@/lib/dreamer/materialize";
+import { evidencePackFromBookings } from "@/lib/dreamer/evidence-pack";
 import type { ParsedBooking } from "@/lib/dreamer/types";
 
 export async function POST(
@@ -46,62 +50,102 @@ export async function POST(
     .eq("future_trip_id", id)
     .order("created_at", { ascending: true });
 
-  const flight = (bookings ?? []).find((b) => b.kind === "flight");
-  const parsed = (flight?.parsed ?? {}) as ParsedBooking;
+  const evidence = evidencePackFromBookings(
+    (bookings ?? []).map((b) => ({
+      kind: String(b.kind),
+      parsed: (b.parsed ?? {}) as ParsedBooking,
+      title: b.title as string | null,
+    })),
+  );
+
+  if (!evidence.ready) {
+    return NextResponse.json(
+      {
+        error:
+          "Paste a real confirmation first — Waypoint only builds trips from booking evidence.",
+        code: "evidence_required",
+      },
+      { status: 400 },
+    );
+  }
+
+  const parsed = evidence.flight ?? ({} as ParsedBooking);
   const dates = datesFromDreamAndBooking({
-    booking: parsed,
+    booking: parsed.startDate ? parsed : evidence.hotel ?? parsed,
     potentialStart: dream.potential_start,
     potentialEnd: dream.potential_end,
     estimatedDurationDays: dream.estimated_duration_days,
   });
 
-  const origin = parsed.fromIata ?? undefined;
-  const destAirport = parsed.toIata ?? undefined;
+  const origin = evidence.fromIata;
+  const destAirport = evidence.toIata;
+  const city =
+    dream.destination.split("→")[0]?.trim() || dream.destination;
+
+  const evidenceIdeal = [
+    dream.notes?.trim() || "",
+    evidence.provenance.length
+      ? `Evidence: ${evidence.provenance.join(" · ")}.`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  const createBody = {
+    destination: dream.destination,
+    startDate: dates.startDate,
+    endDate: dates.endDate,
+    originAirport: origin,
+    destinationAirport: destAirport,
+    travelers: dream.travelers ?? 2,
+    interests: dream.interests ?? [],
+    intensity: "balanced" as const,
+    transport: dream.transport || "transit",
+    idealTrip: evidenceIdeal,
+    tripTitle: dream.title ?? undefined,
+    hotel: evidence.hotelName,
+    flightNumber: evidence.flightNumber,
+    arrivalLocal: evidence.arrivalLocal,
+    dayStart: evidence.arrivalLocal,
+    mustSee: [] as string[],
+    preferred: [] as string[],
+    futureTripId: id,
+    idempotencyKey: `future:${id}`,
+    legs: [
+      {
+        city,
+        days: dates.nights + 1,
+        nights: dates.nights,
+        arrivalDate: dates.startDate,
+        departureDate: dates.endDate,
+        hotel: evidence.hotelName,
+      },
+    ],
+  };
 
   const createRes = await fetch(
-    new URL("/api/trips/create", process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3001"),
+    new URL(
+      "/api/trips/create",
+      process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3001",
+    ),
     {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         cookie: _req.headers.get("cookie") ?? "",
       },
-      body: JSON.stringify({
-        destination: dream.destination,
-        startDate: dates.startDate,
-        endDate: dates.endDate,
-        originAirport: origin,
-        destinationAirport: destAirport,
-        travelers: dream.travelers ?? 2,
-        interests: dream.interests ?? [],
-        intensity: "balanced",
-        transport: dream.transport || "transit",
-        idealTrip: dream.notes ?? "",
-        tripTitle: dream.title ?? undefined,
-        mustSee: [],
-        preferred: [],
-        futureTripId: id,
-        idempotencyKey: `future:${id}`,
-        legs: [
-          {
-            city: dream.destination.split("→")[0]?.trim() || dream.destination,
-            days: dates.nights + 1,
-            nights: dates.nights,
-            arrivalDate: dates.startDate,
-            departureDate: dates.endDate,
-          },
-        ],
-      }),
+      body: JSON.stringify(createBody),
     },
   );
 
-  // Prefer in-process create when absolute URL fetch fails (local).
   if (!createRes.ok) {
     const { createTripRecord, saveGeneratedItinerary } = await import(
       "@/lib/db/trips"
     );
     const { generateItinerary } = await import("@/lib/ai/generate-itinerary");
     const { estimateFlight } = await import("@/lib/flights/openflights");
+    const { findUserFlight } = await import("@/lib/flights/user-flights");
 
     let inboundFlight:
       | {
@@ -114,27 +158,50 @@ export async function POST(
           note?: string;
         }
       | undefined;
+
+    // Prefer confirmation / community times over OpenFlights estimates.
+    const community =
+      evidence.flightNumber
+        ? await findUserFlight(svc, {
+            flightNumber: evidence.flightNumber,
+            date: dates.startDate,
+            fromIata: origin,
+            toIata: destAirport,
+          })
+        : null;
+
+    const arrivalLocal =
+      evidence.arrivalLocal || community?.arrival_local || undefined;
+
     if (origin && destAirport) {
-      try {
-        const est = await estimateFlight({ from: origin, to: destAirport });
-        if (est) {
-          inboundFlight = {
-            fromIata: est.from.iata,
-            toIata: est.to.iata,
-            toName: est.to.name,
-            durationMinutes: est.durationMinutes,
-            estimatedArrivalLocal: est.estimatedArrivalLocal,
-            suggestedDayStart: est.suggestedDayStart,
-            note: est.note,
-          };
+      if (arrivalLocal) {
+        inboundFlight = {
+          fromIata: origin,
+          toIata: destAirport,
+          estimatedArrivalLocal: arrivalLocal,
+          suggestedDayStart: arrivalLocal,
+          note: evidence.provenance.join(" · ") || "From confirmation evidence",
+        };
+      } else {
+        try {
+          const est = await estimateFlight({ from: origin, to: destAirport });
+          if (est) {
+            inboundFlight = {
+              fromIata: est.from.iata,
+              toIata: est.to.iata,
+              toName: est.to.name,
+              durationMinutes: est.durationMinutes,
+              estimatedArrivalLocal: est.estimatedArrivalLocal,
+              suggestedDayStart: est.suggestedDayStart,
+              note: est.note,
+            };
+          }
+        } catch {
+          /* optional */
         }
-      } catch {
-        /* optional */
       }
     }
 
-    const city =
-      dream.destination.split("→")[0]?.trim() || dream.destination;
     const created = await createTripRecord({
       ownerId: user.id,
       destination: dream.destination,
@@ -142,31 +209,28 @@ export async function POST(
       endDate: dates.endDate,
       preferences: {
         destinations: [{ name: city, nights: dates.nights }],
-        legs: [
-          {
-            city,
-            days: dates.nights + 1,
-            nights: dates.nights,
-            arrivalDate: dates.startDate,
-            departureDate: dates.endDate,
-          },
-        ],
+        legs: createBody.legs,
         originAirport: origin,
         destinationAirport: destAirport,
         inboundFlight,
+        flightNumber: evidence.flightNumber,
+        arrivalLocal,
+        hotel: evidence.hotelName,
         travelers: dream.travelers ?? 2,
         interests: dream.interests ?? [],
         intensity: "balanced",
         transport: dream.transport || "transit",
-        idealTrip: dream.notes ?? "",
+        idealTrip: evidenceIdeal,
         title: dream.title ?? undefined,
+        dayStart: arrivalLocal,
+        evidenceProvenance: evidence.provenance,
       },
       priorities: {
         mustSee: [],
         preferred: [],
         optional: [],
         avoid: [],
-        idealTrip: dream.notes ?? "",
+        idealTrip: evidenceIdeal,
       },
       idempotencyKey: `future:${id}`,
     });
@@ -182,19 +246,16 @@ export async function POST(
         mustSee: [],
         preferred: [],
         avoid: [],
-        idealTrip: dream.notes ?? "",
-        legs: [
-          {
-            city,
-            days: dates.nights + 1,
-            nights: dates.nights,
-            arrivalDate: dates.startDate,
-            departureDate: dates.endDate,
-          },
-        ],
+        idealTrip: evidenceIdeal,
+        hotel: evidence.hotelName,
+        dayStart: arrivalLocal,
+        legs: createBody.legs,
         inboundFlight,
       });
-      await saveGeneratedItinerary({ tripId: created.tripId, days: generated.days });
+      await saveGeneratedItinerary({
+        tripId: created.tripId,
+        days: generated.days,
+      });
     }
 
     await svc
@@ -214,6 +275,7 @@ export async function POST(
       reused: created.reused,
       redirect: `/trips/${created.tripId}`,
       nights: dates.nights,
+      evidence: evidence.provenance,
     });
   }
 
@@ -229,5 +291,6 @@ export async function POST(
     tripId: data.tripId,
     redirect: `/trips/${data.tripId}`,
     nights: dates.nights,
+    evidence: evidence.provenance,
   });
 }

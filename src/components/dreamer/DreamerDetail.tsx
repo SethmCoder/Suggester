@@ -152,7 +152,13 @@ export function DreamerDetail({ id }: { id: string }) {
         method: "POST",
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Could not build trip");
+      if (!res.ok) {
+        throw new Error(
+          data.code === "evidence_required"
+            ? "Paste a confirmation email first — trips are built from booking evidence only."
+            : (data.error ?? "Could not build trip"),
+        );
+      }
       if (data.tripId) {
         updateFutureTrip(id, {
           convertedTripId: data.tripId,
@@ -549,6 +555,11 @@ export function DreamerDetail({ id }: { id: string }) {
           </LeavePageLink>
         ) : null}
       </div>
+      <p className="text-xs text-[#6B7280]">
+        {waiting
+          ? "Waypoint won’t invent a trip — paste a confirmation so dates and flights come from evidence."
+          : "This itinerary is built from your confirmation evidence (times, route, hotel), not a guessed schedule."}
+      </p>
       {message ? <p className="text-sm text-[#B91C1C]">{message}</p> : null}
 
       <BookingEmailModal

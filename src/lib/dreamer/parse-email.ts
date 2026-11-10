@@ -3,9 +3,47 @@ import type { ParsedBooking } from "./types";
 
 const IATA = /\b([A-Z]{3})\b/g;
 
+/** Convert "9:15 PM" / "13:20" / "1:06pm" → HH:MM (24h). */
+export function parseClockToHHMM(raw: string): string | null {
+  const t = raw.trim();
+  const m24 = t.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (m24) {
+    const h = Number(m24[1]);
+    const min = Number(m24[2]);
+    if (h >= 0 && h <= 23 && min >= 0 && min <= 59) {
+      return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+    }
+  }
+  const m12 = t.match(/^(\d{1,2}):(\d{2})\s*(a\.?m\.?|p\.?m\.?)$/i);
+  if (m12) {
+    let h = Number(m12[1]);
+    const min = Number(m12[2]);
+    const ap = m12[3].toLowerCase().startsWith("p");
+    if (h < 1 || h > 12 || min < 0 || min > 59) return null;
+    if (ap && h < 12) h += 12;
+    if (!ap && h === 12) h = 0;
+    return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+  }
+  return null;
+}
+
+function extractLabeledTime(
+  blob: string,
+  labels: RegExp,
+): string | null {
+  const m = blob.match(
+    new RegExp(
+      `${labels.source}\\s*[:#]?\\s*(\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\s*[AaPp]\\.?[Mm\\.])?)`,
+      labels.flags.includes("i") ? "i" : "i",
+    ),
+  );
+  return m?.[1] ? parseClockToHHMM(m[1]) : null;
+}
+
 /**
  * Deterministic booking extraction from confirmation text.
  * Never invents confirmation codes — only captures explicit PNR-like tokens.
+ * Flight times come from the email itself (no live flight API).
  */
 export function parseBookingFromEmailText(input: {
   subject?: string | null;
@@ -66,6 +104,23 @@ export function parseBookingFromEmailText(input: {
     /\b(?:hotel|stay at|reservation at)\s+([A-Z][A-Za-z0-9 &'.,-]{2,60})/i,
   );
 
+  // Only take an explicitly labeled flight number — never guess from PNR tokens.
+  const flightMatch = blob.match(
+    /\b(?:flight(?:\s*(?:number|#))?|flt)\s*[:#]?\s*([A-Z]{2}\s?\d{1,4})\b/i,
+  );
+  const flightNumber = flightMatch?.[1]
+    ? flightMatch[1].replace(/\s+/g, "").toUpperCase()
+    : null;
+
+  const departureLocal = extractLabeledTime(
+    blob,
+    /(?:scheduled\s+)?depart(?:ure|s|ed)?(?:\s+time)?/,
+  );
+  const arrivalLocal = extractLabeledTime(
+    blob,
+    /(?:scheduled\s+|estimated\s+)?arriv(?:al|es|ed)?(?:\s+time)?/,
+  );
+
   const cities = new Set<string>();
   for (const c of citiesFromParsedIatas({ fromIata, toIata })) cities.add(c);
   if (/tokyo|hnd|nrt/i.test(blob)) cities.add("Tokyo");
@@ -95,6 +150,9 @@ export function parseBookingFromEmailText(input: {
     hotelName: hotelMatch?.[1]?.trim() ?? null,
     vendor: null,
     nights: null,
+    flightNumber,
+    departureLocal,
+    arrivalLocal,
   };
 }
 
@@ -115,6 +173,9 @@ export function inheritBookingContext(
     cities,
     startDate: secondary.startDate ?? primary.startDate ?? null,
     endDate: secondary.endDate ?? primary.endDate ?? null,
+    flightNumber: secondary.flightNumber ?? primary.flightNumber ?? null,
+    departureLocal: secondary.departureLocal ?? primary.departureLocal ?? null,
+    arrivalLocal: secondary.arrivalLocal ?? primary.arrivalLocal ?? null,
   };
 }
 

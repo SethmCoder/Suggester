@@ -40,7 +40,7 @@ export function TripBookingsPanel({
         </h2>
         <p className="text-[11px] text-[#6B7280]">
           Confirmed hotels show when you marked them booked. Flight status uses
-          AviationStack when a key is set — otherwise enter a delay manually.
+          Times come from your confirmation email. Enter a delay if the flight slips.
         </p>
       </div>
 

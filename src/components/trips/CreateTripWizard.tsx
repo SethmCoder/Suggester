@@ -49,6 +49,8 @@ import { sortLegsByArrivalDate } from "@/lib/trips/sort-legs";
 import type { PlanningClarity, TravelerMode } from "@/lib/types/trip";
 import { AnalyticsEvent } from "@/lib/analytics/events";
 import { trackClientEvent } from "@/lib/analytics/client";
+import { parseBookingFromEmailText } from "@/lib/dreamer/parse-email";
+import { summarizeParsedBooking } from "@/lib/dreamer/summary";
 
 const INTERCITY_MODES: { value: LegTransitMode; label: string }[] = [
   { value: "auto", label: "Auto (planner picks)" },
@@ -260,9 +262,7 @@ export function CreateTripWizard({
   const [dreamOther, setDreamOther] = useState("");
   const [flightNumber, setFlightNumber] = useState("");
   const [manualArrival, setManualArrival] = useState("");
-  const [flightLookup, setFlightLookup] = useState<
-    "idle" | "loading" | "found" | "miss"
-  >("idle");
+  const [confirmationPaste, setConfirmationPaste] = useState("");
   const [flightSummary, setFlightSummary] = useState<string | null>(null);
   const futureLoaded = useRef(false);
   const wizardTracked = useRef(false);
@@ -373,63 +373,78 @@ export function CreateTripWizard({
 
   const endDate = form.endDate;
 
-  async function lookupFlightNumber() {
+  function applyConfirmationPaste() {
+    const text = confirmationPaste.trim();
+    if (text.length < 8) return;
+    const parsed = parseBookingFromEmailText({
+      subject: "Pasted booking",
+      text,
+    });
+    if (parsed.flightNumber) setFlightNumber(parsed.flightNumber);
+    if (parsed.arrivalLocal) setManualArrival(parsed.arrivalLocal);
+    if (parsed.fromIata || parsed.toIata || parsed.startDate) {
+      setForm((current) => ({
+        ...current,
+        originAirport: parsed.fromIata || current.originAirport,
+        destinationAirport: parsed.toIata || current.destinationAirport,
+        startDate: parsed.startDate || current.startDate,
+        dayStart: parsed.arrivalLocal || current.dayStart,
+      }));
+    }
+    setFlightSummary(summarizeParsedBooking(parsed));
+    // Signed-in: contribute schedule facts to the shared Supabase flight DB.
+    void fetch("/api/flights/community", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subject: "Pasted booking", text }),
+    }).catch(() => null);
+  }
+
+  async function fillSavedFlight() {
     const code = flightNumber.trim();
     if (code.length < 3) return;
-    setFlightLookup("loading");
-    setFlightSummary(null);
+    const params = new URLSearchParams({ flight: code });
+    if (form.startDate) params.set("date", form.startDate);
     try {
-      const params = new URLSearchParams({
-        flight: code,
-      });
-      if (form.startDate) params.set("date", form.startDate);
-      const res = await fetch(`/api/flights/lookup?${params}`);
+      const res = await fetch(`/api/flights/community?${params}`);
       const data = (await res.json()) as {
+        found?: boolean;
         flight?: {
-          found?: boolean;
-          airline?: string | null;
-          fromIata?: string | null;
-          toIata?: string | null;
-          arrivalTime?: string | null;
-          status?: string | null;
-          delayed?: boolean;
-          delayMinutes?: number | null;
-          rawNote?: string;
+          fromIata?: string;
+          toIata?: string;
+          arrivalLocal?: string | null;
+          departureLocal?: string | null;
+          travelDate?: string;
+          reportCount?: number;
         };
       };
-      const f = data.flight;
-      if (f?.found) {
-        setFlightLookup("found");
-        const bits = [
-          f.airline,
-          f.fromIata && f.toIata ? `${f.fromIata} → ${f.toIata}` : null,
-          f.arrivalTime ? `arrives ~${f.arrivalTime}` : null,
-          f.delayed && f.delayMinutes
-            ? `delayed ${f.delayMinutes} min`
-            : f.status,
-        ].filter(Boolean);
-        setFlightSummary(bits.join(" · "));
-        if (f.arrivalTime) setManualArrival(f.arrivalTime);
-        if (f.fromIata) {
-          setForm((current) => ({
-            ...current,
-            originAirport: f.fromIata || current.originAirport,
-            destinationAirport: f.toIata || current.destinationAirport,
-            chosenAirline: f.airline || current.chosenAirline,
-          }));
-        }
-      } else {
-        setFlightLookup("miss");
+      if (!data.found || !data.flight) {
         setFlightSummary(
-          f?.rawNote ||
-            "Flight not found — enter arrival time manually so we can plan around landing.",
+          "Not in the traveler flight DB yet — paste a confirmation to add it.",
         );
+        return;
       }
-    } catch {
-      setFlightLookup("miss");
+      const f = data.flight;
+      if (f.arrivalLocal) setManualArrival(f.arrivalLocal);
+      setForm((current) => ({
+        ...current,
+        originAirport: f.fromIata || current.originAirport,
+        destinationAirport: f.toIata || current.destinationAirport,
+        startDate: f.travelDate || current.startDate,
+        dayStart: f.arrivalLocal || current.dayStart,
+      }));
       setFlightSummary(
-        "Lookup unavailable — enter arrival time manually.",
+        [
+          f.fromIata && f.toIata ? `${f.fromIata} → ${f.toIata}` : null,
+          f.departureLocal ? `dep ${f.departureLocal}` : null,
+          f.arrivalLocal ? `arr ${f.arrivalLocal}` : null,
+          f.reportCount != null ? `${f.reportCount} traveler reports` : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
       );
+    } catch {
+      setFlightSummary("Could not reach the traveler flight DB.");
     }
   }
 
@@ -1323,11 +1338,13 @@ export function CreateTripWizard({
       onGenerate={() => void submit()}
       flightNumber={flightNumber}
       onFlightNumber={setFlightNumber}
-      flightLookup={flightLookup}
-      onLookupFlight={() => void lookupFlightNumber()}
       manualArrival={manualArrival}
       onManualArrival={setManualArrival}
       flightSummary={flightSummary}
+      confirmationPaste={confirmationPaste}
+      onConfirmationPaste={setConfirmationPaste}
+      onApplyConfirmation={applyConfirmationPaste}
+      onFillSavedFlight={() => void fillSavedFlight()}
       hotel={
         firstLeg?.city.trim() ? (
           <div className="space-y-2">

@@ -5,14 +5,12 @@ import {
   nearbyAirports,
   searchAirports,
 } from "@/lib/flights/openflights";
-import { lookupFlightByNumber } from "@/lib/flights/aviationstack";
-
 /**
- * OpenFlights airport / route lookup + AviationStack flight-number lookup.
+ * OpenFlights airport / route lookup (no live flight-number API).
  * GET ?q=SEA — airport search
  * GET ?from=SEA&to=HND — estimate block time + arrival
- * GET ?flight=NH118&date=YYYY-MM-DD — flight number status (AviationStack)
  * GET ?from=SEA&routes=1 — sample destinations from origin
+ * Flight times: paste a confirmation email — do not look up by flight number.
  */
 export async function GET(req: Request) {
   try {
@@ -22,15 +20,53 @@ export async function GET(req: Request) {
     const to = searchParams.get("to");
     const routes = searchParams.get("routes");
     const flight = searchParams.get("flight");
-    const flightDate = searchParams.get("date");
     const dep = searchParams.get("dep") ?? undefined;
 
     if (flight) {
-      const status = await lookupFlightByNumber({
+      const { createServiceClient } = await import("@/lib/supabase/server");
+      const { findUserFlight } = await import("@/lib/flights/user-flights");
+      const svc = createServiceClient();
+      const flightDate = searchParams.get("date");
+      if (!svc) {
+        return NextResponse.json({
+          flight: {
+            found: false,
+            source: "none",
+            flightNumber: flight.replace(/\s+/g, "").toUpperCase(),
+            rawNote: "Flight database offline — paste a confirmation instead.",
+          },
+        });
+      }
+      const row = await findUserFlight(svc, {
         flightNumber: flight,
         date: flightDate,
       });
-      return NextResponse.json({ flight: status });
+      if (!row) {
+        return NextResponse.json({
+          flight: {
+            found: false,
+            source: "user_flights",
+            flightNumber: flight.replace(/\s+/g, "").toUpperCase(),
+            rawNote:
+              "Not in the traveler flight DB yet — paste a confirmation to add it.",
+          },
+        });
+      }
+      return NextResponse.json({
+        flight: {
+          found: true,
+          source: "user_flights",
+          flightNumber: row.flight_number,
+          airline: row.airline,
+          fromIata: row.from_iata,
+          toIata: row.to_iata,
+          arrivalTime: row.arrival_local,
+          departureTime: row.departure_local,
+          date: row.travel_date,
+          reportCount: row.report_count,
+          rawNote: `From traveler confirmations (${row.report_count}).`,
+        },
+      });
     }
     // Important: Number(null) === 0, so only parse when params are present
     const latRaw = searchParams.get("lat");

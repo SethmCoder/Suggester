@@ -78,7 +78,7 @@ export interface TripPreferencesPayload {
   destinationAirport?: string;
   /** Estimated inbound flight from OpenFlights (no live schedule API). */
   inboundFlight?: InboundFlightPrefs;
-  /** Airline flight number e.g. NH118 (AviationStack when keyed). */
+  /** Airline flight number e.g. NH118 (offline fixture or manual arrival). */
   flightNumber?: string;
   /** Manual or looked-up local arrival HH:MM. */
   arrivalLocal?: string;

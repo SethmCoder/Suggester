@@ -627,8 +627,74 @@ create policy analytics_events_select_own on analytics_events
   using (auth.uid() = user_id);
 
 -- =============================================================================
+-- 8. Community flights (from user confirmation pastes)
+-- =============================================================================
+
+create table if not exists user_flights (
+  id uuid primary key default gen_random_uuid(),
+  flight_number text not null,
+  from_iata text not null,
+  to_iata text not null,
+  travel_date date not null,
+  departure_local text,
+  arrival_local text,
+  cabin text,
+  airline text,
+  report_count integer not null default 1 check (report_count >= 1),
+  first_reported_by uuid references auth.users(id) on delete set null,
+  last_reported_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (flight_number, travel_date, from_iata, to_iata)
+);
+
+create index if not exists user_flights_number_date_idx
+  on user_flights (flight_number, travel_date desc);
+
+create index if not exists user_flights_route_date_idx
+  on user_flights (from_iata, to_iata, travel_date desc);
+
+alter table user_flights enable row level security;
+
+drop policy if exists user_flights_select_authenticated on user_flights;
+create policy user_flights_select_authenticated on user_flights
+  for select
+  using (auth.uid() is not null);
+
+-- =============================================================================
+-- 9. Community hotel stays (from user confirmation pastes)
+-- =============================================================================
+
+create table if not exists user_stays (
+  id uuid primary key default gen_random_uuid(),
+  city text not null,
+  hotel_name text not null,
+  check_in date not null,
+  check_out date,
+  nights integer,
+  report_count integer not null default 1 check (report_count >= 1),
+  first_reported_by uuid references auth.users(id) on delete set null,
+  last_reported_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (city, hotel_name, check_in)
+);
+
+create index if not exists user_stays_city_checkin_idx
+  on user_stays (city, check_in desc);
+
+alter table user_stays enable row level security;
+
+drop policy if exists user_stays_select_authenticated on user_stays;
+create policy user_stays_select_authenticated on user_stays
+  for select
+  using (auth.uid() is not null);
+
+-- =============================================================================
 -- Done. Verify Dreamer tables exist:
 --   select to_regclass('public.inbound_emails'),
 --          to_regclass('public.dreamer_bookings'),
---          to_regclass('public.future_trips');
+--          to_regclass('public.future_trips'),
+--          to_regclass('public.user_flights'),
+--          to_regclass('public.user_stays');
 -- =============================================================================
