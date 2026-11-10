@@ -1091,6 +1091,8 @@ function AgentThread({
   onBriefParsedRef.current = onBriefParsed;
   const userSpoke = useRef(false);
   const openedFor = useRef<string | null>(null);
+  const logRef = useRef(log);
+  logRef.current = log;
   const payload = useRef({
     destination,
     cities,
@@ -1157,31 +1159,56 @@ function AgentThread({
     };
   }
 
+  function openChat(options?: { force?: boolean }) {
+    if (!cityKey) return;
+    if (!options?.force && openedFor.current === cityKey) return;
+    const cityChanged =
+      Boolean(openedFor.current) && openedFor.current !== cityKey;
+    openedFor.current = cityKey;
+    // City set changed mid-chat — keep history, ask about the new stop next.
+    if (cityChanged && userSpoke.current) {
+      setStatus("loading");
+      const history = logRef.current.map((line) => ({
+        role: line.role === "you" ? ("user" as const) : ("assistant" as const),
+        text: line.text,
+      }));
+      void talk(
+        history,
+        "I updated the cities on this trip. Ask about the newest stop next, one city at a time.",
+      )
+        .then((turn) => {
+          setLog((prev) => [
+            ...prev,
+            {
+              role: "you",
+              text: "I updated the cities on this trip.",
+            },
+            { role: "agent", text: turn.reply },
+          ]);
+          setChoices(turn.choices);
+          setStatus("ready");
+        })
+        .catch(() => setStatus("error"));
+      return;
+    }
+    userSpoke.current = false;
+    setStatus("loading");
+    void talk([], "")
+      .then((turn) => {
+        if (userSpoke.current) return;
+        setLog([{ role: "agent", text: turn.reply }]);
+        setChoices(turn.choices);
+        setStatus("ready");
+      })
+      .catch(() => setStatus("error"));
+  }
+
   useEffect(() => {
     if (!cityKey) return;
     // Only open once per committed city set — never restart while typing.
     if (openedFor.current === cityKey) return;
-    if (userSpoke.current && openedFor.current) return;
-    openedFor.current = cityKey;
-    userSpoke.current = false;
-    let cancelled = false;
-    const handle = window.setTimeout(() => {
-      setStatus("loading");
-      void talk([], "")
-        .then((turn) => {
-          if (cancelled || userSpoke.current) return;
-          setLog([{ role: "agent", text: turn.reply }]);
-          setChoices(turn.choices);
-          setStatus("ready");
-        })
-        .catch(() => {
-          if (!cancelled) setStatus("error");
-        });
-    }, 200);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(handle);
-    };
+    const handle = window.setTimeout(() => openChat(), 200);
+    return () => window.clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cityKey]);
 
@@ -1246,9 +1273,36 @@ function AgentThread({
           <p className="text-sm text-[#0400FF]">Thinking about the trip…</p>
         ) : null}
         {status === "error" ? (
-          <p className="text-sm text-[#DC2626]">
-            That reply did not come through. You can try again.
-          </p>
+          <div className="space-y-2">
+            <p className="text-sm text-[#DC2626]">
+              That reply did not come through. You can try again.
+            </p>
+            <button
+              type="button"
+              className="text-sm font-semibold text-[#0400FF] underline-offset-2 hover:underline"
+              onClick={() => {
+                if (!userSpoke.current && log.length === 0) {
+                  openChat({ force: true });
+                  return;
+                }
+                const lastYou = [...log]
+                  .reverse()
+                  .find((line) => line.role === "you");
+                if (lastYou) {
+                  setLog((prev) => {
+                    const copy = [...prev];
+                    if (copy[copy.length - 1]?.role === "you") copy.pop();
+                    return copy;
+                  });
+                  void send(lastYou.text);
+                } else {
+                  openChat({ force: true });
+                }
+              }}
+            >
+              Retry
+            </button>
+          </div>
         ) : null}
       </div>
       <div className="mt-4 flex items-end gap-2 rounded-[16px] border border-[#D1D7E5] bg-[#F5F7FF] p-2">

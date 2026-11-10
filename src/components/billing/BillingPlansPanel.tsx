@@ -204,11 +204,11 @@ export function BillingPlansPanel() {
             {pro.title}
           </p>
           <p className="mt-2 text-2xl font-bold text-[#080B3A]">
-            ${LIST_PRICES.proMonthlyUsd.toFixed(2)}
+            {`$${LIST_PRICES.proMonthlyUsd.toFixed(2)}`}
             <span className="ml-1 text-sm font-medium text-[#6B7280]">/ month</span>
           </p>
           <p className="mt-1 text-sm text-[#6B7280]">
-            or ${LIST_PRICES.proAnnualUsd.toFixed(2)} / year
+            {`or $${LIST_PRICES.proAnnualUsd.toFixed(2)} / year`}
           </p>
           <ul className="mt-4 space-y-2 text-sm text-[#1F2937]">
             {pro.bullets.map((bullet) => (
@@ -257,7 +257,7 @@ export function BillingPlansPanel() {
                   disabled={entitled}
                   onClick={() => openDemo("year")}
                 >
-                  Preview annual · ${LIST_PRICES.proAnnualUsd.toFixed(2)}/year
+                  {`Preview annual · $${LIST_PRICES.proAnnualUsd.toFixed(2)}/year`}
                 </Button>
               </>
             )}

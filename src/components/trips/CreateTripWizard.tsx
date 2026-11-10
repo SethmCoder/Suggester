@@ -685,6 +685,12 @@ export function CreateTripWizard({
       ),
     );
     setCitySuggestions((s) => ({ ...s, [legIndex]: [] }));
+    if (legIndex === 0) {
+      void refreshFlightEstimate(
+        form.originAirport || form.departureCity || undefined,
+        c.name,
+      );
+    }
   }
 
   function pickDepartureCity(c: CitySuggestion) {
@@ -781,6 +787,17 @@ export function CreateTripWizard({
             ? "Multigenerational"
             : partyLabel.charAt(0).toUpperCase() + partyLabel.slice(1);
       setParty(label);
+      if (
+        partyLabel === "solo" ||
+        partyLabel === "couple" ||
+        partyLabel === "family" ||
+        partyLabel === "friends"
+      ) {
+        setPartyType(partyLabel);
+      }
+      if (partyLabel === "family" && childAges.length) {
+        setKidAges(childAges.join(", "));
+      }
     }
     if (mustSee.length) {
       setMajorStops((prev) => {
@@ -998,18 +1015,28 @@ export function CreateTripWizard({
       ...constraintsFromConversation(Object.values(clarifyAnswers).join("\n"), interestList),
       travelerMode: form.travelerMode || undefined,
       planningClarity: form.planningClarity || undefined,
-      party:
-        form.travelerMode === "business"
-          ? "business"
-          : partyType === "solo" ||
-              partyType === "couple" ||
-              partyType === "family" ||
-              partyType === "friends"
-            ? partyType
-            : constraintsFromConversation(
-                Object.values(clarifyAnswers).join("\n"),
-                interestList,
-              ).party,
+      party: (() => {
+        if (form.travelerMode === "business") return "business" as const;
+        if (
+          partyType === "solo" ||
+          partyType === "couple" ||
+          partyType === "family" ||
+          partyType === "friends"
+        ) {
+          return partyType;
+        }
+        const fromLabel = party.toLowerCase();
+        if (/multigen|multigenerational/.test(fromLabel)) return "multigen" as const;
+        if (/business/.test(fromLabel)) return "business" as const;
+        if (/family|kid|child/.test(fromLabel)) return "family" as const;
+        if (/couple|partner/.test(fromLabel)) return "couple" as const;
+        if (/friend/.test(fromLabel)) return "friends" as const;
+        if (/solo|alone|just me/.test(fromLabel)) return "solo" as const;
+        return constraintsFromConversation(
+          Object.values(clarifyAnswers).join("\n"),
+          interestList,
+        ).party;
+      })(),
       currency: form.currency,
       interests: interestList,
       intensity: form.intensity,

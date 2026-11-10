@@ -65,7 +65,20 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const body = bodySchema.parse(await req.json());
+  let json: unknown;
+  try {
+    json = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  const parsed = bodySchema.safeParse(json);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Intro details look incomplete or invalid" },
+      { status: 400 },
+    );
+  }
+  const body = parsed.data;
   const history = (body.history ?? []) as IntroLine[];
   const message = body.message?.trim() ?? "";
   const scripted = scriptedIntroTurn(history, message);

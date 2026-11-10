@@ -304,9 +304,12 @@ export function ItineraryEditor({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ activities: payload }),
         });
-        setSaveState(res.ok ? "saved" : "saved"); // local copy already kept
+        setSaveState(res.ok ? "saved" : "error");
+        if (!res.ok) setOfflineSaved(true);
       } catch {
-        setSaveState("saved"); // offline — local copy is enough
+        // Local copy kept — surface that cloud sync did not finish.
+        setSaveState("error");
+        setOfflineSaved(true);
       }
     },
     [tripId, isDemo, destination, startDate, endDate],
@@ -380,6 +383,7 @@ export function ItineraryEditor({
         /* ignore */
       }
       if (!isDemo && !tripId.startsWith("offline-") && navigator.onLine) {
+        // Only patch legs/destinations — never overwrite intensity/transport.
         void fetch(`/api/trips/${tripId}/preferences`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -391,9 +395,6 @@ export function ItineraryEditor({
                 country: l.country,
               })),
               legs: next,
-              interests: interests ?? [],
-              intensity: "balanced",
-              transport: "walking",
             },
           }),
         }).catch(() => {
