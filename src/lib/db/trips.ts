@@ -7,7 +7,36 @@ function addMinutesToTime(time: string, minutes: number): string {
   const total = h * 60 + m + minutes;
   const nh = Math.floor(total / 60) % 24;
   const nm = total % 60;
-  return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}`;
+  return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}:00`;
+}
+
+function asClock(time: string): string {
+  const trimmed = time.trim();
+  if (/^\d{2}:\d{2}:\d{2}$/.test(trimmed)) return trimmed;
+  if (/^\d{2}:\d{2}$/.test(trimmed)) return `${trimmed}:00`;
+  return trimmed;
+}
+
+/** Supabase Postgrest errors are plain objects — normalize to Error. */
+export function dbError(err: unknown, fallback = "Database request failed"): Error {
+  if (err instanceof Error) return err;
+  if (err && typeof err === "object") {
+    const row = err as { message?: unknown; details?: unknown; code?: unknown };
+    const message =
+      typeof row.message === "string" && row.message.trim()
+        ? row.message.trim()
+        : fallback;
+    const details =
+      typeof row.details === "string" && row.details.trim()
+        ? ` (${row.details.trim()})`
+        : "";
+    const code =
+      typeof row.code === "string" && row.code.trim()
+        ? ` [${row.code.trim()}]`
+        : "";
+    return new Error(`${message}${details}${code}`);
+  }
+  return new Error(fallback);
 }
 
 export async function saveGeneratedItinerary(input: {
@@ -26,40 +55,58 @@ export async function saveGeneratedItinerary(input: {
       .insert({ trip_id: input.tripId, day_index: day.dayIndex })
       .select("id")
       .single();
-    if (dayErr || !dayRow) throw dayErr ?? new Error("day insert failed");
+    if (dayErr || !dayRow) {
+      throw dbError(dayErr, "Could not save an itinerary day");
+    }
 
-    const activities = day.activities.map((act, sort_order) => ({
-      day_id: dayRow.id,
-      place_id: act.placeId,
-      name: act.name,
-      address: act.address ?? null,
-      lat: act.lat,
-      lng: act.lng,
-      start_time: act.startTime,
-      end_time: addMinutesToTime(act.startTime, act.durationMinutes),
-      duration_minutes: act.durationMinutes,
-      travel_minutes_from_prev: act.travelMinutesFromPrev ?? 0,
-      priority: act.priority,
-      planning_note: act.planningNote ?? null,
-      hours_verified: act.hoursVerified,
-      opening_hours:
-        typeof act.openingHours === "string" ? act.openingHours : null,
-      website_uri: act.websiteUri ?? null,
-      google_maps_uri: act.googleMapsUri ?? null,
-      popularity_label: act.popularityLabel ?? null,
-      popularity_sources: act.popularitySources ?? null,
-      popularity_attribution_urls: act.popularityAttributionUrls ?? null,
-      schedule_warnings: act.scheduleWarnings ?? null,
-      sort_order,
-      source: "ai",
-    }));
+    // activities_day_place_uq rejects duplicate non-null place_id on one day.
+    // Keep every stop; clear repeated IDs so the day still saves.
+    const seenPlaceIds = new Set<string>();
+    const activities = day.activities.map((act, sort_order) => {
+      const rawId = act.placeId?.trim() || null;
+      let place_id = rawId;
+      if (place_id) {
+        if (seenPlaceIds.has(place_id)) place_id = null;
+        else seenPlaceIds.add(place_id);
+      }
+      return {
+        day_id: dayRow.id,
+        place_id,
+        name: act.name,
+        address: act.address ?? null,
+        lat: act.lat,
+        lng: act.lng,
+        start_time: asClock(act.startTime),
+        end_time: addMinutesToTime(act.startTime, act.durationMinutes),
+        duration_minutes: act.durationMinutes,
+        travel_minutes_from_prev: act.travelMinutesFromPrev ?? 0,
+        priority: act.priority,
+        planning_note: act.planningNote ?? null,
+        hours_verified: Boolean(act.hoursVerified),
+        // Column is jsonb — wrap plain text so PostgREST accepts it.
+        opening_hours:
+          typeof act.openingHours === "string"
+            ? { text: act.openingHours }
+            : act.openingHours && typeof act.openingHours === "object"
+              ? act.openingHours
+              : null,
+        website_uri: act.websiteUri ?? null,
+        google_maps_uri: act.googleMapsUri ?? null,
+        popularity_label: act.popularityLabel ?? null,
+        popularity_sources: act.popularitySources ?? null,
+        popularity_attribution_urls: act.popularityAttributionUrls ?? null,
+        schedule_warnings: act.scheduleWarnings ?? null,
+        sort_order,
+        source: "ai",
+      };
+    });
 
     // PostgREST rejects insert([]) — empty days are still valid itinerary rows.
     if (activities.length) {
       const { error: actErr } = await supabase
         .from("activities")
         .insert(activities);
-      if (actErr) throw actErr;
+      if (actErr) throw dbError(actErr, "Could not save itinerary stops");
     }
   }
 
@@ -123,16 +170,17 @@ export async function createTripRecord(input: {
         .maybeSingle();
       if (raced?.id) return { tripId: raced.id, reused: true };
     }
-    throw error;
+    throw dbError(error, "Could not create trip");
   }
-  if (!trip) throw new Error("trip create failed");
+  if (!trip) throw new Error("Could not create trip");
 
-  await supabase.from("trip_preferences").insert({
+  const { error: prefErr } = await supabase.from("trip_preferences").insert({
     trip_id: trip.id,
     payload: input.preferences,
   });
+  if (prefErr) throw dbError(prefErr, "Could not save trip preferences");
 
-  await supabase.from("trip_priorities").insert({
+  const { error: priorErr } = await supabase.from("trip_priorities").insert({
     trip_id: trip.id,
     must_see: input.priorities.mustSee,
     preferred: input.priorities.preferred,
@@ -140,6 +188,7 @@ export async function createTripRecord(input: {
     avoid: input.priorities.avoid,
     ideal_trip: input.priorities.idealTrip,
   });
+  if (priorErr) throw dbError(priorErr, "Could not save trip priorities");
 
   return { tripId: trip.id, reused: false };
 }

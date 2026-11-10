@@ -19,6 +19,10 @@ const DREAM_MARK = "dream trip feel like";
 const WHERE_MARK = "which part of the trip should carry that";
 const PACE_MARK = "how full should the days feel";
 const PARTY_MARK = "who is traveling";
+const TRAVELER_STYLE_MARK = "how do you usually like to travel";
+const ENERGY_MARK = "energy on vacation";
+const FEEL_MARK = "most want to feel on this trip";
+const DEALBREAKER_MARK = "hard deal-breakers i should respect";
 const WALK_MARK = "how long a walk between stops";
 const SETTING_MARK = "indoors or outdoors";
 const LEAD_MARK = "which interest should lead";
@@ -170,10 +174,31 @@ export function localClarifyReply(
   const budgetSplitDone = budgetTopicAsked(history, "split") || covered.budgetSplit;
   const budgetFoodDone = budgetTopicAsked(history, "food") || covered.budgetFood;
 
+  const styleDone =
+    asked(history, TRAVELER_STYLE_MARK) ||
+    /usually like to travel|planner|wander|spontaneous/i.test(userCorpus);
+  const energyDone =
+    asked(history, ENERGY_MARK) ||
+    /energy on vacation|low[- ]key days|high energy|need downtime/i.test(
+      userCorpus,
+    );
+  const feelDone =
+    asked(history, FEEL_MARK) ||
+    /most want to feel|feel inspired|feel rested|feel adventurous/i.test(
+      userCorpus,
+    );
+  const dealbreakerDone =
+    asked(history, DEALBREAKER_MARK) ||
+    /deal-breaker|dealbreaker|hard no|must avoid/i.test(userCorpus);
+
   if (
     dreamDone &&
     paceDone &&
     partyDone &&
+    styleDone &&
+    energyDone &&
+    feelDone &&
+    dealbreakerDone &&
     walkDone &&
     settingDone &&
     leadDone &&
@@ -182,12 +207,21 @@ export function localClarifyReply(
     budgetFoodDone
   ) {
     // Never dead-end on "ready to generate" — keep asking like a travel agent.
+    // Ask deeper follow-ups one city at a time on multi-city trips.
     return {
       reply: freeform
-        ? `${heard}${continueAgentReply(place, brief.summary, history)}`
-        : continueAgentReply(place, brief.summary, history),
+        ? `${heard}${continueAgentReply({
+            cities,
+            summary: "",
+            history,
+          })}`
+        : continueAgentReply({
+            cities,
+            summary: brief.summary,
+            history,
+          }),
       done: false,
-      choices: continueAgentChoices(history),
+      choices: continueAgentChoices(history, cities),
     };
   }
 
@@ -201,6 +235,10 @@ export function localClarifyReply(
       interests: input.interests,
       cities,
       partyDone,
+      styleDone,
+      energyDone,
+      feelDone,
+      dealbreakerDone,
       walkDone,
       settingDone,
       paceDone,
@@ -214,9 +252,12 @@ export function localClarifyReply(
 
   if (!dreamDone) {
     return {
-      reply: cities.length
-        ? `${heard}For ${cities.join(" and ")}, what should a dream trip feel like?`
-        : `${heard}What should a dream trip feel like for you?`,
+      reply:
+        cities.length > 1
+          ? `${heard}For ${cities.join(" → ")}, what should a dream trip feel like?`
+          : cities.length === 1
+            ? `${heard}For ${cities[0]}, what should a dream trip feel like?`
+            : `${heard}What should a dream trip feel like for you?`,
       done: false,
       choices: [
         { id: "small", label: "Small local places, not tourist traps" },
@@ -227,11 +268,87 @@ export function localClarifyReply(
     };
   }
 
-  const cityHook = cityHookFor(cities);
-  if (cityHook && !asked(history, cityHook.askedNeedle)) {
-    const label = cities[0] ?? "this city";
+  // Get to know the traveler before logistics.
+  if (!partyDone) {
     return {
-      reply: `${heard}${cityHook.reply(label)}`,
+      reply: `${heard}Who is traveling?`,
+      done: false,
+      choices: [
+        { id: "solo", label: "Solo" },
+        { id: "couple", label: "A couple" },
+        { id: "family", label: "Family with children" },
+        { id: "multi", label: "Multigenerational" },
+        { id: "friends", label: "Friends" },
+        { id: "business", label: "Business" },
+      ],
+    };
+  }
+
+  if (!styleDone) {
+    return {
+      reply: `${heard}How do you usually like to travel?`,
+      done: false,
+      choices: [
+        { id: "planner", label: "I like a clear plan" },
+        { id: "loose", label: "Loose plan, room to wander" },
+        { id: "spontaneous", label: "Mostly spontaneous" },
+        { id: "mix-style", label: "A mix — structure with free blocks" },
+      ],
+    };
+  }
+
+  if (!energyDone) {
+    return {
+      reply: `${heard}What’s your typical energy on vacation?`,
+      done: false,
+      choices: [
+        { id: "low-key", label: "Low-key — rest matters" },
+        { id: "steady", label: "Steady — a few good things a day" },
+        { id: "high", label: "High energy — pack the days" },
+        { id: "varies", label: "Varies day to day" },
+      ],
+    };
+  }
+
+  if (!feelDone) {
+    return {
+      reply: `${heard}What do you most want to feel on this trip?`,
+      done: false,
+      choices: [
+        { id: "feel-rested", label: "Rested and unhurried" },
+        { id: "feel-inspired", label: "Inspired and curious" },
+        { id: "feel-connected", label: "Connected to local life" },
+        { id: "feel-adventurous", label: "Adventurous / accomplished" },
+      ],
+    };
+  }
+
+  if (!dealbreakerDone) {
+    return {
+      reply: `${heard}Any hard deal-breakers I should respect?`,
+      done: false,
+      choices: [
+        { id: "no-crowds", label: "Avoid big crowds when possible" },
+        { id: "no-early", label: "No early mornings" },
+        { id: "no-long-transit", label: "No long transit days" },
+        { id: "no-dealbreakers", label: "No hard deal-breakers" },
+      ],
+    };
+  }
+
+  // Destination hooks one city at a time (Tokyo temples, then Osaka, …).
+  for (const city of cities) {
+    const cityHook = cityHookFor([city]);
+    if (!cityHook) continue;
+    const alreadyForCity = history.some(
+      (line) =>
+        line.role === "assistant" &&
+        line.text.toLowerCase().includes(cityHook.askedNeedle) &&
+        line.text.toLowerCase().includes(city.toLowerCase()),
+    );
+    if (alreadyForCity) continue;
+    return {
+      reply: `${heard}${cityHook.reply(city)}`,
       done: false,
       choices: cityHook.choices,
     };
@@ -247,6 +364,18 @@ export function localClarifyReply(
           label: `Mostly ${city}`,
         })),
         { id: "split", label: "Split it across every city" },
+      ],
+    };
+  }
+
+  if (!paceDone) {
+    return {
+      reply: `${heard}How full should the days feel in ${place}?`,
+      done: false,
+      choices: [
+        { id: "easy", label: "One or two things, then free time" },
+        { id: "steady", label: "A steady day with room to wander" },
+        { id: "full", label: "A full day, as long as it stays worthwhile" },
       ],
     };
   }
@@ -268,6 +397,41 @@ export function localClarifyReply(
         ],
       };
     }
+  }
+
+  if (!walkDone) {
+    return {
+      reply: `${heard}How long a walk between stops feels comfortable?`,
+      done: false,
+      choices: [
+        { id: "short", label: "Under 15 minutes" },
+        { id: "medium", label: "About 30 minutes" },
+        { id: "open", label: "As far as the route needs" },
+      ],
+    };
+  }
+
+  if (!settingDone) {
+    return {
+      reply: `${heard}Should the days lean indoors or outdoors?`,
+      done: false,
+      choices: [
+        { id: "indoor", label: "Mostly indoors" },
+        { id: "outdoor", label: "Mostly outdoors" },
+        { id: "either", label: "Either indoors or outdoors" },
+      ],
+    };
+  }
+
+  if (!leadDone) {
+    return {
+      reply: `${heard}Which interest should lead the days?`,
+      done: false,
+      choices: [
+        ...input.interests.slice(0, 3).map((interest) => ({ id: interest, label: interest })),
+        { id: "equal", label: "Keep them equal" },
+      ],
+    };
   }
 
   if (!budgetTotalDone) {
@@ -309,72 +473,14 @@ export function localClarifyReply(
     };
   }
 
-  if (!partyDone) {
-    return {
-      reply: `${heard}Who is traveling?`,
-      done: false,
-      choices: [
-        { id: "solo", label: "Solo" },
-        { id: "couple", label: "A couple" },
-        { id: "family", label: "Family with children" },
-        { id: "multi", label: "Multigenerational" },
-        { id: "friends", label: "Friends" },
-        { id: "business", label: "Business" },
-      ],
-    };
-  }
-
-  if (!walkDone) {
-    return {
-      reply: `${heard}How long a walk between stops feels comfortable?`,
-      done: false,
-      choices: [
-        { id: "short", label: "Under 15 minutes" },
-        { id: "medium", label: "About 30 minutes" },
-        { id: "open", label: "As far as the route needs" },
-      ],
-    };
-  }
-
-  if (!settingDone) {
-    return {
-      reply: `${heard}Should the days lean indoors or outdoors?`,
-      done: false,
-      choices: [
-        { id: "indoor", label: "Mostly indoors" },
-        { id: "outdoor", label: "Mostly outdoors" },
-        { id: "either", label: "Either indoors or outdoors" },
-      ],
-    };
-  }
-
-  if (!leadDone) {
-    return {
-      reply: `${heard}Which interest should lead the days?`,
-      done: false,
-      choices: [
-        ...input.interests.slice(0, 3).map((interest) => ({ id: interest, label: interest })),
-        { id: "equal", label: "Keep them equal" },
-      ],
-    };
-  }
-
-  if (!paceDone) {
-    return {
-      reply: `${heard}How full should the days feel in ${place}?`,
-      done: false,
-      choices: [
-        { id: "easy", label: "One or two things, then free time" },
-        { id: "steady", label: "A steady day with room to wander" },
-        { id: "full", label: "A full day, as long as it stays worthwhile" },
-      ],
-    };
-  }
-
   return {
-    reply: continueAgentReply(place, brief.summary, history),
+    reply: continueAgentReply({
+      cities,
+      summary: brief.summary,
+      history,
+    }),
     done: false,
-    choices: continueAgentChoices(history),
+    choices: continueAgentChoices(history, cities),
   };
 }
 
@@ -434,35 +540,70 @@ function acknowledge(message: string, summary: string): string {
   return "I'll use that. ";
 }
 
-function continueAgentReply(
-  place: string,
-  summary: string,
-  history: ChatLine[],
-): string {
-  const lead = summary
-    ? `Noted for ${place}: ${summary}. `
-    : `Good progress on ${place}. `;
-  const cities = place.split(/\s+and\s+/i).map((part) => part.trim());
-  const hook = cityHookFor(cities);
-  if (hook && !asked(history, hook.askedNeedle)) {
-    return `${lead}${hook.reply(cities[0] ?? place)}`;
-  }
-  if (!asked(history, "hotel neighborhood")) {
-    return `${lead}Do you already have a hotel in ${place}, or should we plan from a neighborhood feel?`;
-  }
-  if (!asked(history, "mornings or evenings")) {
-    return `${lead}In ${place}, are you more of a mornings person or evenings person?`;
-  }
-  if (!asked(history, "surprise stop")) {
-    return `${lead}Want one ${place} surprise stop each day, or keep the plan predictable?`;
-  }
-  if (!asked(history, "travel day buffer")) {
-    return `${lead}On arrival day in ${place}, should we keep things light after the flight?`;
-  }
-  return `${lead}What else should I know about how you travel in ${place} — energy, deal-breakers, or must-haves?`;
+function hotelMark(city: string): string {
+  return `hotel in ${city}`;
 }
 
-function continueAgentChoices(history: ChatLine[]): ClarifyChoice[] {
+function morningsMark(city: string): string {
+  return `in ${city}, are you more of a mornings`;
+}
+
+function surpriseMark(city: string): string {
+  return `one ${city} surprise stop`;
+}
+
+function arrivalMark(city: string): string {
+  return `on arrival day in ${city}`;
+}
+
+function continueAgentReply(input: {
+  cities: string[];
+  summary: string;
+  history: ChatLine[];
+}): string {
+  const cities = input.cities.length ? input.cities : ["this trip"];
+  const lead = input.summary ? `Noted: ${input.summary}. ` : "";
+
+  for (const city of cities) {
+    const hook = cityHookFor([city]);
+    if (!hook) continue;
+    const already = input.history.some(
+      (line) =>
+        line.role === "assistant" &&
+        line.text.toLowerCase().includes(hook.askedNeedle) &&
+        line.text.toLowerCase().includes(city.toLowerCase()),
+    );
+    if (!already) return `${lead}${hook.reply(city)}`;
+  }
+
+  for (const city of cities) {
+    if (!asked(input.history, hotelMark(city))) {
+      return `${lead}Do you already have a hotel in ${city}, or should we plan from a neighborhood feel there?`;
+    }
+  }
+  for (const city of cities) {
+    if (!asked(input.history, morningsMark(city))) {
+      return `${lead}In ${city}, are you more of a mornings person or evenings person?`;
+    }
+  }
+  for (const city of cities) {
+    if (!asked(input.history, surpriseMark(city))) {
+      return `${lead}Want one ${city} surprise stop each day, or keep that city predictable?`;
+    }
+  }
+  for (const city of cities) {
+    if (!asked(input.history, arrivalMark(city))) {
+      return `${lead}On arrival day in ${city}, should we keep things light after travel?`;
+    }
+  }
+  const focus = cities[cities.length - 1] ?? "this trip";
+  return `${lead}What else should I know about how you travel in ${focus} — energy, deal-breakers, or must-haves?`;
+}
+
+function continueAgentChoices(
+  history: ChatLine[],
+  cities: string[] = [],
+): ClarifyChoice[] {
   const last = [...history]
     .reverse()
     .find((line) => line.role === "assistant")?.text;
@@ -472,26 +613,33 @@ function continueAgentChoices(history: ChatLine[]): ClarifyChoice[] {
     );
     if (hook) return hook.choices;
   }
-  if (!asked(history, "hotel neighborhood")) {
-    return [
-      { id: "hotel-booked", label: "Hotel already booked" },
-      { id: "hotel-suggest", label: "Suggest a neighborhood" },
-      { id: "hotel-flexible", label: "Flexible — decide later" },
-    ];
+  const cityList = cities.length ? cities : ["this trip"];
+  for (const city of cityList) {
+    if (!asked(history, hotelMark(city))) {
+      return [
+        { id: `hotel-booked-${city}`, label: `Hotel booked in ${city}` },
+        { id: `hotel-suggest-${city}`, label: `Suggest a ${city} neighborhood` },
+        { id: `hotel-flexible-${city}`, label: "Flexible — decide later" },
+      ];
+    }
   }
-  if (!asked(history, "mornings or evenings")) {
-    return [
-      { id: "mornings", label: "Mornings" },
-      { id: "evenings", label: "Evenings" },
-      { id: "both", label: "A bit of both" },
-    ];
+  for (const city of cityList) {
+    if (!asked(history, morningsMark(city))) {
+      return [
+        { id: "mornings", label: "Mornings" },
+        { id: "evenings", label: "Evenings" },
+        { id: "both", label: "A bit of both" },
+      ];
+    }
   }
-  if (!asked(history, "surprise stop")) {
-    return [
-      { id: "surprise-yes", label: "Yes — one surprise" },
-      { id: "surprise-no", label: "No surprises" },
-      { id: "surprise-maybe", label: "Only if it fits the vibe" },
-    ];
+  for (const city of cityList) {
+    if (!asked(history, surpriseMark(city))) {
+      return [
+        { id: "surprise-yes", label: "Yes — one surprise" },
+        { id: "surprise-no", label: "No surprises" },
+        { id: "surprise-maybe", label: "Only if it fits the vibe" },
+      ];
+    }
   }
   return [
     { id: "more-energy", label: "Tell you about our energy" },
@@ -522,6 +670,10 @@ function nextUncoveredQuestion(input: {
   interests: string[];
   cities: string[];
   partyDone: boolean;
+  styleDone: boolean;
+  energyDone: boolean;
+  feelDone: boolean;
+  dealbreakerDone: boolean;
   walkDone: boolean;
   settingDone: boolean;
   paceDone: boolean;
@@ -531,6 +683,66 @@ function nextUncoveredQuestion(input: {
   budgetFoodDone: boolean;
 }): ClarifyTurn | null {
   const { heard, place, history, cities } = input;
+  if (!input.partyDone) {
+    return {
+      reply: `${heard}Who is traveling on this trip?`,
+      done: false,
+      choices: [
+        { id: "solo", label: "Just me" },
+        { id: "couple", label: "A couple" },
+        { id: "family", label: "Family with kids" },
+        { id: "friends", label: "Friends" },
+      ],
+    };
+  }
+  if (!input.styleDone) {
+    return {
+      reply: `${heard}How do you usually like to travel?`,
+      done: false,
+      choices: [
+        { id: "planner", label: "I like a clear plan" },
+        { id: "loose", label: "Loose plan, room to wander" },
+        { id: "spontaneous", label: "Mostly spontaneous" },
+        { id: "mix-style", label: "A mix — structure with free blocks" },
+      ],
+    };
+  }
+  if (!input.energyDone) {
+    return {
+      reply: `${heard}What’s your typical energy on vacation?`,
+      done: false,
+      choices: [
+        { id: "low-key", label: "Low-key — rest matters" },
+        { id: "steady", label: "Steady — a few good things a day" },
+        { id: "high", label: "High energy — pack the days" },
+        { id: "varies", label: "Varies day to day" },
+      ],
+    };
+  }
+  if (!input.feelDone) {
+    return {
+      reply: `${heard}What do you most want to feel on this trip?`,
+      done: false,
+      choices: [
+        { id: "feel-rested", label: "Rested and unhurried" },
+        { id: "feel-inspired", label: "Inspired and curious" },
+        { id: "feel-connected", label: "Connected to local life" },
+        { id: "feel-adventurous", label: "Adventurous / accomplished" },
+      ],
+    };
+  }
+  if (!input.dealbreakerDone) {
+    return {
+      reply: `${heard}Any hard deal-breakers I should respect?`,
+      done: false,
+      choices: [
+        { id: "no-crowds", label: "Avoid big crowds when possible" },
+        { id: "no-early", label: "No early mornings" },
+        { id: "no-long-transit", label: "No long transit days" },
+        { id: "no-dealbreakers", label: "No hard deal-breakers" },
+      ],
+    };
+  }
   if (cities.length > 1 && !asked(history, WHERE_MARK)) {
     return {
       reply: `${heard}Which part of ${place} should carry that — ${cities.join(" or ")}?`,
@@ -541,18 +753,6 @@ function nextUncoveredQuestion(input: {
           label: `Mostly ${city}`,
         })),
         { id: "split", label: "Split it across every city" },
-      ],
-    };
-  }
-  if (!input.partyDone) {
-    return {
-      reply: `${heard}Who is traveling on this trip?`,
-      done: false,
-      choices: [
-        { id: "solo", label: "Just me" },
-        { id: "couple", label: "A couple" },
-        { id: "family", label: "Family with kids" },
-        { id: "friends", label: "Friends" },
       ],
     };
   }
@@ -602,8 +802,12 @@ function nextUncoveredQuestion(input: {
     };
   }
   return {
-    reply: `${heard}${continueAgentReply(place, "", history)}`,
+    reply: `${heard}${continueAgentReply({
+      cities,
+      summary: "",
+      history,
+    })}`,
     done: false,
-    choices: continueAgentChoices(history),
+    choices: continueAgentChoices(history, cities),
   };
 }

@@ -15,6 +15,12 @@ import { offlineSnapshotFromGenerated } from "@/lib/trips/offline-from-generated
 import { budgetFromConversation } from "@/lib/trips/budget";
 import { constraintsFromConversation } from "@/lib/ai/constraints";
 import { readPlaceFeedback } from "@/lib/trips/place-feedback";
+import {
+  IDEAL_TRIP_MAX,
+  TRAVELER_NOTES_MAX,
+  truncateStringList,
+  truncateText,
+} from "@/lib/trips/truncate-input";
 import type { GeneratedDay } from "@/lib/ai/generate-itinerary";
 import { CityHotelField } from "@/components/itinerary/CityHotelField";
 import { HotelChoice } from "@/components/trips/HotelChoice";
@@ -1011,19 +1017,28 @@ export function CreateTripWizard({
       hotel: legs[0]?.hotel || undefined,
       dietary: form.dietary,
       accessibility: form.accessibility,
-      dayStart: manualArrival || form.dayStart,
+      dayStart: (() => {
+        const raw = (manualArrival || form.dayStart || "").trim();
+        const hhmm = raw.match(/^(\d{1,2}:\d{2})/);
+        return hhmm ? hhmm[1].padStart(5, "0") : form.dayStart;
+      })(),
       dayEnd: form.dayEnd,
-      flightNumber: flightNumber.trim() || undefined,
-      arrivalLocal: manualArrival || undefined,
+      flightNumber: flightNumber.trim().slice(0, 16) || undefined,
+      arrivalLocal: (() => {
+        const raw = manualArrival.trim();
+        if (!raw) return undefined;
+        const hhmm = raw.match(/^(\d{1,2}:\d{2})/);
+        return hhmm ? hhmm[1].padStart(5, "0") : raw.slice(0, 8);
+      })(),
       prefersHiddenGems: form.prefersHiddenGems,
-      mustSee: stops.mustSee,
-      preferred: stops.preferred,
+      mustSee: truncateStringList(stops.mustSee),
+      preferred: truncateStringList(stops.preferred),
       futureTripId: linkedFutureId,
       idempotencyKey: linkedFutureId
         ? `future:${linkedFutureId}`
         : undefined,
-      optional: splitList(form.optional),
-      avoid: splitList(form.avoid),
+      optional: truncateStringList(splitList(form.optional)),
+      avoid: truncateStringList(splitList(form.avoid)),
       preferredAirlines: form.preferredAirlines.trim() || undefined,
       flightPricePoint: form.flightPricePoint,
       chosenAirline: form.chosenAirline || undefined,
@@ -1031,45 +1046,53 @@ export function CreateTripWizard({
       partyType: partyType || undefined,
       kidAges: partyType === "family" ? kidAges || undefined : undefined,
       kidEnergy: partyType === "family" ? kidEnergy || undefined : undefined,
-      travelerNotes: [
-        travelerNotes,
-        partyType === "family" && kidAges ? `Kids ages: ${kidAges}` : "",
-        partyType === "family" && kidEnergy
-          ? `Kids energy: ${kidEnergy}`
-          : "",
-      ]
-        .filter(Boolean)
-        .join("\n") || undefined,
-      idealTrip: idealTripWithMajorStops(
+      travelerNotes: truncateText(
         [
-          form.tripTitle.trim() ? `Trip title: ${form.tripTitle.trim()}` : "",
-          form.idealTrip.trim(),
-          legs
-            .filter((l) => !l.hotelBooked && l.hotel.trim())
-            .map(
-              (l) =>
-                `Build the ${l.city} days around ${l.hotel.trim()}${
-                  l.hotelBrand.trim() ? ` (${l.hotelBrand.trim()})` : ""
-                }. Do not switch to a different hotel.`,
-            )
-            .join("\n"),
-          form.chosenAirline
-            ? `Inbound flight preference: ${form.chosenAirline}. Price point: ${form.flightPricePoint}. Do not invent a fare or a booking.`
-            : form.preferredAirlines.trim() || form.flightPricePoint !== "any"
-              ? `Flight restrictions: airlines ${form.preferredAirlines.trim() || "any"}, price point ${form.flightPricePoint}. Use only a published match. Do not invent a fare.`
-              : "",
-          Object.entries(clarifyAnswers)
-            .map(([id, answer]) => {
-              const trimmed = answer.trim();
-              return trimmed ? `Q: ${clarifyPrompts[id] ?? id}\nA: ${trimmed}` : "";
-            })
-            .filter(Boolean)
-            .join("\n"),
+          travelerNotes,
+          partyType === "family" && kidAges ? `Kids ages: ${kidAges}` : "",
+          partyType === "family" && kidEnergy
+            ? `Kids energy: ${kidEnergy}`
+            : "",
         ]
           .filter(Boolean)
-          .join("\n\n"),
-        stops.mustSee,
+          .join("\n"),
+        TRAVELER_NOTES_MAX,
       ),
+      idealTrip: truncateText(
+        idealTripWithMajorStops(
+          [
+            form.tripTitle.trim() ? `Trip title: ${form.tripTitle.trim()}` : "",
+            form.idealTrip.trim(),
+            legs
+              .filter((l) => !l.hotelBooked && l.hotel.trim())
+              .map(
+                (l) =>
+                  `Build the ${l.city} days around ${l.hotel.trim()}${
+                    l.hotelBrand.trim() ? ` (${l.hotelBrand.trim()})` : ""
+                  }. Do not switch to a different hotel.`,
+              )
+              .join("\n"),
+            form.chosenAirline
+              ? `Inbound flight preference: ${form.chosenAirline}. Price point: ${form.flightPricePoint}. Do not invent a fare or a booking.`
+              : form.preferredAirlines.trim() || form.flightPricePoint !== "any"
+                ? `Flight restrictions: airlines ${form.preferredAirlines.trim() || "any"}, price point ${form.flightPricePoint}. Use only a published match. Do not invent a fare.`
+                : "",
+            Object.entries(clarifyAnswers)
+              .map(([id, answer]) => {
+                const trimmed = answer.trim();
+                return trimmed
+                  ? `Q: ${clarifyPrompts[id] ?? id}\nA: ${trimmed}`
+                  : "";
+              })
+              .filter(Boolean)
+              .join("\n"),
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
+          stops.mustSee,
+        ),
+        IDEAL_TRIP_MAX,
+      ) ?? "",
       legs: legs
         .filter((l) => l.geonameId != null && l.city.trim())
         .map((l, i) => ({
@@ -1089,7 +1112,14 @@ export function CreateTripWizard({
           hotelPlaceId: l.hotelPlaceId,
           hotelBooked: l.hotelBooked,
           hotelMinRating: l.hotelMinRating,
-          hotelPlace: l.hotelPlace,
+          hotelPlace:
+            l.hotelPlace === "any" ||
+            l.hotelPlace === "center" ||
+            l.hotelPlace === "beach" ||
+            l.hotelPlace === "sights" ||
+            l.hotelPlace === "transit"
+              ? l.hotelPlace
+              : "center",
           hotelBrand: l.hotelBrand.trim() || undefined,
           hotelAddress: l.hotelAddress,
           transitFromPrevious:
@@ -1187,11 +1217,95 @@ export function CreateTripWizard({
             : Array.isArray(data.details)
               ? data.details.join("; ")
               : "";
+        // Cloud create failed — generate on-device without flipping into demo mode.
+        if (
+          data.code !== "plan_limit" &&
+          data.code !== "ai_limit" &&
+          data.code !== "pro_required"
+        ) {
+          try {
+            setProgress("Cloud save failed — generating on this device…");
+            // Do not start demo mode here — signed-in users stay on personal.
+            // demo-create accepts either a demo cookie or an authenticated user.
+            const offlineRes = await fetch("/api/trips/demo-create", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            });
+            const offlineData = await offlineRes.json().catch(() => ({}));
+            if (offlineRes.ok && Array.isArray(offlineData.days)) {
+              const tripId = createOfflineTripId();
+              saveOfflineTrip(
+                offlineSnapshotFromGenerated({
+                  tripId,
+                  destination:
+                    offlineData.destination || destination || "Untitled trip",
+                  startDate,
+                  endDate,
+                  days: offlineData.days as GeneratedDay[],
+                  legs: body.legs,
+                  title: form.tripTitle.trim() || undefined,
+                  budget: {
+                    total: body.budget,
+                    currency: body.currency,
+                    allocation: body.budgetAllocation,
+                    restaurantStyle: body.restaurantStyle,
+                  },
+                }),
+              );
+              if (futureTripId) {
+                updateFutureTrip(futureTripId, {
+                  convertedTripId: tripId,
+                  status: "ready",
+                });
+              }
+              router.push(`/trips/${tripId}`);
+              router.refresh();
+              return;
+            }
+          } catch {
+            /* fall through to the original error */
+          }
+        }
         throw new Error(
           [data.error ?? "Could not generate this trip", detail]
             .filter(Boolean)
             .join(" — "),
         );
+      }
+      // Cloud save failed after generation — keep the plan on this device.
+      if (data.offline && Array.isArray(data.days)) {
+        const tripId =
+          typeof data.tripId === "string" && data.tripId
+            ? data.tripId
+            : createOfflineTripId();
+        saveOfflineTrip(
+          offlineSnapshotFromGenerated({
+            tripId,
+            destination: data.destination || destination || "Untitled trip",
+            startDate,
+            endDate,
+            days: data.days as GeneratedDay[],
+            legs: body.legs,
+            title: form.tripTitle.trim() || undefined,
+            budget: {
+              total: body.budget,
+              currency: body.currency,
+              allocation: body.budgetAllocation,
+              restaurantStyle: body.restaurantStyle,
+            },
+          }),
+        );
+        if (futureTripId) {
+          updateFutureTrip(futureTripId, {
+            convertedTripId: tripId,
+            status: "ready",
+          });
+        }
+        router.push(`/trips/${tripId}`);
+        router.refresh();
+        return;
       }
       if (futureTripId && data.tripId) {
         updateFutureTrip(futureTripId, {

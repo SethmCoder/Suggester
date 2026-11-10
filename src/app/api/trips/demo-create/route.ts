@@ -14,7 +14,17 @@ import { filterAirlines, flightRestrictionNote } from "@/lib/flights/airline-cla
 import { estimateFlight } from "@/lib/flights/openflights";
 import { anchorUnbookedLegs } from "@/lib/hotels/hotelrec";
 import { constraintsFromConversation } from "@/lib/ai/constraints";
+import { dbError } from "@/lib/db/trips";
 import { budgetFromConversation } from "@/lib/trips/budget";
+import {
+  IDEAL_TRIP_MAX,
+  LIST_ITEM_MAX,
+  LIST_MAX,
+  TRAVELER_NOTES_MAX,
+  truncateStringList,
+  truncateText,
+} from "@/lib/trips/truncate-input";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { InboundFlightPrefs } from "@/lib/types/trip";
 
 const bodySchema = z.object({
@@ -44,11 +54,27 @@ const bodySchema = z.object({
   dayStart: z.string().optional(),
   dayEnd: z.string().optional(),
   prefersHiddenGems: z.boolean().optional(),
-  mustSee: z.array(z.string()).default([]),
-  preferred: z.array(z.string()).default([]),
-  optional: z.array(z.string()).default([]),
-  avoid: z.array(z.string()).default([]),
-  idealTrip: z.string().default(""),
+  // Soft-truncate oversized pastes — never reject the whole create for length.
+  mustSee: z
+    .array(z.string())
+    .default([])
+    .transform((values) => truncateStringList(values, LIST_MAX, LIST_ITEM_MAX)),
+  preferred: z
+    .array(z.string())
+    .default([])
+    .transform((values) => truncateStringList(values, LIST_MAX, LIST_ITEM_MAX)),
+  optional: z
+    .array(z.string())
+    .default([])
+    .transform((values) => truncateStringList(values, LIST_MAX, LIST_ITEM_MAX)),
+  avoid: z
+    .array(z.string())
+    .default([])
+    .transform((values) => truncateStringList(values, LIST_MAX, LIST_ITEM_MAX)),
+  idealTrip: z
+    .string()
+    .default("")
+    .transform((value) => truncateText(value, IDEAL_TRIP_MAX) ?? ""),
   tripTitle: z.string().max(80).optional(),
   preferredAirlines: z.string().optional(),
   flightPricePoint: z.enum(["any", "budget", "standard", "premium"]).optional(),
@@ -57,7 +83,11 @@ const bodySchema = z.object({
     .array(
       z.object({
         city: z.string().min(1),
+        country: z.string().optional(),
         days: z.number().int().min(1).max(30),
+        arrivalDate: z.string().optional(),
+        departureDate: z.string().optional(),
+        nights: z.number().int().min(0).max(60).optional(),
         hotel: z.string().optional(),
         geonameId: z.number().optional(),
         lat: z.number().optional(),
@@ -69,31 +99,73 @@ const bodySchema = z.object({
         hotelAddress: z.string().optional(),
         hotelBooked: z.boolean().optional(),
         hotelMinRating: z.number().optional(),
-        hotelPlace: z
-          .enum(["any", "center", "beach", "sights", "transit"])
-          .optional(),
+        hotelPlace: z.preprocess(
+          (value) => (value === "" || value == null ? undefined : value),
+          z.enum(["any", "center", "beach", "sights", "transit"]).optional(),
+        ),
         hotelBrand: z.string().optional(),
-        transitFromPrevious: z
-          .enum([
-            "auto",
-            "flight",
-            "major_train",
-            "regional_rail",
-            "coach",
-            "ferry",
-            "car",
-          ])
-          .optional(),
+        transitFromPrevious: z.preprocess(
+          (value) => (value === "" || value == null ? undefined : value),
+          z
+            .enum([
+              "auto",
+              "flight",
+              "major_train",
+              "regional_rail",
+              "coach",
+              "ferry",
+              "car",
+            ])
+            .optional(),
+        ),
       }),
     )
     .optional(),
+  futureTripId: z.string().min(1).max(120).optional(),
+  partyType: z.enum(["solo", "couple", "family", "friends"]).optional(),
+  kidAges: z.string().max(80).optional(),
+  kidEnergy: z.enum(["calm", "balanced", "high"]).optional(),
+  travelerNotes: z
+    .string()
+    .optional()
+    .transform((value) => truncateText(value, TRAVELER_NOTES_MAX)),
+  flightNumber: z.string().max(16).optional(),
+  arrivalLocal: z
+    .string()
+    .optional()
+    .transform((value) => {
+      if (!value) return undefined;
+      const hhmm = value.trim().match(/^(\d{1,2}:\d{2})/);
+      return hhmm ? hhmm[1].padStart(5, "0") : value.trim().slice(0, 8);
+    }),
+  travelerMode: z.enum(["business", "leisure"]).optional(),
+  planningClarity: z
+    .enum(["know_where_and_what", "know_where_not_what", "know_neither"])
+    .optional(),
 });
 
-/** Generate an itinerary for a demo session. It is stored on the device, not in an account. */
+/**
+ * Generate an itinerary stored on-device (demo or signed-in offline fallback).
+ * Does not write the trip to Supabase.
+ */
 export async function POST(req: Request) {
   const cookieStore = await cookies();
-  if (!isDemoCookie(cookieStore.get(DEMO_COOKIE)?.value)) {
-    return NextResponse.json({ error: "Demo session required" }, { status: 401 });
+  const demo = isDemoCookie(cookieStore.get(DEMO_COOKIE)?.value);
+  let user: { id: string; email?: string | null } | null = null;
+  try {
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser();
+    user = authUser;
+  } catch {
+    user = null;
+  }
+  if (!demo && !user) {
+    return NextResponse.json(
+      { error: "Demo session or sign-in required" },
+      { status: 401 },
+    );
   }
 
   try {
@@ -110,9 +182,13 @@ export async function POST(req: Request) {
     );
     const { withProfileEntitlement } = await import("@/lib/billing/access");
     // Demo must not inherit a personal account's entitlement / AI usage.
+    // Signed-in offline fallback uses the personal entitlement.
     const gate = gateFeature(
       "generate",
-      await withProfileEntitlement((name) => jar.get(name)?.value, null),
+      await withProfileEntitlement(
+        (name) => jar.get(name)?.value,
+        demo ? null : user ? { id: user.id, email: user.email } : null,
+      ),
     );
     if (!gate.allowed) {
       return NextResponse.json(
@@ -278,7 +354,9 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-    const message = err instanceof Error ? err.message : "Create failed";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json(
+      { error: dbError(err, "Create failed").message },
+      { status: 400 },
+    );
   }
 }

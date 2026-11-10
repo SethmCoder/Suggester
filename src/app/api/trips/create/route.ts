@@ -10,7 +10,11 @@ import {
   readPlan,
 } from "@/lib/billing/plans";
 import { anchorUnbookedLegs } from "@/lib/hotels/hotelrec";
-import { createTripRecord, saveGeneratedItinerary } from "@/lib/db/trips";
+import {
+  createTripRecord,
+  dbError,
+  saveGeneratedItinerary,
+} from "@/lib/db/trips";
 import { filterAirlines, flightRestrictionNote } from "@/lib/flights/airline-class";
 import { estimateFlight } from "@/lib/flights/openflights";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -20,8 +24,21 @@ import { budgetFromConversation } from "@/lib/trips/budget";
 import type { InboundFlightPrefs } from "@/lib/types/trip";
 import { assertValidDateRange, nightsBetween } from "@/lib/trips/dates";
 import { applyTripDatesToLegs } from "@/lib/trips/legs";
+import {
+  IDEAL_TRIP_MAX,
+  LIST_ITEM_MAX,
+  LIST_MAX,
+  TRAVELER_NOTES_MAX,
+  truncateStringList,
+  truncateText,
+} from "@/lib/trips/truncate-input";
 import { AnalyticsEvent } from "@/lib/analytics/events";
 import { trackServerEvent } from "@/lib/analytics/track";
+
+const hotelPlaceSchema = z.preprocess(
+  (value) => (value === "" || value == null ? undefined : value),
+  z.enum(["any", "center", "beach", "sights", "transit"]).optional(),
+);
 
 const legSchema = z.object({
   city: z.string().min(1),
@@ -42,21 +59,22 @@ const legSchema = z.object({
   hotelAddress: z.string().optional(),
   hotelBooked: z.boolean().optional(),
   hotelMinRating: z.number().optional(),
-  hotelPlace: z
-    .enum(["any", "center", "beach", "sights", "transit"])
-    .optional(),
+  hotelPlace: hotelPlaceSchema,
   hotelBrand: z.string().optional(),
-  transitFromPrevious: z
-    .enum([
-      "auto",
-      "flight",
-      "major_train",
-      "regional_rail",
-      "coach",
-      "ferry",
-      "car",
-    ])
-    .optional(),
+  transitFromPrevious: z.preprocess(
+    (value) => (value === "" || value == null ? undefined : value),
+    z
+      .enum([
+        "auto",
+        "flight",
+        "major_train",
+        "regional_rail",
+        "coach",
+        "ferry",
+        "car",
+      ])
+      .optional(),
+  ),
 });
 
 const bodySchema = z.object({
@@ -94,17 +112,44 @@ const bodySchema = z.object({
   dayStart: z.string().optional(),
   dayEnd: z.string().optional(),
   flightNumber: z.string().max(16).optional(),
-  arrivalLocal: z.string().max(8).optional(),
+  // Wizard may send a longer pasted time — keep HH:MM for arrival planning.
+  arrivalLocal: z
+    .string()
+    .optional()
+    .transform((value) => {
+      if (!value) return undefined;
+      const hhmm = value.trim().match(/^(\d{1,2}:\d{2})/);
+      return hhmm ? hhmm[1].padStart(5, "0") : value.trim().slice(0, 8);
+    }),
   partyType: z.enum(["solo", "couple", "family", "friends"]).optional(),
   kidAges: z.string().max(80).optional(),
   kidEnergy: z.enum(["calm", "balanced", "high"]).optional(),
-  travelerNotes: z.string().max(2000).optional(),
+  travelerNotes: z
+    .string()
+    .optional()
+    .transform((value) => truncateText(value, TRAVELER_NOTES_MAX)),
   prefersHiddenGems: z.boolean().optional(),
-  mustSee: z.array(z.string()).default([]),
-  preferred: z.array(z.string()).default([]),
-  optional: z.array(z.string()).default([]),
-  avoid: z.array(z.string()).default([]),
-  idealTrip: z.string().default(""),
+  // Soft-truncate oversized pastes — never reject the whole create for length.
+  mustSee: z
+    .array(z.string())
+    .default([])
+    .transform((values) => truncateStringList(values, LIST_MAX, LIST_ITEM_MAX)),
+  preferred: z
+    .array(z.string())
+    .default([])
+    .transform((values) => truncateStringList(values, LIST_MAX, LIST_ITEM_MAX)),
+  optional: z
+    .array(z.string())
+    .default([])
+    .transform((values) => truncateStringList(values, LIST_MAX, LIST_ITEM_MAX)),
+  avoid: z
+    .array(z.string())
+    .default([])
+    .transform((values) => truncateStringList(values, LIST_MAX, LIST_ITEM_MAX)),
+  idealTrip: z
+    .string()
+    .default("")
+    .transform((value) => truncateText(value, IDEAL_TRIP_MAX) ?? ""),
   tripTitle: z.string().max(80).optional(),
   preferredAirlines: z.string().optional(),
   flightPricePoint: z.enum(["any", "budget", "standard", "premium"]).optional(),
@@ -419,30 +464,70 @@ export async function POST(req: Request) {
         : undefined,
     });
 
-    await saveGeneratedItinerary({
-      tripId,
-      days: generated.days,
-      warnings: generated.warnings,
-    });
-
-    const svc = createServiceClient()!;
-    await svc.from("ai_generations").insert({
-      trip_id: tripId,
-      kind: "full",
-      request: body,
-      response: { warnings: generated.warnings, popularityUsed: generated.popularityUsed },
-    });
-
-    await trackServerEvent({
-      event: AnalyticsEvent.TripPlanned,
-      userId: user.id,
-      properties: {
+    try {
+      await saveGeneratedItinerary({
+        tripId,
+        days: generated.days,
+        warnings: generated.warnings,
+      });
+    } catch (saveErr) {
+      // Plan is ready — keep it on-device if cloud save fails.
+      const saveMessage = dbError(saveErr).message;
+      const res = NextResponse.json({
+        offline: true,
         tripId,
         destination: destinationLabel,
-        multiCity: (resolvedLegs?.length ?? 0) > 1,
-      },
-      path: "/trips/new",
-    });
+        tripTitle: body.tripTitle,
+        days: generated.days,
+        warnings: [
+          ...generated.warnings,
+          `Saved on this device only — cloud save failed: ${saveMessage}`,
+        ],
+        legs: resolvedLegs,
+      });
+      const options = {
+        httpOnly: true,
+        sameSite: "lax" as const,
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 60 * 60 * 24 * 365,
+      };
+      res.cookies.set(PLAN_COOKIE, billing.plan, options);
+      res.cookies.set(USED_COOKIE, String(billing.used + 1), options);
+      return res;
+    }
+
+    const svc = createServiceClient();
+    if (svc) {
+      try {
+        await svc.from("ai_generations").insert({
+          trip_id: tripId,
+          kind: "full",
+          request: body,
+          response: {
+            warnings: generated.warnings,
+            popularityUsed: generated.popularityUsed,
+          },
+        });
+      } catch {
+        /* analytics row is optional */
+      }
+    }
+
+    try {
+      await trackServerEvent({
+        event: AnalyticsEvent.TripPlanned,
+        userId: user.id,
+        properties: {
+          tripId,
+          destination: destinationLabel,
+          multiCity: (resolvedLegs?.length ?? 0) > 1,
+        },
+        path: "/trips/new",
+      });
+    } catch {
+      /* analytics must not fail trip create */
+    }
 
     const res = NextResponse.json({ tripId, warnings: generated.warnings });
     const options = {
@@ -476,7 +561,9 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-    const message = err instanceof Error ? err.message : "Create failed";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json(
+      { error: dbError(err, "Create failed").message },
+      { status: 400 },
+    );
   }
 }

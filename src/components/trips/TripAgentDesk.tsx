@@ -205,20 +205,100 @@ export function TripAgentDesk({
       {/* Hero + trip header */}
       <section className="overflow-hidden rounded-[20px] border border-[#E1E5F0] bg-white shadow-[0_8px_24px_rgba(8,11,58,0.05)]">
         {!lead ? (
-          <div className="bg-gradient-to-br from-[#080B3A] via-[#12185C] to-[#0400FF] px-5 py-16 text-center text-white sm:py-20">
+          <div className="bg-gradient-to-br from-[#080B3A] via-[#12185C] to-[#0400FF] px-5 py-14 text-center text-white sm:py-20">
             <p className="text-3xl font-bold tracking-tight">Plan a trip</p>
             <p className="mx-auto mt-2 max-w-md text-sm text-white/75">
               Type the full city name, then choose it from the list. Your trip
               sheet opens after you pick.
             </p>
-            <div className="mx-auto mt-6 max-w-sm text-left">
-              <CityField
-                label="Where first?"
-                city={places[0]?.city ?? ""}
-                suggestions={places[0]?.suggestions ?? []}
-                onChange={(value) => onCityInput(0, value)}
-                onPick={(index) => onPickSuggestion(0, index)}
-              />
+
+            <div className="mx-auto mt-6 flex justify-center">
+              <div
+                className="relative grid w-full max-w-xs grid-cols-2 rounded-full bg-white/15 p-1 text-xs font-semibold"
+                role="tablist"
+                aria-label="Trip type"
+              >
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-full bg-white shadow-sm transition-all duration-200"
+                  style={{
+                    left: multiCity ? "calc(50% + 2px)" : "4px",
+                  }}
+                />
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={!multiCity}
+                  className={`relative z-[1] rounded-full px-3 py-2 transition-colors ${
+                    !multiCity ? "text-[#080B3A]" : "text-white/80"
+                  }`}
+                  onClick={() => onMultiCity(false)}
+                >
+                  Single city
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={multiCity}
+                  className={`relative z-[1] rounded-full px-3 py-2 transition-colors ${
+                    multiCity ? "text-[#080B3A]" : "text-white/80"
+                  }`}
+                  onClick={() => onMultiCity(true)}
+                >
+                  Multi-city
+                </button>
+              </div>
+            </div>
+
+            <div
+              className={`mx-auto mt-6 text-left ${
+                multiCity
+                  ? "flex max-w-3xl flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end"
+                  : "max-w-sm"
+              }`}
+            >
+              {(multiCity ? places : places.slice(0, 1)).map((place, index) => (
+                <div
+                  key={`hero-city-${index}`}
+                  className={
+                    multiCity
+                      ? "min-w-[12rem] flex-1 rounded-[14px] bg-white p-3 shadow-sm"
+                      : "rounded-[14px] bg-white p-3 shadow-sm"
+                  }
+                >
+                  <CityField
+                    label={
+                      multiCity
+                        ? index === 0
+                          ? "First stop"
+                          : `Stop ${index + 1}`
+                        : "Where first?"
+                    }
+                    city={place.city}
+                    suggestions={place.suggestions}
+                    onChange={(value) => onCityInput(index, value)}
+                    onPick={(pick) => onPickSuggestion(index, pick)}
+                  />
+                  {multiCity && index > 0 ? (
+                    <button
+                      type="button"
+                      className="mt-2 text-xs font-semibold text-[#B91C1C]"
+                      onClick={() => onRemoveCity(index)}
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+              {multiCity ? (
+                <button
+                  type="button"
+                  onClick={onAddCity}
+                  className="inline-flex min-h-[3.25rem] min-w-[8.5rem] items-center justify-center rounded-[14px] border border-dashed border-white/55 bg-white/10 px-4 text-sm font-semibold text-white transition hover:bg-white/20"
+                >
+                  Add trip
+                </button>
+              ) : null}
             </div>
           </div>
         ) : (
@@ -244,13 +324,24 @@ export function TripAgentDesk({
 
             <div className="space-y-4 p-4 sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="inline-flex rounded-full bg-[#F5F7FF] p-1">
+                <div
+                  className="relative grid w-full max-w-xs grid-cols-2 rounded-full bg-[#EEF1F8] p-1 text-xs font-semibold"
+                  role="tablist"
+                  aria-label="Trip type"
+                >
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-full bg-white shadow-sm transition-all duration-200"
+                    style={{
+                      left: multiCity ? "calc(50% + 2px)" : "4px",
+                    }}
+                  />
                   <button
                     type="button"
-                    className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
-                      !multiCity
-                        ? "bg-[#0400FF] text-white"
-                        : "text-[#0400FF]"
+                    role="tab"
+                    aria-selected={!multiCity}
+                    className={`relative z-[1] rounded-full px-3 py-2 transition-colors ${
+                      !multiCity ? "text-[#080B3A]" : "text-[#6B7280]"
                     }`}
                     onClick={() => onMultiCity(false)}
                   >
@@ -258,10 +349,10 @@ export function TripAgentDesk({
                   </button>
                   <button
                     type="button"
-                    className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
-                      multiCity
-                        ? "bg-[#0400FF] text-white"
-                        : "text-[#0400FF]"
+                    role="tab"
+                    aria-selected={multiCity}
+                    className={`relative z-[1] rounded-full px-3 py-2 transition-colors ${
+                      multiCity ? "text-[#080B3A]" : "text-[#6B7280]"
                     }`}
                     onClick={() => onMultiCity(true)}
                   >
@@ -276,13 +367,52 @@ export function TripAgentDesk({
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <CityField
-                  label="City"
-                  city={places[0]?.city ?? ""}
-                  suggestions={places[0]?.suggestions ?? []}
-                  onChange={(value) => onCityInput(0, value)}
-                  onPick={(index) => onPickSuggestion(0, index)}
-                />
+                {!multiCity ? (
+                  <CityField
+                    label="City"
+                    city={places[0]?.city ?? ""}
+                    suggestions={places[0]?.suggestions ?? []}
+                    onChange={(value) => onCityInput(0, value)}
+                    onPick={(index) => onPickSuggestion(0, index)}
+                  />
+                ) : (
+                  <div className="sm:col-span-2 lg:col-span-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                      {places.map((place, index) => (
+                        <div
+                          key={`sheet-city-${index}-${place.arrivalDate ?? ""}`}
+                          className="min-w-[12rem] flex-1 rounded-[14px] border border-[#E1E5F0] bg-white p-3"
+                        >
+                          <CityField
+                            label={
+                              index === 0 ? "First stop" : `Stop ${index + 1}`
+                            }
+                            city={place.city}
+                            suggestions={place.suggestions}
+                            onChange={(value) => onCityInput(index, value)}
+                            onPick={(pick) => onPickSuggestion(index, pick)}
+                          />
+                          {index > 0 ? (
+                            <button
+                              type="button"
+                              className="mt-2 text-xs font-semibold text-[#B91C1C]"
+                              onClick={() => onRemoveCity(index)}
+                            >
+                              Remove
+                            </button>
+                          ) : null}
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={onAddCity}
+                        className="inline-flex min-h-[3.25rem] min-w-[8.5rem] items-center justify-center rounded-[14px] border border-dashed border-[#0400FF]/45 bg-[#F5F7FF] px-4 text-sm font-semibold text-[#0400FF]"
+                      >
+                        Add trip
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div>
                   <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
                     Title
@@ -327,23 +457,16 @@ export function TripAgentDesk({
               {multiCity ? (
                 <div className="space-y-3 border-t border-[#F0F2F8] pt-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
-                    Stops (ordered by date)
+                    Stop dates (ordered by arrival)
                   </p>
                   {places.map((place, index) => (
                     <div
-                      key={`stop-${index}-${place.arrivalDate ?? ""}`}
-                      className="grid items-end gap-3 rounded-[12px] border border-[#F0F2F8] bg-[#FAFBFF] p-3 sm:grid-cols-[1.2fr_1fr_1fr_auto]"
+                      key={`stop-dates-${index}-${place.arrivalDate ?? ""}`}
+                      className="grid items-end gap-3 rounded-[12px] border border-[#F0F2F8] bg-[#FAFBFF] p-3 sm:grid-cols-[1fr_1fr_auto]"
                     >
-                      <CityField
-                        label={`Stop ${index + 1}`}
-                        city={place.city}
-                        suggestions={place.suggestions}
-                        onChange={(value) => onCityInput(index, value)}
-                        onPick={(pick) => onPickSuggestion(index, pick)}
-                      />
                       <div>
                         <Label className="text-xs uppercase text-[#6B7280]">
-                          Arrival
+                          {place.city.trim() || `Stop ${index + 1}`} · Arrival
                         </Label>
                         <Input
                           type="date"
@@ -384,26 +507,11 @@ export function TripAgentDesk({
                           }}
                         />
                       </div>
-                      {index > 0 ? (
-                        <button
-                          type="button"
-                          className="pb-2 text-sm font-semibold text-[#B91C1C]"
-                          onClick={() => onRemoveCity(index)}
-                        >
-                          Remove
-                        </button>
-                      ) : (
-                        <span className="pb-2 text-xs text-[#9CA3AF]">First</span>
-                      )}
+                      <span className="pb-2 text-xs text-[#9CA3AF]">
+                        {index === 0 ? "First" : `Stop ${index + 1}`}
+                      </span>
                     </div>
                   ))}
-                  <button
-                    type="button"
-                    className="text-sm font-semibold text-[#0400FF]"
-                    onClick={onAddCity}
-                  >
-                    Add city
-                  </button>
                 </div>
               ) : null}
             </div>
@@ -835,14 +943,15 @@ function CityField({
         }}
         placeholder="Tokyo"
         autoComplete="off"
+        className="!bg-white !text-[#080B3A] caret-[#080B3A] placeholder:!text-[#9299B5]"
       />
       {showList ? (
-        <ul className="absolute z-20 mt-1 max-h-44 w-full overflow-auto rounded-[12px] border border-[#E1E5F0] bg-white shadow-lg">
+        <ul className="absolute z-20 mt-1 max-h-44 w-full overflow-auto rounded-[12px] border border-[#E1E5F0] bg-white text-[#080B3A] shadow-lg">
           {suggestions.map((item, index) => (
             <li key={item.key}>
               <button
                 type="button"
-                className="w-full px-3 py-2 text-left text-sm hover:bg-[#DDE1FF]"
+                className="w-full px-3 py-2 text-left text-sm text-[#080B3A] hover:bg-[#DDE1FF]"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => onPick(index)}
               >
@@ -853,7 +962,7 @@ function CityField({
         </ul>
       ) : null}
       {focused && city.trim().length > 0 && city.trim().length < 3 ? (
-        <p className="mt-1 text-[11px] text-[#9CA3AF]">
+        <p className="mt-1 text-[11px] text-[#6B7280]">
           Keep typing the full name, then choose a match.
         </p>
       ) : null}
@@ -1013,17 +1122,29 @@ function AgentThread({
     history: { role: "user" | "assistant"; text: string }[],
     message: string,
   ) {
+    // Keep the latest turns only — long multi-city chats used to exceed the API cap.
+    const trimmedHistory = history.slice(-40);
+    const traveler = readTraveler();
     const res = await fetch("/api/trips/clarify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...payload.current,
-        ...(readTraveler() ? { traveler: readTraveler() } : {}),
-        history,
-        message,
+        ...(traveler
+          ? {
+              traveler: {
+                completed: traveler.completed,
+                age: traveler.age,
+                dream: traveler.dream,
+                answers: traveler.answers.slice(0, 8),
+              },
+            }
+          : {}),
+        history: trimmedHistory,
+        message: message.slice(0, 6000),
       }),
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error ?? "Could not continue");
     if (data.extracted && typeof data.extracted === "object") {
       onBriefParsedRef.current?.(data.extracted as Record<string, unknown>);

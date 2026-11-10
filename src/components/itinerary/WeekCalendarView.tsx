@@ -1,11 +1,21 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { formatTripDate } from "@/lib/format-date";
 import { addCalendarDays } from "@/lib/trips/dates";
 import type { ActivityRow } from "@/lib/types/trip";
+
+type ComposerMode = "find" | "manual";
+
+type PlaceHit = {
+  id: string;
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+};
 
 const HOUR_START = 6;
 const HOUR_END = 23;
@@ -115,17 +125,15 @@ export function WeekCalendarView({
   const [weekStart, setWeekStart] = useState(0);
   const [draft, setDraft] = useState<DraftSlot | null>(null);
   const [dragging, setDragging] = useState<DraftSlot | null>(null);
+  const [mode, setMode] = useState<ComposerMode>("find");
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<PlaceHit[]>([]);
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
-  const [askAi, setAskAi] = useState(false);
-  const [aiSuggestion, setAiSuggestion] = useState<{
-    name: string;
-    address?: string | null;
-    lat?: number | null;
-    lng?: number | null;
-  } | null>(null);
+  const [aiSuggestions, setAiSuggestions] = useState<PlaceHit[]>([]);
+  const [picked, setPicked] = useState<PlaceHit | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const dragOrigin = useRef<{ dayIndex: number; minutes: number } | null>(
     null,
@@ -142,10 +150,13 @@ export function WeekCalendarView({
   function closeComposer() {
     setDraft(null);
     setDragging(null);
+    setMode("find");
     setName("");
     setNote("");
-    setAskAi(false);
-    setAiSuggestion(null);
+    setSearchQuery("");
+    setSearchResults([]);
+    setAiSuggestions([]);
+    setPicked(null);
     dragOrigin.current = null;
   }
 
@@ -158,8 +169,9 @@ export function WeekCalendarView({
       endMinutes: minutes + 60,
     });
     setDraft(null);
-    setAskAi(false);
-    setAiSuggestion(null);
+    setMode("find");
+    setAiSuggestions([]);
+    setPicked(null);
   }
 
   function moveDrag(clientY: number, columnTop: number) {
@@ -187,72 +199,105 @@ export function WeekCalendarView({
       endMinutes: Math.max(start + 30, end),
     });
     setDragging(null);
-    setAskAi(true);
+    setMode("find");
     setName("");
     setNote("");
-    setAiSuggestion(null);
+    setSearchQuery("");
+    setSearchResults([]);
+    setAiSuggestions([]);
+    setPicked(null);
     dragOrigin.current = null;
   }
 
-  async function runAiFill() {
+  const draftNear = useMemo(() => {
+    if (!draft) return null;
+    const hit = days[draft.dayIndex]?.activities.find(
+      (a) => a.lat != null && a.lng != null,
+    );
+    if (hit?.lat == null || hit.lng == null) return null;
+    return { lat: hit.lat, lng: hit.lng };
+  }, [draft, days]);
+
+  useEffect(() => {
+    if (!draft || mode !== "manual") {
+      setSearchResults([]);
+      return;
+    }
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams({ q, limit: "6" });
+      if (draftNear) {
+        params.set("lat", String(draftNear.lat));
+        params.set("lng", String(draftNear.lng));
+      }
+      void fetch(`/api/places/search?${params}`)
+        .then((res) => res.json())
+        .then((data: { results?: PlaceHit[] }) =>
+          setSearchResults(data.results ?? []),
+        )
+        .catch(() => setSearchResults([]));
+    }, 280);
+    return () => window.clearTimeout(timer);
+  }, [draft, mode, searchQuery, draftNear]);
+
+  async function runFindHere() {
     if (!draft) return;
     setAiBusy(true);
+    setAiSuggestions([]);
     try {
       const city =
         dayCities?.[draft.dayIndex]?.city ||
         days[draft.dayIndex]?.city ||
         "city";
       const q = `${timeOfDayHint(draft.startMinutes)} ${city}`;
-      const near = days[draft.dayIndex]?.activities.find(
-        (a) => a.lat != null && a.lng != null,
-      );
       const params = new URLSearchParams({ q, limit: "5" });
-      if (near?.lat != null && near.lng != null) {
-        params.set("lat", String(near.lat));
-        params.set("lng", String(near.lng));
+      if (draftNear) {
+        params.set("lat", String(draftNear.lat));
+        params.set("lng", String(draftNear.lng));
       }
       const res = await fetch(`/api/places/search?${params}`);
-      const data = (await res.json()) as {
-        results?: {
-          name?: string;
-          address?: string;
-          lat?: number;
-          lng?: number;
-        }[];
-      };
-      const hit = data.results?.[0];
-      if (hit?.name) {
-        setAiSuggestion({
-          name: hit.name,
-          address: hit.address ?? null,
-          lat: hit.lat ?? null,
-          lng: hit.lng ?? null,
-        });
-        setName(hit.name);
+      const data = (await res.json()) as { results?: PlaceHit[] };
+      const hits = (data.results ?? []).filter((hit) => hit.name);
+      setAiSuggestions(hits);
+      if (hits[0]) {
+        setPicked(hits[0]);
+        setName(hits[0].name);
         setNote(
-          note ||
-            `AI suggestion for ${formatClock(draft.startMinutes)}–${formatClock(draft.endMinutes)}`,
+          `Suggested for ${formatClock(draft.startMinutes)}–${formatClock(draft.endMinutes)} in ${city}`,
         );
       } else {
-        setName((current) => current || `Time in ${city}`);
         setNote(
-          (current) =>
-            current ||
-            `Fill this ${formatClock(draft.startMinutes)}–${formatClock(draft.endMinutes)} slot in ${city}.`,
+          `No nearby match yet — switch to Manual input to search in ${city}.`,
         );
       }
-      setAskAi(false);
     } catch {
-      setName((current) => current || "New stop");
-      setAskAi(false);
+      setNote("Could not find a place — try Manual input search.");
     } finally {
       setAiBusy(false);
     }
   }
 
+  function pickPlace(hit: PlaceHit, fromAi: boolean) {
+    setPicked(hit);
+    setName(hit.name);
+    if (fromAi) {
+      setNote(
+        (current) =>
+          current ||
+          `Suggested for ${formatClock(draft!.startMinutes)}–${formatClock(draft!.endMinutes)}`,
+      );
+    }
+    setSearchQuery("");
+    setSearchResults([]);
+  }
+
   async function saveDraft() {
     if (!draft) return;
-    const title = name.trim() || aiSuggestion?.name || "New stop";
+    const title = name.trim() || picked?.name || "New stop";
     setBusy(true);
     try {
       await onAddStop({
@@ -264,10 +309,10 @@ export function WeekCalendarView({
           15,
           draft.endMinutes - draft.startMinutes,
         ),
-        address: aiSuggestion?.address,
-        lat: aiSuggestion?.lat,
-        lng: aiSuggestion?.lng,
-        useAi: Boolean(aiSuggestion),
+        address: picked?.address,
+        lat: picked?.lat,
+        lng: picked?.lng,
+        useAi: mode === "find" && Boolean(picked),
       });
       closeComposer();
     } finally {
@@ -285,7 +330,8 @@ export function WeekCalendarView({
             Week calendar
           </h2>
           <p className="text-xs text-[#6B7280]">
-            Drag on a day from start to end time to add a stop.
+            Drag a time range on a day — then find a place nearby or search
+            manually.
           </p>
         </div>
         {days.length > MAX_VISIBLE_DAYS ? (
@@ -463,48 +509,169 @@ export function WeekCalendarView({
       </div>
 
       {draft ? (
-        <div className="border-t border-[#E1E5F0] bg-[#F5F7FF] px-4 py-3">
-          <div className="mx-auto max-w-md rounded-[12px] border border-[#E1E5F0] bg-white p-3 shadow-sm">
-            <p className="text-xs font-semibold text-[#080B3A]">
-              Day {draft.dayIndex + 1} · {formatClock(draft.startMinutes)}–
-              {formatClock(draft.endMinutes)}
-            </p>
-            {askAi ? (
-              <div className="mt-3 space-y-2">
-                <p className="text-sm text-[#4B5563]">Use AI to fill?</p>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    disabled={aiBusy}
-                    onClick={() => void runAiFill()}
-                  >
-                    {aiBusy ? "Finding a place…" : "Yes, use AI"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setAskAi(false)}
-                  >
-                    I’ll type it
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={closeComposer}
-                  >
-                    Cancel
-                  </Button>
-                </div>
+        <div
+          className="fixed inset-0 z-[80] flex items-end justify-center bg-[#080B3A]/35 p-4 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Add a stop"
+          onClick={closeComposer}
+        >
+          <div
+            className="w-full max-w-md rounded-[16px] border border-[#E1E5F0] bg-white p-4 shadow-[0_16px_48px_rgba(8,11,58,0.22)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-[#080B3A]">
+                  Day {draft.dayIndex + 1} ·{" "}
+                  {formatClock(draft.startMinutes)}–
+                  {formatClock(draft.endMinutes)}
+                </p>
+                <p className="mt-0.5 text-xs text-[#6B7280]">
+                  {dayCities?.[draft.dayIndex]?.city ||
+                    days[draft.dayIndex]?.city ||
+                    "Add something in this time slot"}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="text-xs font-semibold text-[#6B7280]"
+                onClick={closeComposer}
+              >
+                Close
+              </button>
+            </div>
+
+            <Button
+              type="button"
+              className="mt-4 w-full"
+              disabled={aiBusy}
+              onClick={() => {
+                setMode("find");
+                void runFindHere();
+              }}
+            >
+              {aiBusy ? "Looking nearby…" : "Find me something here"}
+            </Button>
+
+            <div className="mt-4">
+              <div
+                className="relative grid grid-cols-2 rounded-full bg-[#EEF1F8] p-1 text-xs font-semibold"
+                role="tablist"
+                aria-label="How to add this stop"
+              >
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute bottom-1 top-1 w-[calc(50%-4px)] rounded-full bg-white shadow-sm transition-all duration-200"
+                  style={{
+                    left: mode === "manual" ? "calc(50% + 2px)" : "4px",
+                  }}
+                />
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === "find"}
+                  className={`relative z-[1] rounded-full px-3 py-2 transition-colors ${
+                    mode === "find" ? "text-[#080B3A]" : "text-[#6B7280]"
+                  }`}
+                  onClick={() => setMode("find")}
+                >
+                  Find for me
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === "manual"}
+                  className={`relative z-[1] rounded-full px-3 py-2 transition-colors ${
+                    mode === "manual" ? "text-[#080B3A]" : "text-[#6B7280]"
+                  }`}
+                  onClick={() => setMode("manual")}
+                >
+                  Manual input
+                </button>
+              </div>
+            </div>
+
+            {mode === "find" ? (
+              <div className="mt-4 space-y-3">
+                <p className="text-xs text-[#6B7280]">
+                  Tap Find me something here for a nearby suggestion that fits
+                  this time of day. Or slide to Manual input to search yourself.
+                </p>
+                {aiSuggestions.length ? (
+                  <ul className="max-h-44 space-y-1 overflow-auto rounded-[12px] border border-[#E1E5F0]">
+                    {aiSuggestions.map((hit) => (
+                      <li key={hit.id}>
+                        <button
+                          type="button"
+                          className={`w-full px-3 py-2 text-left text-sm hover:bg-[#F5F7FF] ${
+                            picked?.id === hit.id ? "bg-[#EEF1FF]" : ""
+                          }`}
+                          onClick={() => pickPlace(hit, true)}
+                        >
+                          <span className="font-medium text-[#080B3A]">
+                            {hit.name}
+                          </span>
+                          <span className="mt-0.5 block truncate text-[11px] text-[#6B7280]">
+                            {hit.address}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {picked ? (
+                  <p className="rounded-[10px] bg-[#F5F7FF] px-3 py-2 text-xs text-[#080B3A]">
+                    Selected: <span className="font-semibold">{picked.name}</span>
+                  </p>
+                ) : null}
+                {note && !aiSuggestions.length ? (
+                  <p className="text-xs text-[#6B7280]">{note}</p>
+                ) : null}
               </div>
             ) : (
-              <div className="mt-3 space-y-2">
+              <div className="mt-4 space-y-3">
+                <div className="relative">
+                  <Label>Search places</Label>
+                  <Input
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Cafe, museum, park…"
+                    autoFocus
+                    autoComplete="off"
+                  />
+                  {searchResults.length ? (
+                    <ul className="absolute z-20 mt-1 max-h-40 w-full overflow-auto rounded-[10px] border border-[#E1E5F0] bg-white shadow-lg">
+                      {searchResults.map((hit) => (
+                        <li key={hit.id}>
+                          <button
+                            type="button"
+                            className="w-full px-3 py-2 text-left text-sm hover:bg-[#DDE1FF]"
+                            onClick={() => pickPlace(hit, false)}
+                          >
+                            <span className="font-medium text-[#080B3A]">
+                              {hit.name}
+                            </span>
+                            <span className="mt-0.5 block truncate text-[11px] text-[#6B7280]">
+                              {hit.address}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
                 <div>
-                  <Label>Place</Label>
+                  <Label>Place name</Label>
                   <Input
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Museum, cafe, hotel…"
-                    autoFocus
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      if (picked && e.target.value !== picked.name) {
+                        setPicked(null);
+                      }
+                    }}
+                    placeholder="Or type a custom stop name"
                   />
                 </div>
                 <div>
@@ -515,32 +682,21 @@ export function WeekCalendarView({
                     placeholder="Optional detail"
                   />
                 </div>
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <Button
-                    type="button"
-                    disabled={busy || (!name.trim() && !aiSuggestion)}
-                    onClick={() => void saveDraft()}
-                  >
-                    {busy ? "Saving…" : "Add stop"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={aiBusy}
-                    onClick={() => void runAiFill()}
-                  >
-                    {aiBusy ? "Finding…" : "Use AI to fill"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={closeComposer}
-                  >
-                    Cancel
-                  </Button>
-                </div>
               </div>
             )}
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                disabled={busy || (!name.trim() && !picked)}
+                onClick={() => void saveDraft()}
+              >
+                {busy ? "Saving…" : "Add stop"}
+              </Button>
+              <Button type="button" variant="ghost" onClick={closeComposer}>
+                Cancel
+              </Button>
+            </div>
           </div>
         </div>
       ) : null}
