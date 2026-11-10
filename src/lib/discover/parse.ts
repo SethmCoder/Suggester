@@ -1,4 +1,5 @@
 import { groqChat } from "@/lib/ai/groq";
+import { DESTINATION_CATALOG } from "./catalog";
 import type {
   BudgetTier,
   DiscoverInterest,
@@ -118,6 +119,54 @@ export function parseDiscoveryQueryLocal(text: string): DiscoveryFilters {
   };
 }
 
+function sanitizeShortlist(ids: unknown): string[] | undefined {
+  if (!Array.isArray(ids)) return undefined;
+  const allowed = new Set(DESTINATION_CATALOG.map((row) => row.id));
+  const out: string[] = [];
+  for (const value of ids) {
+    if (typeof value !== "string") continue;
+    const id = value.trim().toLowerCase().replace(/\s+/g, "-");
+    if (!allowed.has(id) || out.includes(id)) continue;
+    out.push(id);
+    if (out.length >= 8) break;
+  }
+  return out.length ? out : undefined;
+}
+
+/** Ask the model which catalog cities best answer the question (ids only). */
+export async function shortlistCatalogIds(
+  text: string,
+  interests: DiscoverInterest[] = [],
+): Promise<string[] | undefined> {
+  const catalogLines = DESTINATION_CATALOG.map(
+    (row) =>
+      `${row.id}|${row.name}|${row.country}|${row.region}|${row.interests.join(",")}|${row.lesserKnown ? "quieter" : "headline"}`,
+  ).join("\n");
+  const modeled = await groqChat({
+    optional: true,
+    effort: "low",
+    responseFormat: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content:
+          "You pick destinations for a traveler from a FIXED catalog only. Return JSON {\"ids\":[\"id\",...]} with 5–8 catalog ids best matching their question and interests, best first. Prefer specific fits (budget, vibe, region, season, quieter options) over repeating the same headline capitals every time. Never invent ids outside the catalog list.",
+      },
+      {
+        role: "user",
+        content: `Question: ${text}\nInterests: ${interests.join(", ") || "unspecified"}\nCatalog (id|name|country|region|interests|note):\n${catalogLines}`,
+      },
+    ],
+  });
+  if (!modeled) return undefined;
+  try {
+    const parsed = JSON.parse(modeled) as { ids?: unknown };
+    return sanitizeShortlist(parsed.ids);
+  } catch {
+    return undefined;
+  }
+}
+
 export async function parseDiscoveryQuery(text: string): Promise<DiscoveryFilters> {
   const local = parseDiscoveryQueryLocal(text);
   const modeled = await groqChat({
@@ -128,14 +177,22 @@ export async function parseDiscoveryQuery(text: string): Promise<DiscoveryFilter
       {
         role: "system",
         content:
-          "Extract travel discovery filters as JSON. Keys: interests (array from architecture,history,food,nature,aviation,beaches,culture,nightlife,museums,adventure,shopping), budgetMax (number or null), durationDays (number or null), region (europe|asia|north-america|latin-america|middle-east|africa|oceania or null), seasonMonth (1-12 or null), climate (warm|cool|either), international (boolean), similarTo (string or null), lesserKnownOnly (boolean). Do not invent destinations. Use null when unknown.",
+          "Extract travel discovery filters as JSON. Keys: interests (array from architecture,history,food,nature,aviation,beaches,culture,nightlife,museums,adventure,shopping), budgetMax (number or null), durationDays (number or null), region (europe|asia|north-america|latin-america|middle-east|africa|oceania or null), seasonMonth (1-12 or null), climate (warm|cool|either), international (boolean), similarTo (string or null), lesserKnownOnly (boolean), ids (array of 5–8 catalog destination ids that best answer the question, best first, or null). Do not invent destination names or ids outside the catalog. Use null when unknown.",
       },
-      { role: "user", content: text },
+      {
+        role: "user",
+        content: `Question: ${text}\nValid catalog ids: ${DESTINATION_CATALOG.map((row) => row.id).join(", ")}`,
+      },
     ],
   });
   if (!modeled) return local;
   try {
-    const parsed = JSON.parse(modeled) as Partial<DiscoveryFilters>;
+    const parsed = JSON.parse(modeled) as Partial<DiscoveryFilters> & {
+      ids?: unknown;
+    };
+    const shortlistIds =
+      sanitizeShortlist(parsed.ids) ??
+      sanitizeShortlist((parsed as { shortlistIds?: unknown }).shortlistIds);
     return {
       query: text,
       interests: Array.isArray(parsed.interests) && parsed.interests.length
@@ -154,6 +211,7 @@ export async function parseDiscoveryQuery(text: string): Promise<DiscoveryFilter
       international: parsed.international ?? local.international,
       similarTo: parsed.similarTo || local.similarTo,
       lesserKnownOnly: parsed.lesserKnownOnly ?? local.lesserKnownOnly,
+      shortlistIds,
     };
   } catch {
     return local;

@@ -25,7 +25,7 @@ describe("parseTripBrief", () => {
 
   it("marks covered topics so clarify can skip re-asking", () => {
     const covered = coveredClarifyTopics(
-      "Traveling with my 12 year old daughter. We like museums and food. Budget is $1500. Prefer under 15 minutes walking and mostly outdoors.",
+      "Traveling with my 12 year old daughter. We like museums and food. Dream trip: small local places, not tourist traps. Budget is $1500. Prefer under 15 minutes walking and mostly outdoors.",
       ["museums", "food"],
     );
     expect(covered.party).toBe(true);

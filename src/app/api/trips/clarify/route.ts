@@ -54,6 +54,8 @@ const bodySchema = z.object({
   idealTrip: z.string().optional(),
   cities: z.array(z.string()).optional(),
   tripTitle: z.string().optional(),
+  partyType: z.string().optional(),
+  dreamChoice: z.string().optional(),
   history: z.array(lineSchema).max(24).optional(),
   message: z.string().max(6000).optional(),
   traveler: travelerSchema.nullable().optional(),
@@ -66,6 +68,10 @@ Follow what the traveler actually asked. If they give freeform instructions (pac
 You also fill their trip sheet. When they state facts, put structured updates in sheetUpdates (only fields they clearly stated). Allowed keys: party, childAges, travelers, interests, mustSee, avoid, intensity (relaxed|balanced|packed), transport, indoorOutdoor (indoor|outdoor|either), maxWalkMinutes, budgetTotal, budgetAllocation, restaurantStyle, dreamStyle (local|sights|value|mix), summary.
 
 If they pasted a long brief: one short sentence acknowledging useful facts, then exactly one follow-up about something still missing.
+
+On the first turn (empty message / opening), ask what a dream trip would feel like for this destination — vibe, not logistics. Do not open with budget, party size, or walk time unless those are the only gaps left.
+
+After vibe, ask at least one destination-specific question tied to the city (examples: Seattle → aviation / Museum of Flight interest; Tokyo → temples vs neighborhoods; Paris → museum-heavy vs café wandering; Dubai → desert/marina vs city-center). Make the question concrete to that place, not generic.
 
 Never re-ask a fact they already gave. Never repeat a question already in history.
 Do not ask how many days, the dates, or which cities — those are on the form.
@@ -103,10 +109,27 @@ export async function POST(req: Request) {
   };
   const history = (body.history ?? []) as ChatLine[];
   const message = body.message?.trim() ?? "";
+  const sheetHints = [
+    body.idealTrip ?? "",
+    body.dreamChoice
+      ? body.dreamChoice === "small"
+        ? "Small local places, not tourist traps"
+        : body.dreamChoice === "sights"
+          ? "The well-known sights"
+          : body.dreamChoice === "value"
+            ? "Fun days that do not waste money"
+            : body.dreamChoice === "mix"
+              ? "A mix of walking, food, and highlights"
+              : `dream:${body.dreamChoice}`
+      : "",
+    body.partyType ? `traveling as ${body.partyType}` : "",
+    body.intensity ? `pace ${body.intensity}` : "",
+    body.transport ? `get around by ${body.transport}` : "",
+  ];
   const userCorpus = [
     ...history.filter((line) => line.role === "user").map((line) => line.text),
     message,
-    body.idealTrip ?? "",
+    ...sheetHints,
   ]
     .filter(Boolean)
     .join("\n");

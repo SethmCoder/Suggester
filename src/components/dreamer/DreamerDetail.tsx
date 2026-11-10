@@ -9,6 +9,7 @@ import { PasteDropZone } from "@/components/dreamer/PasteDropZone";
 import { buildDreamerSuggestions } from "@/lib/dreamer/suggestions";
 import {
   listDreamerBookings,
+  removeDreamerBooking,
   setDreamerBookings,
   titleCasePlace,
 } from "@/lib/dreamer/bookings-store";
@@ -18,7 +19,9 @@ import type {
   DreamerSuggestion,
 } from "@/lib/dreamer/types";
 import { getFutureTrip, updateFutureTrip } from "@/lib/future-trips/store";
+import { removeFutureTrip } from "@/lib/future-trips/sync";
 import type { FutureTrip } from "@/lib/future-trips/types";
+import { useRouter } from "next/navigation";
 import {
   destinationImageUrl,
   hasCuratedCityImage,
@@ -27,6 +30,7 @@ import {
 type Tab = "bookings" | "plan" | "places";
 
 export function DreamerDetail({ id }: { id: string }) {
+  const router = useRouter();
   const [trip, setTrip] = useState<FutureTrip | null>(null);
   const [bookings, setBookings] = useState<DreamerBooking[]>([]);
   const [suggestions, setSuggestions] = useState<DreamerSuggestion[]>([]);
@@ -40,9 +44,53 @@ export function DreamerDetail({ id }: { id: string }) {
   const [tab, setTab] = useState<Tab>("bookings");
   const [selected, setSelected] = useState<DreamerBooking | null>(null);
   const [showEmail, setShowEmail] = useState(false);
+  const [deletingPlan, setDeletingPlan] = useState(false);
   const [detourState, setDetourState] = useState<
     Record<string, "accepted" | "dismissed" | "pending">
   >({});
+
+  async function deleteBooking(booking: DreamerBooking) {
+    if (
+      !window.confirm(
+        `Remove “${booking.title}” from this plan? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    const next = removeDreamerBooking(id, booking.id);
+    setBookings(next);
+    if (selected?.id === booking.id) setSelected(null);
+    try {
+      await fetch(`/api/dreamer/bookings/${booking.id}`, { method: "DELETE" });
+    } catch {
+      /* local already removed */
+    }
+    const local = getFutureTrip(id);
+    if (local) refreshSuggestions(next, local);
+    if (!next.length) {
+      updateFutureTrip(id, { status: "wishlist" });
+      setTrip(getFutureTrip(id));
+    }
+  }
+
+  async function deletePlan() {
+    const label = trip?.title || trip?.destination || "this plan";
+    if (
+      !window.confirm(
+        `Delete ${label}? Bookings attached on this device will be removed too.`,
+      )
+    ) {
+      return;
+    }
+    setDeletingPlan(true);
+    try {
+      await removeFutureTrip(id);
+      router.push("/future-plans");
+      router.refresh();
+    } finally {
+      setDeletingPlan(false);
+    }
+  }
 
   const loadBookings = useCallback(async () => {
     const local = listDreamerBookings(id);
@@ -210,9 +258,20 @@ export function DreamerDetail({ id }: { id: string }) {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
-      <Link href="/future-plans" className="text-sm font-semibold text-[#0400FF]">
-        ← Future Plans
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link href="/future-plans" className="text-sm font-semibold text-[#0400FF]">
+          ← Future Plans
+        </Link>
+        <Button
+          type="button"
+          variant="ghost"
+          className="text-[#B91C1C] hover:bg-[#FEF2F2]"
+          disabled={deletingPlan}
+          onClick={() => void deletePlan()}
+        >
+          {deletingPlan ? "Deleting…" : "Delete plan"}
+        </Button>
+      </div>
 
       <header className="overflow-hidden rounded-[20px] border border-[#E1E5F0] bg-white">
         {photo ? (
@@ -337,16 +396,19 @@ export function DreamerDetail({ id }: { id: string }) {
           ) : (
             <ul className="mt-3 space-y-2">
               {bookings.map((b) => (
-                <li key={b.id}>
+                <li
+                  key={b.id}
+                  className="flex items-stretch gap-2 rounded-[10px] border border-[#F0F2F8] px-2 py-1.5"
+                >
                   <button
                     type="button"
-                    className="flex w-full items-start justify-between gap-3 rounded-[10px] border border-[#F0F2F8] px-3 py-2 text-left hover:border-[#0400FF]/30"
+                    className="flex min-w-0 flex-1 items-start justify-between gap-3 px-1 py-1 text-left hover:opacity-90"
                     onClick={() => {
                       setSelected(b);
                       setShowEmail(false);
                     }}
                   >
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-sm font-medium text-[#080B3A]">
                         {b.title}
                       </p>
@@ -363,9 +425,16 @@ export function DreamerDetail({ id }: { id: string }) {
                             .join(" · ")}
                       </p>
                     </div>
-                    <span className="rounded-full bg-[#ECFDF5] px-2 py-0.5 text-[10px] font-semibold text-[#047857]">
+                    <span className="shrink-0 rounded-full bg-[#ECFDF5] px-2 py-0.5 text-[10px] font-semibold text-[#047857]">
                       {b.source === "paste" ? "Pasted" : "From email"}
                     </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="shrink-0 self-center rounded-[8px] px-2 py-1 text-xs font-semibold text-[#B91C1C] hover:bg-[#FEF2F2]"
+                    onClick={() => void deleteBooking(b)}
+                  >
+                    Delete
                   </button>
                 </li>
               ))}

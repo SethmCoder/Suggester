@@ -52,8 +52,9 @@ export function AvatarMenu({
         <div className="absolute right-0 z-50 mt-2 w-52 overflow-hidden rounded-[12px] border border-[#E1E5F0] bg-white py-1 shadow-[0_8px_28px_rgba(8,11,58,0.12)]">
           {email ? (
             <p className="truncate border-b border-[#E1E5F0] px-3 py-2 text-xs text-[#6B7280]">
-              {displayName ? `${displayName} · ` : ""}
-              {email}
+              {email === "demo@waypoint.app"
+                ? "Demo account · not signed in"
+                : `${displayName ? `${displayName} · ` : ""}${email}`}
             </p>
           ) : null}
           <Link

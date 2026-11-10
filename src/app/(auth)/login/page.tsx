@@ -44,6 +44,8 @@ function LoginForm() {
       setError(err.message);
       return;
     }
+    // Personal login ends demo — the two sessions must not share a browser.
+    await fetch("/api/demo/end", { method: "POST" }).catch(() => null);
     // Returning sign-in: mark intro done and hard-navigate so middleware
     // never bounces an existing account into the new-account survey.
     await fetch("/api/profile/intro/complete", { method: "POST" }).catch(

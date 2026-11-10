@@ -85,6 +85,14 @@ export async function patchFutureTrip(
 export async function removeFutureTrip(id: string) {
   store.deleteFutureTrip(id);
   try {
+    const { clearDreamerBookings } = await import(
+      "@/lib/dreamer/bookings-store"
+    );
+    clearDreamerBookings(id);
+  } catch {
+    /* offline / SSR */
+  }
+  try {
     await fetch(`/api/future-trips/${id}`, { method: "DELETE" });
   } catch {
     /* local already removed */

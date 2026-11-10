@@ -33,6 +33,23 @@ export function dreamBookingCount(dreamId: string): number {
   return listDreamerBookings(dreamId).length;
 }
 
+export function removeDreamerBooking(
+  dreamId: string,
+  bookingId: string,
+): DreamerBooking[] {
+  const next = listDreamerBookings(dreamId).filter(
+    (booking) => booking.id !== bookingId,
+  );
+  setDreamerBookings(dreamId, next);
+  return next;
+}
+
+export function clearDreamerBookings(dreamId: string) {
+  const store = read();
+  delete store[dreamId];
+  write(store);
+}
+
 export function titleCasePlace(name: string): string {
   return name
     .trim()

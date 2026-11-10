@@ -51,26 +51,32 @@ describe("destination discovery", () => {
     expect(ranked.some((row) => row.id === "kanazawa" || row.lesserKnown)).toBe(true);
   });
 
-  it("builds the Discover sections used by the page", () => {
+  it("builds a single Discover answer section", () => {
     const built = buildDiscoverSections({
       interests: ["architecture", "history"],
       budgetMax: 3000,
       durationDays: 10,
       climate: "either",
+      query: "architecture and history cities",
     });
-    const ids = built.sections.map((section) => section.id);
-    expect(ids).toEqual(
-      expect.arrayContaining([
-        "recommended",
-        "by-interest",
-        "by-region",
-        "by-season",
-        "by-budget",
-        "similar",
-        "lesser-known",
-        "continue",
-      ]),
-    );
+    expect(built.sections).toHaveLength(1);
+    expect(built.sections[0]?.id).toBe("recommended");
+    expect(built.sections[0]?.destinations.length).toBeGreaterThan(0);
+  });
+
+  it("honors an AI shortlist order for the answer list", () => {
+    const built = buildDiscoverSections({
+      interests: ["food", "culture"],
+      climate: "either",
+      query: "food-forward cities",
+      shortlistIds: ["hanoi", "oaxaca", "tokyo", "krakow"],
+    });
+    expect(built.sections[0]?.destinations.slice(0, 4).map((row) => row.id)).toEqual([
+      "hanoi",
+      "oaxaca",
+      "tokyo",
+      "krakow",
+    ]);
   });
 
   it("compares two to four destinations with transparent suitability breakdown", () => {

@@ -57,6 +57,8 @@ export type DiscoveryFilters = {
   similarTo?: string;
   lesserKnownOnly?: boolean;
   homeCountryCode?: string;
+  /** Ordered catalog ids that best answer the traveler's question. */
+  shortlistIds?: string[];
 };
 
 export type DestinationRecommendation = {

@@ -13,6 +13,7 @@ import {
   selfProGrantEnabled,
 } from "@/lib/billing/pro-grant";
 import { checkoutConfigured } from "@/lib/billing/stripe";
+import { DEMO_COOKIE, isDemoCookie } from "@/lib/demo/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   PLAN_COOKIE,
@@ -61,6 +62,23 @@ function applyEntitlementCookie(res: NextResponse, entitled: boolean) {
 export async function GET() {
   const jar = await cookies();
   const get = (name: string) => jar.get(name)?.value;
+  const demo = isDemoCookie(jar.get(DEMO_COOKIE)?.value);
+  // Demo account is not a personal login — never report signedIn while demo.
+  if (demo) {
+    const plan = readPlan(get);
+    return NextResponse.json({
+      ...plan,
+      generateAllowed: true,
+      entitled: false,
+      priceUsd: LIST_PRICES.proMonthlyUsd,
+      priceAnnualUsd: LIST_PRICES.proAnnualUsd,
+      checkoutAvailable: checkoutConfigured(),
+      signedIn: false,
+      isDemo: true,
+      selfGrantAvailable: false,
+      allowlisted: false,
+    });
+  }
   const user = await currentAuthUser();
   const access = await withProfileEntitlement(get, user ?? undefined);
   const plan = readPlan(get);
@@ -74,6 +92,7 @@ export async function GET() {
     priceAnnualUsd: LIST_PRICES.proAnnualUsd,
     checkoutAvailable: checkoutConfigured(),
     signedIn: Boolean(user),
+    isDemo: false,
     selfGrantAvailable: selfProGrantEnabled() && Boolean(user) && !entitled,
     allowlisted: emailGrantedPro(user?.email),
   });
@@ -84,6 +103,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const body = bodySchema.parse(await req.json());
   const jar = await cookies();
+  const demo = isDemoCookie(jar.get(DEMO_COOKIE)?.value);
   const current = readPlan((name) => jar.get(name)?.value);
   let plan = current.plan;
   let used = current.used;
@@ -94,6 +114,21 @@ export async function POST(req: Request) {
     if (name === USED_COOKIE) return String(used);
     return undefined;
   });
+  if (demo) {
+    const response = NextResponse.json({
+      ...next,
+      entitled: false,
+      priceUsd: LIST_PRICES.proMonthlyUsd,
+      priceAnnualUsd: LIST_PRICES.proAnnualUsd,
+      checkoutAvailable: checkoutConfigured(),
+      signedIn: false,
+      isDemo: true,
+      selfGrantAvailable: false,
+      allowlisted: false,
+    });
+    applyCookies(response, plan, used);
+    return response;
+  }
   const user = await currentAuthUser();
   const access = await withProfileEntitlement(
     (name) => jar.get(name)?.value,
@@ -107,6 +142,7 @@ export async function POST(req: Request) {
     priceAnnualUsd: LIST_PRICES.proAnnualUsd,
     checkoutAvailable: checkoutConfigured(),
     signedIn: Boolean(user),
+    isDemo: false,
     selfGrantAvailable: selfProGrantEnabled() && Boolean(user) && !entitled,
     allowlisted: emailGrantedPro(user?.email),
     message:

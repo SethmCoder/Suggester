@@ -24,7 +24,13 @@ export function PlanSummary({ tone = "dark" }: { tone?: "dark" | "light" }) {
       body: JSON.stringify({ action: "sync", created }),
     })
       .then((res) => res.json())
-      .then((data: BillingSnapshot) => setText(label(data)))
+      .then((data: BillingSnapshot & { isDemo?: boolean }) => {
+        if (data.isDemo) {
+          setText("Demo account · sample trips stay on this device.");
+          return;
+        }
+        setText(label(data));
+      })
       .catch(() => setText("Free · standard planner."));
   }, []);
 

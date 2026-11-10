@@ -13,7 +13,7 @@ import {
 } from "@/lib/dreamer/bookings-store";
 import type { DreamerBooking } from "@/lib/dreamer/types";
 import { listFutureTrips, updateFutureTrip } from "@/lib/future-trips/store";
-import { saveFutureTrip } from "@/lib/future-trips/sync";
+import { removeFutureTrip, saveFutureTrip } from "@/lib/future-trips/sync";
 import type { FutureTrip } from "@/lib/future-trips/types";
 import {
   destinationImageUrl,
@@ -212,7 +212,7 @@ export function DreamerBoard() {
                     </p>
                   </div>
                 </Link>
-                <div className="border-t border-[#F0F2F8] px-4 py-3">
+                <div className="space-y-3 border-t border-[#F0F2F8] px-4 py-3">
                   <PasteDropZone
                     preferredFutureTripId={trip.id}
                     compact
@@ -240,6 +240,24 @@ export function DreamerBoard() {
                       refresh();
                     }}
                   />
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      className="text-xs font-semibold text-[#B91C1C] hover:underline"
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            `Delete ${name}? Attached bookings on this device will be removed too.`,
+                          )
+                        ) {
+                          return;
+                        }
+                        void removeFutureTrip(trip.id).then(() => refresh());
+                      }}
+                    >
+                      Delete plan
+                    </button>
+                  </div>
                 </div>
               </li>
             );

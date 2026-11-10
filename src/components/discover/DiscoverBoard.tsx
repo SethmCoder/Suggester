@@ -65,12 +65,8 @@ export function DiscoverBoard() {
         .filter((row) => row.evidence >= 2)
         .map((row) => row.interest),
       dream: traveler.dream ?? intel.explicit.favoriteExperiences[0],
-      interests: [
-        ...effectiveInterests(intel),
-        ...traveler.answers
-          .flatMap((answer) => answer.answer.toLowerCase().split(/\W+/))
-          .filter(Boolean),
-      ],
+      // Only real travel interests — raw quiz tokens diluted every ranking.
+      interests: effectiveInterests(intel),
       personalizationEnabled: intel.personalizationEnabled,
       budgetMax: intel.explicit.budgetMax,
       durationDays: intel.explicit.preferredDurationDays,
@@ -152,7 +148,8 @@ export function DiscoverBoard() {
         <div className="min-w-0">
           <h1 className="text-[28px] font-bold tracking-tight text-[#1F2937]">Discover</h1>
           <p className="mt-1 max-w-2xl text-sm text-[#6B7280]">
-            Find destinations from your interests, budget, season, and saved places — not a generic top-ten list.
+            Ask a question and get one ranked answer list — matched to your
+            interests, budget, season, and saved places.
           </p>
         </div>
         <div className="flex gap-2">

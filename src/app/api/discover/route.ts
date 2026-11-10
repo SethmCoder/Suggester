@@ -8,7 +8,11 @@ import {
   currentMonthKey,
   gateFeature,
 } from "@/lib/billing/entitlements";
-import { parseDiscoveryQuery, parseDiscoveryQueryLocal } from "@/lib/discover/parse";
+import {
+  parseDiscoveryQuery,
+  parseDiscoveryQueryLocal,
+  shortlistCatalogIds,
+} from "@/lib/discover/parse";
 import { buildDiscoverSections } from "@/lib/discover/sections";
 import type { DiscoverInterest, DiscoverRegion } from "@/lib/discover/types";
 import { cacheGet, cacheSet } from "@/lib/http/accountless-fetch";
@@ -179,7 +183,7 @@ export async function POST(req: Request) {
   }
 
   const body = bodySchema.parse(await req.json());
-  const cacheKey = `discover:v1:${JSON.stringify({ body, intelligence })}`;
+  const cacheKey = `discover:v2:${JSON.stringify({ body, intelligence })}`;
   const cached = cacheGet<ReturnType<typeof buildDiscoverSections>>(cacheKey);
   if (cached) {
     return NextResponse.json({ ...cached, cached: true, limited: false });
@@ -200,16 +204,39 @@ export async function POST(req: Request) {
         homeCountryCode: body.homeCountryCode,
       };
 
+  const interestAllow = new Set([
+    "architecture",
+    "history",
+    "food",
+    "nature",
+    "aviation",
+    "beaches",
+    "culture",
+    "nightlife",
+    "museums",
+    "adventure",
+    "shopping",
+  ]);
   const interests = [
-    ...new Set([
-      ...(parsed.interests ?? []),
-      ...((body.interests ?? []) as DiscoverInterest[]),
-      ...((intelligence?.interests ?? []) as DiscoverInterest[]),
-    ]),
+    ...new Set(
+      [
+        ...(parsed.interests ?? []),
+        ...((body.interests ?? []) as string[]),
+        ...((intelligence?.interests ?? []) as string[]),
+      ].filter((value): value is DiscoverInterest =>
+        interestAllow.has(value),
+      ),
+    ),
   ];
+
+  let shortlistIds = parsed.shortlistIds;
+  if (!shortlistIds?.length && body.query?.trim()) {
+    shortlistIds = await shortlistCatalogIds(body.query.trim(), interests);
+  }
 
   const filters = {
     ...parsed,
+    query: body.query?.trim() || parsed.query,
     interests,
     budgetMax: body.budgetMax ?? parsed.budgetMax ?? intelligence?.budgetMax,
     durationDays:
@@ -221,6 +248,7 @@ export async function POST(req: Request) {
     lesserKnownOnly: body.lesserKnownOnly ?? parsed.lesserKnownOnly,
     international: body.international ?? parsed.international,
     homeCountryCode: body.homeCountryCode ?? parsed.homeCountryCode,
+    shortlistIds,
   };
 
   const built = buildDiscoverSections(filters, mergeContext(body, interests));

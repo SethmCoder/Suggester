@@ -47,12 +47,13 @@ describe("discover domain extras", () => {
     expect(scored.scoreBreakdown.preference).toBeLessThanOrEqual(0.2);
   });
 
-  it("builds continue-research section when saved names exist", () => {
+  it("returns only the top answer list", () => {
     const built = buildDiscoverSections(
       { interests: ["food"], climate: "either" },
       { savedNames: ["Tokyo", "Kyoto"], dream: "ramen and temples" },
     );
-    expect(built.sections.some((section) => section.id === "continue")).toBe(true);
+    expect(built.sections).toHaveLength(1);
+    expect(built.sections[0]?.id).toBe("recommended");
   });
 
   it("limits ranked results to the requested count", () => {
@@ -65,14 +66,14 @@ describe("discover domain extras", () => {
     expect(ranked).toHaveLength(3);
   });
 
-  it("includes lesser-known destinations in lesser-known section", () => {
+  it("can surface quieter catalog cities when shortlisted", () => {
     const built = buildDiscoverSections({
-      interests: ["culture"],
+      interests: ["culture", "food"],
       climate: "either",
-      lesserKnownOnly: true,
+      shortlistIds: ["hanoi", "oaxaca", "krakow"],
     });
-    const lesser = built.sections.find((section) => section.id === "lesser-known");
-    expect(lesser?.destinations.every((row) => row.lesserKnown)).toBe(true);
+    const ids = built.sections[0]?.destinations.map((row) => row.id) ?? [];
+    expect(ids.slice(0, 3)).toEqual(["hanoi", "oaxaca", "krakow"]);
   });
 
   it("does not invent dollar prices in budget notes", () => {

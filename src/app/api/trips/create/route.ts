@@ -463,6 +463,19 @@ export async function POST(req: Request) {
     }
     return res;
   } catch (err) {
+    if (err && typeof err === "object" && "issues" in err) {
+      const issues = (err as { issues: { path: (string | number)[]; message: string }[] })
+        .issues;
+      return NextResponse.json(
+        {
+          error: "Trip details look incomplete or invalid",
+          details: issues
+            .slice(0, 6)
+            .map((issue) => `${issue.path.join(".") || "body"}: ${issue.message}`),
+        },
+        { status: 400 },
+      );
+    }
     const message = err instanceof Error ? err.message : "Create failed";
     return NextResponse.json({ error: message }, { status: 400 });
   }

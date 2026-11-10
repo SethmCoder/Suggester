@@ -30,8 +30,12 @@ function interestOverlap(
   interests: DiscoverInterest[],
 ): number {
   if (!interests.length) return 0.55;
-  const hits = interests.filter((interest) => destination.interests.includes(interest));
-  return hits.length / interests.length;
+  // Only score against interests that exist in the catalog vocabulary for this city.
+  const hits = interests.filter((interest) =>
+    destination.interests.includes(interest),
+  );
+  const relevant = Math.max(1, Math.min(interests.length, 4));
+  return Math.min(1, hits.length / relevant);
 }
 
 function budgetFit(destination: DestinationRecord, filters: DiscoveryFilters): number {
@@ -124,6 +128,15 @@ function preferenceBoost(
       destination.name.toLowerCase().includes(similar)
     ) {
       score = Math.max(score, 0.9);
+    }
+  }
+  const shortlist = filters.shortlistIds ?? [];
+  if (shortlist.length) {
+    const index = shortlist.indexOf(destination.id);
+    if (index >= 0) {
+      score = Math.max(score, 0.95 - index * 0.04);
+    } else {
+      score = Math.min(score, 0.35);
     }
   }
   return score;
@@ -286,11 +299,27 @@ export function rankDestinations(
   context: ScoreContext = {},
   limit = 12,
 ): DestinationRecommendation[] {
-  return catalog
-    .filter((destination) => hardFilters(destination, filters))
+  const shortlist = filters.shortlistIds ?? [];
+  // When we have an explicit answer shortlist, do not hard-drop those cities
+  // for secondary filters (region / lesser-known) — the shortlist is the answer.
+  const pool = shortlist.length
+    ? catalog
+    : catalog.filter((destination) => hardFilters(destination, filters));
+  const scored = pool
     .map((destination) => scoreDestination(destination, filters, context))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+    .sort((a, b) => b.score - a.score);
+  if (!shortlist.length) return scored.slice(0, limit);
+
+  const byId = new Map(scored.map((row) => [row.id, row]));
+  const ordered: DestinationRecommendation[] = [];
+  for (const id of shortlist) {
+    const row = byId.get(id);
+    if (row) ordered.push(row);
+  }
+  for (const row of scored) {
+    if (!ordered.some((item) => item.id === row.id)) ordered.push(row);
+  }
+  return ordered.slice(0, limit);
 }
 
 export function compareDestinations(

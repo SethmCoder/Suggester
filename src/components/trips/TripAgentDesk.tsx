@@ -21,6 +21,8 @@ type PlaceDraft = {
   nights?: number;
   country?: string;
   countryCode?: string;
+  /** Set only after the traveler picks a suggestion — draft typing is not a place yet. */
+  geonameId?: number;
   suggestions: { key: string; label: string }[];
 };
 
@@ -158,16 +160,25 @@ export function TripAgentDesk({
   error: string | null;
   onGenerate: () => void;
 }) {
-  const lead = places[0]?.city.trim() || "";
+  // Hero / sheet only unlock after an explicit suggestion pick (geonameId).
+  const lead =
+    places[0]?.geonameId != null ? places[0].city.trim() : "";
   const photo = lead && hasCuratedCityImage(lead);
   const dateBounds = tripDateInputBounds();
   const overlay = lead
     ? formatCityOverlay(lead, places[0]?.countryCode)
     : "";
   const cityStrip = places
+    .filter((p) => p.geonameId != null && p.city.trim())
     .map((p) => p.city.trim())
-    .filter(Boolean)
     .join(" → ");
+  const committedCities = places
+    .filter((p) => p.geonameId != null && p.city.trim())
+    .map((p) => p.city.trim());
+  const committedKey = places
+    .map((p) => (p.geonameId != null ? String(p.geonameId) : ""))
+    .filter(Boolean)
+    .join("|");
 
   return (
     <div className="mx-auto max-w-6xl space-y-6" data-tour="tour-create-wizard">
@@ -177,8 +188,8 @@ export function TripAgentDesk({
           <div className="bg-gradient-to-br from-[#080B3A] via-[#12185C] to-[#0400FF] px-5 py-16 text-center text-white sm:py-20">
             <p className="text-3xl font-bold tracking-tight">Plan a trip</p>
             <p className="mx-auto mt-2 max-w-md text-sm text-white/75">
-              Start with a city. A landmark photo and your trip sheet appear once
-              you pick a place.
+              Type the full city name, then choose it from the list. Your trip
+              sheet opens after you pick.
             </p>
             <div className="mx-auto mt-6 max-w-sm text-left">
               <CityField
@@ -385,13 +396,18 @@ export function TripAgentDesk({
           <div className="grid items-start gap-6 lg:grid-cols-2">
             <section className="rounded-[20px] border border-[#E1E5F0] bg-white p-4 shadow-[0_8px_24px_rgba(8,11,58,0.05)] sm:p-6">
               <AgentThread
-                destination={destination}
-                cities={cities}
+                destination={lead || destination}
+                cities={committedCities.length ? committedCities : cities}
+                cityKey={committedKey}
                 startDate={startDate}
                 travelers={travelers}
                 interests={interests}
                 idealTrip={idealTrip}
                 tripTitle={tripTitle}
+                partyType={partyType}
+                intensity={intensity}
+                transport={transport}
+                dreamChoice={dreamChoice}
                 onExchange={onExchange}
                 onBriefParsed={onBriefParsed}
               />
@@ -743,6 +759,8 @@ function CityField({
   onChange: (value: string) => void;
   onPick: (index: number) => void;
 }) {
+  const [focused, setFocused] = useState(false);
+  const showList = focused && city.trim().length >= 3 && suggestions.length > 0;
   return (
     <div className="relative">
       <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
@@ -751,10 +769,15 @@ function CityField({
       <Input
         value={city}
         onChange={(e) => onChange(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => {
+          // Keep list clickable before blur closes it.
+          window.setTimeout(() => setFocused(false), 120);
+        }}
         placeholder="Tokyo"
         autoComplete="off"
       />
-      {suggestions.length ? (
+      {showList ? (
         <ul className="absolute z-20 mt-1 max-h-44 w-full overflow-auto rounded-[12px] border border-[#E1E5F0] bg-white shadow-lg">
           {suggestions.map((item, index) => (
             <li key={item.key}>
@@ -769,6 +792,11 @@ function CityField({
             </li>
           ))}
         </ul>
+      ) : null}
+      {focused && city.trim().length > 0 && city.trim().length < 3 ? (
+        <p className="mt-1 text-[11px] text-[#9CA3AF]">
+          Keep typing the full name, then choose a match.
+        </p>
       ) : null}
     </div>
   );
@@ -855,21 +883,32 @@ function MajorStopsField({
 function AgentThread({
   destination,
   cities,
+  cityKey,
   startDate,
   travelers,
   interests,
   idealTrip,
   tripTitle,
+  partyType,
+  intensity,
+  transport,
+  dreamChoice,
   onExchange,
   onBriefParsed,
 }: {
   destination: string;
   cities: string[];
+  /** Stable key from selected GeoNames ids — not draft typing. */
+  cityKey: string;
   startDate: string;
   travelers: number;
   interests: string[];
   idealTrip: string;
   tripTitle: string;
+  partyType: string;
+  intensity: string;
+  transport: string;
+  dreamChoice: string;
   onExchange: (userText: string, reply: string) => void;
   onBriefParsed?: (extracted: Record<string, unknown>) => void;
 }) {
@@ -883,6 +922,7 @@ function AgentThread({
   const onBriefParsedRef = useRef(onBriefParsed);
   onBriefParsedRef.current = onBriefParsed;
   const userSpoke = useRef(false);
+  const openedFor = useRef<string | null>(null);
   const payload = useRef({
     destination,
     cities,
@@ -891,6 +931,10 @@ function AgentThread({
     interests,
     idealTrip,
     tripTitle,
+    partyType,
+    intensity,
+    transport,
+    dreamChoice,
   });
   payload.current = {
     destination,
@@ -900,9 +944,11 @@ function AgentThread({
     interests,
     idealTrip,
     tripTitle,
+    partyType,
+    intensity,
+    transport,
+    dreamChoice,
   };
-
-  const cityKey = cities.map((city) => city.trim()).filter(Boolean).join("|");
 
   async function talk(
     history: { role: "user" | "assistant"; text: string }[],
@@ -926,13 +972,18 @@ function AgentThread({
     return {
       reply:
         (data.reply as string) ||
-        "Tell me a little more about how you travel.",
+        "What would a dream trip look like for you?",
       choices: (data.choices as { id: string; label: string }[]) ?? [],
     };
   }
 
   useEffect(() => {
-    if (userSpoke.current) return;
+    if (!cityKey) return;
+    // Only open once per committed city set — never restart while typing.
+    if (openedFor.current === cityKey) return;
+    if (userSpoke.current && openedFor.current) return;
+    openedFor.current = cityKey;
+    userSpoke.current = false;
     let cancelled = false;
     const handle = window.setTimeout(() => {
       setStatus("loading");
@@ -946,13 +997,13 @@ function AgentThread({
         .catch(() => {
           if (!cancelled) setStatus("error");
         });
-    }, destination.trim() || cityKey ? 400 : 0);
+    }, 200);
     return () => {
       cancelled = true;
       window.clearTimeout(handle);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [destination, cityKey]);
+  }, [cityKey]);
 
   async function send(text?: string) {
     const said = (text ?? draft).trim();

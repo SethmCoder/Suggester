@@ -109,18 +109,10 @@ export async function POST(req: Request) {
       "@/lib/billing/entitlements"
     );
     const { withProfileEntitlement } = await import("@/lib/billing/access");
-    let accessUser: { id: string; email?: string | null } | null = null;
-    try {
-      const { createSupabaseServerClient } = await import("@/lib/supabase/server");
-      const supabase = await createSupabaseServerClient();
-      const user = (await supabase.auth.getUser()).data.user;
-      accessUser = user ? { id: user.id, email: user.email } : null;
-    } catch {
-      accessUser = null;
-    }
+    // Demo must not inherit a personal account's entitlement / AI usage.
     const gate = gateFeature(
       "generate",
-      await withProfileEntitlement((name) => jar.get(name)?.value, accessUser),
+      await withProfileEntitlement((name) => jar.get(name)?.value, null),
     );
     if (!gate.allowed) {
       return NextResponse.json(
@@ -273,6 +265,19 @@ export async function POST(req: Request) {
     }
     return res;
   } catch (err) {
+    if (err && typeof err === "object" && "issues" in err) {
+      const issues = (err as { issues: { path: (string | number)[]; message: string }[] })
+        .issues;
+      return NextResponse.json(
+        {
+          error: "Trip details look incomplete or invalid",
+          details: issues
+            .slice(0, 6)
+            .map((issue) => `${issue.path.join(".") || "body"}: ${issue.message}`),
+        },
+        { status: 400 },
+      );
+    }
     const message = err instanceof Error ? err.message : "Create failed";
     return NextResponse.json({ error: message }, { status: 400 });
   }

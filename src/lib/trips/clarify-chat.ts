@@ -15,13 +15,126 @@ export type ClarifyTurn = {
   choices: ClarifyChoice[];
 };
 
-const DREAM_MARK = "closest to the days you want";
+const DREAM_MARK = "dream trip feel like";
 const WHERE_MARK = "which part of the trip should carry that";
 const PACE_MARK = "how full should the days feel";
 const PARTY_MARK = "who is traveling";
 const WALK_MARK = "how long a walk between stops";
 const SETTING_MARK = "indoors or outdoors";
 const LEAD_MARK = "which interest should lead";
+/** Destination-specific follow-ups (Seattle → aviation, etc.). */
+const CITY_HOOKS: {
+  match: RegExp;
+  /** Distinctive phrase used to detect the question already asked. */
+  askedNeedle: string;
+  reply: (city: string) => string;
+  choices: ClarifyChoice[];
+}[] = [
+  {
+    match: /\b(seattle|tacoma|bellevue|renton)\b/i,
+    askedNeedle: "aviation scene",
+    reply: (city) =>
+      `${city} has a big aviation scene — want flight museums and airport views in the plan, or keep that light?`,
+    choices: [
+      { id: "aviation-yes", label: "Yes — lean into aviation" },
+      { id: "aviation-light", label: "A little is fine" },
+      { id: "aviation-no", label: "Skip aviation" },
+    ],
+  },
+  {
+    match: /\b(tokyo|osaka|kyoto|kanazawa)\b/i,
+    askedNeedle: "classic temples and landmarks",
+    reply: (city) =>
+      `For ${city}, should days lean toward classic temples and landmarks, or quieter neighborhoods and food streets?`,
+    choices: [
+      { id: "jp-landmarks", label: "Temples and landmarks" },
+      { id: "jp-neighborhoods", label: "Neighborhoods and food" },
+      { id: "jp-mix", label: "A mix of both" },
+    ],
+  },
+  {
+    match: /\b(paris|lyon|marseille)\b/i,
+    askedNeedle: "museum-heavy days",
+    reply: (city) =>
+      `${city} can fill days with museums — do you want museum-heavy days, or more cafés and wandering?`,
+    choices: [
+      { id: "museum-heavy", label: "Museum-heavy" },
+      { id: "cafe-wander", label: "Cafés and wandering" },
+      { id: "museum-mix", label: "One museum, then free time" },
+    ],
+  },
+  {
+    match: /\b(rome|florence|venice|milan)\b/i,
+    askedNeedle: "major historic sites",
+    reply: (city) =>
+      `In ${city}, should we prioritize major historic sites, or leave room for food markets and piazzas?`,
+    choices: [
+      { id: "it-sites", label: "Major historic sites" },
+      { id: "it-food", label: "Food and piazzas" },
+      { id: "it-mix", label: "A balanced mix" },
+    ],
+  },
+  {
+    match: /\b(dubai|abu\s*dhabi)\b/i,
+    askedNeedle: "desert or marina",
+    reply: (city) =>
+      `For ${city}, interested in a desert or marina evening, or keep it city-center only?`,
+    choices: [
+      { id: "desert-yes", label: "Include desert / marina" },
+      { id: "city-only", label: "City-center only" },
+      { id: "desert-maybe", label: "One evening out of town" },
+    ],
+  },
+  {
+    match: /\b(hanoi|ho chi minh|saigon|da nang)\b/i,
+    askedNeedle: "famous for street food",
+    reply: (city) =>
+      `${city} is famous for street food — should meals lean street stalls, sit-down spots, or a mix?`,
+    choices: [
+      { id: "street", label: "Mostly street food" },
+      { id: "sitdown", label: "Mostly sit-down" },
+      { id: "food-mix", label: "A mix" },
+    ],
+  },
+  {
+    match: /\b(oaxaca|mexico\s*city|cdmx)\b/i,
+    askedNeedle: "market and food-first",
+    reply: (city) =>
+      `In ${city}, want market and food-first days, or more museums and historic sites?`,
+    choices: [
+      { id: "mx-food", label: "Markets and food" },
+      { id: "mx-museums", label: "Museums and history" },
+      { id: "mx-mix", label: "A mix" },
+    ],
+  },
+  {
+    match: /\b(london|edinburgh)\b/i,
+    askedNeedle: "pubs and neighborhoods",
+    reply: (city) =>
+      `For ${city}, should evenings lean pubs and neighborhoods, or theaters and big landmarks?`,
+    choices: [
+      { id: "uk-pubs", label: "Pubs and neighborhoods" },
+      { id: "uk-landmarks", label: "Theaters and landmarks" },
+      { id: "uk-mix", label: "A mix" },
+    ],
+  },
+  {
+    match: /\b(new\s*york|nyc|manhattan)\b/i,
+    askedNeedle: "base most days in manhattan",
+    reply: () =>
+      `New York is huge — should we base most days in Manhattan, or spread into Brooklyn and beyond?`,
+    choices: [
+      { id: "nyc-manhattan", label: "Mostly Manhattan" },
+      { id: "nyc-brooklyn", label: "Include Brooklyn" },
+      { id: "nyc-spread", label: "Spread across boroughs" },
+    ],
+  },
+];
+
+function cityHookFor(cities: string[]): (typeof CITY_HOOKS)[number] | null {
+  const blob = cities.join(" ");
+  return CITY_HOOKS.find((hook) => hook.match.test(blob)) ?? null;
+}
 
 /** Used only when the model is down or repeats itself. Each step is a different choice. */
 export function localClarifyReply(
@@ -102,15 +215,25 @@ export function localClarifyReply(
   if (!dreamDone) {
     return {
       reply: cities.length
-        ? `${heard}This trip covers ${cities.join(" and ")}. Which of these is closest to the days you want?`
-        : `${heard}Which of these is closest to the days you want?`,
+        ? `${heard}For ${cities.join(" and ")}, what should a dream trip feel like?`
+        : `${heard}What should a dream trip feel like for you?`,
       done: false,
       choices: [
-        { id: "small", label: "Small local places, not big restaurants" },
+        { id: "small", label: "Small local places, not tourist traps" },
         { id: "sights", label: "The well-known sights" },
         { id: "value", label: "Fun days that do not waste money" },
-        { id: "mix", label: "A mix of walking, food, and a few highlights" },
+        { id: "mix", label: "A mix of walking, food, and highlights" },
       ],
+    };
+  }
+
+  const cityHook = cityHookFor(cities);
+  if (cityHook && !asked(history, cityHook.askedNeedle)) {
+    const label = cities[0] ?? "this city";
+    return {
+      reply: `${heard}${cityHook.reply(label)}`,
+      done: false,
+      choices: cityHook.choices,
     };
   }
 
@@ -319,22 +442,36 @@ function continueAgentReply(
   const lead = summary
     ? `Noted for ${place}: ${summary}. `
     : `Good progress on ${place}. `;
+  const cities = place.split(/\s+and\s+/i).map((part) => part.trim());
+  const hook = cityHookFor(cities);
+  if (hook && !asked(history, hook.askedNeedle)) {
+    return `${lead}${hook.reply(cities[0] ?? place)}`;
+  }
   if (!asked(history, "hotel neighborhood")) {
-    return `${lead}Do you already have a hotel, or should we plan from a neighborhood feel?`;
+    return `${lead}Do you already have a hotel in ${place}, or should we plan from a neighborhood feel?`;
   }
   if (!asked(history, "mornings or evenings")) {
-    return `${lead}Are you more of a mornings person or evenings person on this trip?`;
+    return `${lead}In ${place}, are you more of a mornings person or evenings person?`;
   }
   if (!asked(history, "surprise stop")) {
-    return `${lead}Want one surprise stop each day, or keep the plan predictable?`;
+    return `${lead}Want one ${place} surprise stop each day, or keep the plan predictable?`;
   }
   if (!asked(history, "travel day buffer")) {
-    return `${lead}On arrival day, should we keep things light after the flight?`;
+    return `${lead}On arrival day in ${place}, should we keep things light after the flight?`;
   }
-  return `${lead}What else should I know about how you travel — energy, deal-breakers, or must-haves?`;
+  return `${lead}What else should I know about how you travel in ${place} — energy, deal-breakers, or must-haves?`;
 }
 
 function continueAgentChoices(history: ChatLine[]): ClarifyChoice[] {
+  const last = [...history]
+    .reverse()
+    .find((line) => line.role === "assistant")?.text;
+  if (last) {
+    const hook = CITY_HOOKS.find((item) =>
+      last.toLowerCase().includes(item.askedNeedle),
+    );
+    if (hook) return hook.choices;
+  }
   if (!asked(history, "hotel neighborhood")) {
     return [
       { id: "hotel-booked", label: "Hotel already booked" },

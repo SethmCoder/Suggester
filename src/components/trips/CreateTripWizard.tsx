@@ -297,6 +297,16 @@ export function CreateTripWizard({
         startDate: current.startDate || start,
         endDate: current.endDate || end,
       }));
+      // Deep-link destination: resolve the best city match so the sheet unlocks.
+      void fetch(
+        `/api/cities/search?q=${encodeURIComponent(destinationParam)}`,
+      )
+        .then((res) => res.json())
+        .then((data: { cities?: CitySuggestion[] }) => {
+          const hit = data.cities?.[0];
+          if (hit) pickCity(0, hit);
+        })
+        .catch(() => null);
     }
   }, [destinationParam, daysParam, futureTripId]);
 
@@ -335,6 +345,15 @@ export function CreateTripWizard({
         end,
       ),
     ]);
+    void fetch(
+      `/api/cities/search?q=${encodeURIComponent(trip.destination)}`,
+    )
+      .then((res) => res.json())
+      .then((data: { cities?: CitySuggestion[] }) => {
+        const hit = data.cities?.[0];
+        if (hit) pickCity(0, hit);
+      })
+      .catch(() => null);
     const linked = trip.wishlistItemIds
       .map((id) => getItem(id))
       .filter((item): item is WishlistItem => Boolean(item));
@@ -370,6 +389,10 @@ export function CreateTripWizard({
     origin?: ReturnType<typeof setTimeout>;
     dest?: ReturnType<typeof setTimeout>;
   }>({});
+  const citySearchTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>(
+    {},
+  );
+  const citySearchSeq = useRef<Record<number, number>>({});
 
   const endDate = form.endDate;
 
@@ -484,20 +507,33 @@ export function CreateTripWizard({
     });
   }
 
-  async function searchCities(legIndex: number, q: string) {
-    if (q.trim().length < 2) {
+  function searchCities(legIndex: number, q: string) {
+    clearTimeout(citySearchTimers.current[legIndex]);
+    const trimmed = q.trim();
+    if (trimmed.length < 3) {
       setCitySuggestions((s) => ({ ...s, [legIndex]: [] }));
       return;
     }
-    try {
-      const res = await fetch(
-        `/api/cities/search?q=${encodeURIComponent(q.trim())}`,
-      );
-      const data = await res.json();
-      setCitySuggestions((s) => ({ ...s, [legIndex]: data.cities ?? [] }));
-    } catch {
-      setCitySuggestions((s) => ({ ...s, [legIndex]: [] }));
-    }
+    const seq = (citySearchSeq.current[legIndex] ?? 0) + 1;
+    citySearchSeq.current[legIndex] = seq;
+    citySearchTimers.current[legIndex] = setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await fetch(
+            `/api/cities/search?q=${encodeURIComponent(trimmed)}`,
+          );
+          const data = await res.json();
+          if (citySearchSeq.current[legIndex] !== seq) return;
+          setCitySuggestions((s) => ({
+            ...s,
+            [legIndex]: data.cities ?? [],
+          }));
+        } catch {
+          if (citySearchSeq.current[legIndex] !== seq) return;
+          setCitySuggestions((s) => ({ ...s, [legIndex]: [] }));
+        }
+      })();
+    }, 350);
   }
 
   async function searchDepartureCities(q: string) {
@@ -626,11 +662,16 @@ export function CreateTripWizard({
     let cancelled = false;
     void fetch("/api/billing")
       .then((res) => res.json())
-      .then((data: { generateAllowed?: boolean; signedIn?: boolean }) => {
+      .then(
+        (data: {
+          generateAllowed?: boolean;
+          signedIn?: boolean;
+          isDemo?: boolean;
+        }) => {
         if (cancelled) return;
         // Demo / unsigned always generate via demo-create; don't lock the button
         // behind a billing probe that can fail offline.
-        if (previewMode || !data.signedIn) {
+        if (previewMode || data.isDemo || !data.signedIn) {
           setCanGenerate(true);
           return;
         }
@@ -782,7 +823,13 @@ export function CreateTripWizard({
   }
 
   async function ensureDemoSession() {
-    await fetch("/api/demo/start", { method: "POST" }).catch(() => null);
+    const res = await fetch("/api/demo/start", {
+      method: "POST",
+      credentials: "same-origin",
+    }).catch(() => null);
+    if (!res?.ok) {
+      throw new Error("Could not start demo mode for this trip");
+    }
   }
 
   async function submit() {
@@ -812,6 +859,7 @@ export function CreateTripWizard({
     }
 
     let signedIn = false;
+    let isDemoSession = previewMode;
     try {
       const created = countCreatedOfflineTrips();
       const gate = await fetch("/api/billing", {
@@ -819,7 +867,9 @@ export function CreateTripWizard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "sync", created }),
       }).then((res) => res.json());
-      signedIn = Boolean(gate.signedIn);
+      isDemoSession = Boolean(gate.isDemo) || previewMode;
+      // Billing reports signedIn:false while demo is active (mutual exclusion).
+      signedIn = Boolean(gate.signedIn) && !isDemoSession;
       if (gate.plan !== "pro" && gate.remaining === 0) {
         setPlanLimited(true);
         setError(PLAN_LIMIT_MESSAGE);
@@ -831,15 +881,23 @@ export function CreateTripWizard({
       /* the create route still enforces the cap */
     }
 
-    // Live session wins over SSR previewMode — unsigned users always generate
-    // via demo-create (after ensuring the demo cookie), never /api/trips/create.
-    const useDemo = previewMode || !signedIn;
+    // Demo account XOR personal account — never generate into the wrong one.
+    const useDemo = isDemoSession || !signedIn;
     if (!useDemo) {
       trackClientEvent(AnalyticsEvent.GenerateClicked, {
         multiCity: legs.length > 1,
       });
     }
-    const destination = legs.map((l) => l.city).filter(Boolean).join(" → ");
+    if (!legs.some((leg) => leg.geonameId != null && leg.city.trim())) {
+      setError("Type the full city name, then choose it from the list before generating.");
+      setLoading(false);
+      setProgress("");
+      return;
+    }
+    const destination = legs
+      .filter((l) => l.geonameId != null && l.city.trim())
+      .map((l) => l.city.trim())
+      .join(" → ");
     const talked = budgetFromConversation(Object.values(clarifyAnswers).join("\n"));
     const feedback = readPlaceFeedback();
     const approved = wishlistSuggestions.filter((item) =>
@@ -877,7 +935,14 @@ export function CreateTripWizard({
       startDate,
       endDate,
       travelers: form.travelers,
-      budget: form.budget ? Number(form.budget) : talked.total,
+      budget: (() => {
+        const fromForm = Number(form.budget);
+        if (Number.isFinite(fromForm) && fromForm > 0) return fromForm;
+        if (typeof talked.total === "number" && Number.isFinite(talked.total)) {
+          return talked.total;
+        }
+        return undefined;
+      })(),
       budgetAllocation: talked.allocation,
       restaurantStyle: talked.restaurantStyle,
       rejectedPlaceIds: feedback.removed,
@@ -888,10 +953,15 @@ export function CreateTripWizard({
       party:
         form.travelerMode === "business"
           ? "business"
-          : constraintsFromConversation(
-              Object.values(clarifyAnswers).join("\n"),
-              interestList,
-            ).party,
+          : partyType === "solo" ||
+              partyType === "couple" ||
+              partyType === "family" ||
+              partyType === "friends"
+            ? partyType
+            : constraintsFromConversation(
+                Object.values(clarifyAnswers).join("\n"),
+                interestList,
+              ).party,
       currency: form.currency,
       interests: interestList,
       intensity: form.intensity,
@@ -959,7 +1029,7 @@ export function CreateTripWizard({
         stops.mustSee,
       ),
       legs: legs
-        .filter((l) => l.city.trim())
+        .filter((l) => l.geonameId != null && l.city.trim())
         .map((l, i) => ({
           city: l.city.trim(),
           country: l.country,
@@ -990,18 +1060,20 @@ export function CreateTripWizard({
       await ensureDemoSession();
       let res = await fetch("/api/trips/demo-create", {
         method: "POST",
+        credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      let data = await res.json();
+      let data = await res.json().catch(() => ({}));
       if (res.status === 401) {
         await ensureDemoSession();
         res = await fetch("/api/trips/demo-create", {
           method: "POST",
+          credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
-        data = await res.json();
+        data = await res.json().catch(() => ({}));
       }
       if (!res.ok) {
         if (data.code === "plan_limit") setPlanLimited(true);
@@ -1055,10 +1127,11 @@ export function CreateTripWizard({
       setProgress("Generating itinerary…");
       const res = await fetch("/api/trips/create", {
         method: "POST",
+        credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.status === 401) {
         // Session expired mid-flow — generate on the demo path instead.
         await finishDemoGenerate();
@@ -1066,7 +1139,17 @@ export function CreateTripWizard({
       }
       if (!res.ok) {
         if (data.code === "plan_limit") setPlanLimited(true);
-        throw new Error(data.error ?? "Failed");
+        const detail =
+          typeof data.details === "string"
+            ? data.details
+            : Array.isArray(data.details)
+              ? data.details.join("; ")
+              : "";
+        throw new Error(
+          [data.error ?? "Could not generate this trip", detail]
+            .filter(Boolean)
+            .join(" — "),
+        );
       }
       if (futureTripId && data.tripId) {
         updateFutureTrip(futureTripId, {
@@ -1188,6 +1271,7 @@ export function CreateTripWizard({
         nights: leg.nights,
         country: leg.country,
         countryCode: leg.countryCode,
+        geonameId: leg.geonameId,
         suggestions: (citySuggestions[index] ?? []).map((c) => ({
           key: String(c.id),
           label: c.label,
@@ -1197,9 +1281,21 @@ export function CreateTripWizard({
       onTripTitle={(tripTitle) => setForm((current) => ({ ...current, tripTitle }))}
       onCityInput={(index, value) => {
         setLegs((prev) =>
-          prev.map((leg, i) => (i === index ? { ...leg, city: value } : leg)),
+          prev.map((leg, i) =>
+            i === index
+              ? {
+                  ...leg,
+                  city: value,
+                  // Typing again un-commits the place until they pick a match.
+                  geonameId: undefined,
+                  lat: undefined,
+                  lng: undefined,
+                  countryCode: undefined,
+                }
+              : leg,
+          ),
         );
-        void searchCities(index, value);
+        searchCities(index, value);
       }}
       onPickSuggestion={(legIndex, suggestionIndex) => {
         const city = citySuggestions[legIndex]?.[suggestionIndex];
@@ -1381,7 +1477,8 @@ export function CreateTripWizard({
       onExchange={onExchange}
       onBriefParsed={onBriefParsed}
       sheetReady={Boolean(
-        firstLeg?.city.trim() &&
+        firstLeg?.geonameId != null &&
+          firstLeg.city.trim() &&
           form.startDate &&
           form.endDate &&
           (partyType || party || form.travelers > 0),

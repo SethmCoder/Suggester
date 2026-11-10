@@ -55,8 +55,9 @@ describe("clarify conversation", () => {
     expect(second.done).toBe(false);
   });
 
-  it("asks for the trip total after the city choice", () => {
+  it("asks a city-specific follow-up after the dream vibe", () => {
     const first = localClarifyReply(input, [], "");
+    expect(first.reply.toLowerCase()).toMatch(/dream trip feel like/);
     const second = localClarifyReply(
       input,
       [
@@ -65,26 +66,22 @@ describe("clarify conversation", () => {
       ],
       "The well-known sights",
     );
-    const third = localClarifyReply(
-      input,
-      [
-        { role: "assistant", text: first.reply },
-        { role: "user", text: "The well-known sights" },
-        { role: "assistant", text: second.reply },
-        { role: "user", text: "Split it across every city" },
-      ],
-      "Split it across every city",
+    expect(second.reply.toLowerCase()).toMatch(
+      /temples and landmarks|neighborhoods and food/,
     );
-    expect(third.reply.toLowerCase()).toMatch(/how much is set aside/);
-    expect(third.choices.map((choice) => choice.label)).toContain("Under $500");
-    expect(third.done).toBe(false);
+    expect(second.choices.length).toBeGreaterThanOrEqual(3);
   });
 
   it("asks who is traveling after the budget questions", () => {
     const history = [
-      { role: "assistant" as const, text: "Which of these is closest to the days you want?" },
+      { role: "assistant" as const, text: "What should a dream trip feel like for you?" },
       { role: "user" as const, text: "The well-known sights" },
-      { role: "assistant" as const, text: "Which part of the trip should carry that?" },
+      {
+        role: "assistant" as const,
+        text: "For Tokyo, should days lean toward classic temples and landmarks, or quieter neighborhoods and food streets?",
+      },
+      { role: "user" as const, text: "A mix of both" },
+      { role: "assistant" as const, text: "Which part of the trip should carry that — Tokyo or Kyoto?" },
       { role: "user" as const, text: "Split it across every city" },
       { role: "assistant" as const, text: "How much is set aside for the whole trip?" },
       { role: "user" as const, text: "Under $500" },
@@ -97,6 +94,27 @@ describe("clarify conversation", () => {
     expect(turn.reply.toLowerCase()).toMatch(/who is traveling/);
     expect(turn.choices.map((choice) => choice.label)).toContain("Family with children");
     expect(turn.done).toBe(false);
+  });
+
+  it("asks Seattle travelers about aviation", () => {
+    const seattle: ClarifyInput = {
+      ...input,
+      destination: "Seattle",
+      cities: ["Seattle"],
+    };
+    const opening = localClarifyReply(seattle, [], "");
+    const next = localClarifyReply(
+      seattle,
+      [
+        { role: "assistant", text: opening.reply },
+        { role: "user", text: "A mix of walking, food, and highlights" },
+      ],
+      "A mix of walking, food, and highlights",
+    );
+    expect(next.reply.toLowerCase()).toMatch(/aviation/);
+    expect(next.choices.some((choice) => /aviation/i.test(choice.label))).toBe(
+      true,
+    );
   });
 
   it("does not treat a short reply as a finished brief", () => {

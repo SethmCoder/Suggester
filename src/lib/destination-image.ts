@@ -88,6 +88,10 @@ const LIBRARY: Record<string, string> = {
     "https://images.unsplash.com/photo-1551867633-194f125bddfa?auto=format&fit=crop&w=1600&q=80",
   kraków:
     "https://images.unsplash.com/photo-1551867633-194f125bddfa?auto=format&fit=crop&w=1600&q=80",
+  hanoi:
+    "https://images.unsplash.com/photo-1555921015-5532091f6026?auto=format&fit=crop&w=1600&q=80",
+  oaxaca:
+    "https://images.unsplash.com/photo-1587595431973-160d0d94add1?auto=format&fit=crop&w=1600&q=80",
   athens:
     "https://images.unsplash.com/photo-1555993539-1732b0258235?auto=format&fit=crop&w=1600&q=80",
   istanbul:

@@ -48,6 +48,10 @@ import { TripMap, type MapPin } from "./TripMap";
 import { AssistantPanel } from "./AssistantPanel";
 import { BudgetPanel } from "./BudgetPanel";
 import { TripIntelligence } from "./TripIntelligence";
+import {
+  WeekCalendarView,
+  type CalendarNewStop,
+} from "./WeekCalendarView";
 import type { BudgetPlan } from "@/lib/trips/budget";
 import { rememberAddedPlace, rememberRemovedPlace } from "@/lib/trips/place-feedback";
 import type { ActivityRow, LegTransitMode, TripLeg } from "@/lib/types/trip";
@@ -155,9 +159,30 @@ export function ItineraryEditor({
       })),
   );
   const [hydratedOffline, setHydratedOffline] = useState(false);
-  const [expanded, setExpanded] = useState<Record<number, boolean>>({ 0: true });
-  const [view, setView] = useState<"schedule" | "map" | "split">("split");
+  const [expanded, setExpanded] = useState<Record<number, boolean>>(() =>
+    Object.fromEntries(
+      initialDays.map((d) => [d.day_index, true] as const),
+    ),
+  );
+  const [view, setView] = useState<"schedule" | "map" | "split" | "calendar">(
+    "schedule",
+  );
   const [selectedDay, setSelectedDay] = useState(0);
+
+  // Keep day-by-day open by default as days hydrate or grow.
+  useEffect(() => {
+    setExpanded((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const day of days) {
+        if (next[day.dayIndex] == null) {
+          next[day.dayIndex] = true;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [days]);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
   );
@@ -644,6 +669,55 @@ export function ItineraryEditor({
     setSelectedDay(dayIndex);
   }
 
+  function addTimedStop(stop: CalendarNewStop) {
+    const id = `stop-${crypto.randomUUID()}`;
+    setDays((prev) => {
+      const copy = prev.map((d) => ({ ...d, activities: [...d.activities] }));
+      const day = copy[stop.dayIndex];
+      if (!day) return prev;
+      const activities = [
+        ...day.activities,
+        {
+          id,
+          day_id: day.dayId,
+          name: stop.name,
+          place_id: null,
+          address: stop.address ?? null,
+          lat: stop.lat ?? null,
+          lng: stop.lng ?? null,
+          start_time: stop.startTime,
+          end_time: null,
+          duration_minutes: stop.durationMinutes,
+          travel_minutes_from_prev: 0,
+          priority: "preferred" as const,
+          planning_note: stop.note ?? null,
+          hours_verified: false,
+          opening_hours: null,
+          website_uri: null,
+          google_maps_uri: null,
+          photo_name: null,
+          popularity_label: null,
+          popularity_sources: null,
+          popularity_attribution_urls: null,
+          schedule_warnings: null,
+          sort_order: day.activities.length,
+          user_locked: true,
+          completed: false,
+          source: stop.useAi ? "ai" : "user",
+        },
+      ];
+      copy[stop.dayIndex] = {
+        ...day,
+        activities: reindexByChronology(activities),
+      };
+      void persist(copy);
+      return copy;
+    });
+    rememberAddedPlace(stop.name);
+    setSelectedDay(stop.dayIndex);
+    setExpanded((e) => ({ ...e, [stop.dayIndex]: true }));
+  }
+
   function deleteActivity(dayIndex: number, activityId: string) {
     const removed = days[dayIndex]?.activities.find(
       (activity) => activity.id === activityId,
@@ -797,19 +871,26 @@ export function ItineraryEditor({
           >
             {deleting ? "Deleting…" : "Delete trip"}
           </button>
-        <div className="flex rounded-[12px] border border-[#E1E5F0] bg-[#F5F7FF] p-1 text-sm">
-          {(["schedule", "map", "split"] as const).map((v) => (
+        <div className="flex flex-wrap rounded-[12px] border border-[#E1E5F0] bg-[#F5F7FF] p-1 text-sm">
+          {(
+            [
+              { id: "schedule", label: "Day by day" },
+              { id: "calendar", label: "View as calendar" },
+              { id: "map", label: "Map" },
+              { id: "split", label: "Split" },
+            ] as const
+          ).map((v) => (
             <button
-              key={v}
+              key={v.id}
               type="button"
-              onClick={() => setView(v)}
-              className={`rounded-[10px] px-3.5 py-1.5 capitalize ${
-                view === v
+              onClick={() => setView(v.id)}
+              className={`rounded-[10px] px-3.5 py-1.5 ${
+                view === v.id
                   ? "bg-[#0400FF] text-white"
                   : "text-[#6B7280] hover:text-[#080B3A]"
               }`}
             >
-              {v}
+              {v.label}
             </button>
           ))}
         </div>
@@ -829,6 +910,27 @@ export function ItineraryEditor({
           updateActivity(selectedDay, activityId, { start_time: start })
         }
       />
+
+      {view === "calendar" ? (
+        <WeekCalendarView
+          startDate={startDate}
+          dayCities={dayCities}
+          days={days.map((day) => ({
+            dayId: day.dayId,
+            dayIndex: day.dayIndex,
+            label: `Day ${day.dayIndex + 1}`,
+            dateLabel: "",
+            city: dayCities?.[day.dayIndex]?.city,
+            activities: day.activities,
+          }))}
+          onAddStop={(stop) => addTimedStop(stop)}
+          onSelectActivity={(dayIndex) => {
+            setSelectedDay(dayIndex);
+            setExpanded((e) => ({ ...e, [dayIndex]: true }));
+            setView("schedule");
+          }}
+        />
+      ) : null}
 
       <div
         className={`grid gap-4 ${view === "split" ? "lg:grid-cols-2 lg:items-start" : "grid-cols-1"}`}
@@ -986,6 +1088,7 @@ export function ItineraryEditor({
                       onClick={() => {
                         setSelectedDay(dayIndex);
                         setExpanded((e) => ({
+                          ...e,
                           [dayIndex]: !e[dayIndex],
                         }));
                       }}
@@ -1056,6 +1159,7 @@ export function ItineraryEditor({
                     onClick={() => {
                       setSelectedDay(dayIndex);
                       setExpanded((e) => ({
+                        ...e,
                         [dayIndex]: !e[dayIndex],
                       }));
                     }}

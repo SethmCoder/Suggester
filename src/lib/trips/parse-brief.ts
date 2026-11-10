@@ -157,7 +157,12 @@ export function coveredClarifyTopics(
   const brief = parseTripBrief(corpus);
   const lower = corpus.toLowerCase();
   return {
-    dream: Boolean(brief.dreamStyle) || brief.mustSee.length > 0 || brief.interests.length > 0,
+    // Interests alone do not count as a dream-trip vibe answer.
+    dream:
+      Boolean(brief.dreamStyle) ||
+      /dream trip|closest to the days|tourist traps|well-known sights|do not waste money/i.test(
+        lower,
+      ),
     party:
       Boolean(brief.party) ||
       brief.childAges.length > 0 ||

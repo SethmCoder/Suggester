@@ -1,6 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { DEMO_COOKIE, isDemoCookie } from "@/lib/demo/session";
+import {
+  DEMO_COOKIE,
+  clearSupabaseAuthCookies,
+  isDemoCookie,
+} from "@/lib/demo/session";
 import { INTRO_COOKIE } from "@/lib/profile/traveler";
 
 const PROTECTED = [
@@ -91,9 +95,10 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Demo mode wins over a leftover personal session. Try Demo signs out first;
-  // if a session cookie remains, still serve the demo account experience.
+  // Demo XOR personal: while demo is active, strip leftover auth cookies so
+  // this browser cannot look like a personal account at the same time.
   if (demo) {
+    let demoResponse = response;
     if (
       isProtected &&
       path.startsWith("/trips/") &&
@@ -101,11 +106,17 @@ export async function middleware(request: NextRequest) {
       !isDemoCreatedTrip(path) &&
       path !== "/trips/new"
     ) {
-      return NextResponse.redirect(new URL("/trips/demo-paris", request.url));
+      demoResponse = NextResponse.redirect(
+        new URL("/trips/demo-paris", request.url),
+      );
+    } else if (isProtected || path === "/login" || path === "/signup") {
+      demoResponse = NextResponse.next();
     }
-    if (isProtected || path === "/login" || path === "/signup") {
-      return NextResponse.next();
-    }
+    clearSupabaseAuthCookies(
+      demoResponse,
+      request.cookies.getAll().map((c) => c.name),
+    );
+    return demoResponse;
   }
 
   if (user) {
