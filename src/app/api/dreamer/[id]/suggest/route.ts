@@ -37,10 +37,22 @@ export async function POST(
     }
   }
 
+  let hasEvidence = false;
+  if (svc) {
+    const { data: bookings } = await svc
+      .from("dreamer_bookings")
+      .select("id, starts_at, parsed")
+      .eq("owner_id", user.id)
+      .eq("future_trip_id", id)
+      .limit(1);
+    hasEvidence = (bookings ?? []).length > 0;
+  }
+
   const suggestions = buildDreamerSuggestions({
     destination,
     month,
     stayDays,
+    hasEvidence,
   });
 
   if (svc) {

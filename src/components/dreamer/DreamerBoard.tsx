@@ -4,16 +4,16 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
+import { PasteDropZone } from "@/components/dreamer/PasteDropZone";
 import {
   dreamBookingCount,
+  listDreamerBookings,
   setDreamerBookings,
   titleCasePlace,
 } from "@/lib/dreamer/bookings-store";
 import type { DreamerBooking } from "@/lib/dreamer/types";
-import {
-  createFutureTrip,
-  listFutureTrips,
-} from "@/lib/future-trips/store";
+import { listFutureTrips, updateFutureTrip } from "@/lib/future-trips/store";
+import { saveFutureTrip } from "@/lib/future-trips/sync";
 import type { FutureTrip } from "@/lib/future-trips/types";
 import {
   destinationImageUrl,
@@ -25,6 +25,7 @@ export function DreamerBoard() {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [destination, setDestination] = useState("");
   const [mailbox, setMailbox] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   function refresh() {
     const list = listFutureTrips();
@@ -67,21 +68,26 @@ export function DreamerBoard() {
       .catch(() => refresh());
   }, []);
 
-  function createDream() {
+  async function createDream() {
     const dest = titleCasePlace(destination);
-    if (dest.length < 2) return;
-    const trip = createFutureTrip({
-      destination: dest,
-      title: dest,
-      status: "wishlist",
-      estimatedDurationDays: null,
-      potentialStart: null,
-      potentialEnd: null,
-      preferences: { dreamer: { awaitingBookings: true } },
-    });
-    setDestination("");
-    refresh();
-    window.location.href = `/dreamer/${trip.id}`;
+    if (dest.length < 2 || creating) return;
+    setCreating(true);
+    try {
+      const trip = await saveFutureTrip({
+        destination: dest,
+        title: dest,
+        status: "wishlist",
+        estimatedDurationDays: null,
+        potentialStart: null,
+        potentialEnd: null,
+        preferences: { dreamer: { awaitingBookings: true } },
+      });
+      setDestination("");
+      refresh();
+      window.location.href = `/dreamer/${trip.id}`;
+    } finally {
+      setCreating(false);
+    }
   }
 
   return (
@@ -89,9 +95,9 @@ export function DreamerBoard() {
       <header>
         <h1 className="text-3xl font-bold text-[#080B3A]">Dreamer</h1>
         <p className="mt-2 max-w-2xl text-sm text-[#6B7280]">
-          Save a place you want to go. The dream stays empty until you forward a
-          confirmation email — then flights, hotels, dates, and suggestions
-          appear.
+          Save where you want to go. Paste or forward a confirmation — Dreamer
+          fills bookings like TripIt, then suggests places like Yelp once
+          evidence exists.
         </p>
       </header>
 
@@ -113,8 +119,8 @@ export function DreamerBoard() {
             </Button>
           </div>
           <p className="mt-2 text-xs text-[#6B7280]">
-            Forward from the email on your Waypoint account. We match the
-            sender — one shared inbox, no + codes.
+            Forward from the email on your Waypoint account. Or paste directly
+            onto a city card below.
           </p>
         </section>
       ) : null}
@@ -128,8 +134,8 @@ export function DreamerBoard() {
             placeholder="Tokyo, Paris, Cairo…"
             className="max-w-sm"
           />
-          <Button type="button" onClick={createDream}>
-            Start dreaming
+          <Button type="button" disabled={creating} onClick={() => void createDream()}>
+            {creating ? "Saving…" : "Start dreaming"}
           </Button>
         </div>
       </section>
@@ -143,17 +149,21 @@ export function DreamerBoard() {
           </p>
         </div>
       ) : (
-        <ul className="space-y-3">
+        <ul className="space-y-4">
           {trips.map((trip) => {
             const name = titleCasePlace(trip.title || trip.destination);
             const bookingCount = counts[trip.id] ?? 0;
             const waiting = bookingCount === 0;
+            const planning = trip.status === "planning" || Boolean(trip.convertedTripId);
             const photo = hasCuratedCityImage(name);
             return (
-              <li key={trip.id}>
+              <li
+                key={trip.id}
+                className="overflow-hidden rounded-[14px] border border-[#E1E5F0] bg-white"
+              >
                 <Link
                   href={`/dreamer/${trip.id}`}
-                  className="flex overflow-hidden rounded-[14px] border border-[#E1E5F0] bg-white hover:border-[#0400FF]/40"
+                  className="flex hover:bg-[#FAFBFF]"
                 >
                   {photo ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -174,17 +184,23 @@ export function DreamerBoard() {
                       </p>
                       <span
                         className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                          waiting
-                            ? "bg-[#F5F7FF] text-[#0400FF]"
-                            : "bg-[#ECFDF5] text-[#047857]"
+                          planning
+                            ? "bg-[#EEF2FF] text-[#3730A3]"
+                            : waiting
+                              ? "bg-[#F5F7FF] text-[#0400FF]"
+                              : "bg-[#ECFDF5] text-[#047857]"
                         }`}
                       >
-                        {waiting ? "Waiting for bookings" : "Bookings in"}
+                        {planning
+                          ? "Plan"
+                          : waiting
+                            ? "Waiting for bookings"
+                            : "Bookings in"}
                       </span>
                     </div>
                     <p className="text-sm text-[#6B7280]">
                       {waiting
-                        ? "Empty dream — forward a flight or hotel confirmation to fill this in."
+                        ? "Empty dream — paste or forward a confirmation to fill this in."
                         : `${bookingCount} booking${bookingCount === 1 ? "" : "s"} attached`}
                     </p>
                     <p className="text-xs text-[#9CA3AF]">
@@ -196,6 +212,35 @@ export function DreamerBoard() {
                     </p>
                   </div>
                 </Link>
+                <div className="border-t border-[#F0F2F8] px-4 py-3">
+                  <PasteDropZone
+                    preferredFutureTripId={trip.id}
+                    compact
+                    onDone={(result) => {
+                      const booking = result.booking as DreamerBooking | undefined;
+                      if (booking) {
+                        const matchedId =
+                          booking.futureTripId ||
+                          (result.match?.kind === "dream"
+                            ? result.match.id
+                            : trip.id);
+                        const list = [
+                          ...listDreamerBookings(matchedId),
+                          booking,
+                        ];
+                        setDreamerBookings(matchedId, list);
+                        if (result.planShift?.shifted) {
+                          updateFutureTrip(matchedId, {
+                            status: "planning",
+                            potentialStart:
+                              booking.parsed.startDate ?? undefined,
+                          });
+                        }
+                      }
+                      refresh();
+                    }}
+                  />
+                </div>
               </li>
             );
           })}

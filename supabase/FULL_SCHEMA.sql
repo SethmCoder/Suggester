@@ -569,7 +569,7 @@ create table if not exists dreamer_bookings (
   ends_at timestamptz,
   match_score double precision,
   source text not null default 'email_forward'
-    check (source in ('email_forward', 'manual')),
+    check (source in ('email_forward', 'manual', 'paste')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -594,6 +594,37 @@ create policy inbound_emails_owner on inbound_emails
 drop policy if exists dreamer_bookings_owner on dreamer_bookings;
 create policy dreamer_bookings_owner on dreamer_bookings
   for all using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
+
+-- =============================================================================
+-- 7. Product analytics
+-- =============================================================================
+
+create table if not exists analytics_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete set null,
+  event_name text not null,
+  properties jsonb not null default '{}'::jsonb,
+  path text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists analytics_events_name_created_idx
+  on analytics_events (event_name, created_at desc);
+
+create index if not exists analytics_events_user_created_idx
+  on analytics_events (user_id, created_at desc);
+
+alter table analytics_events enable row level security;
+
+drop policy if exists analytics_events_insert_own on analytics_events;
+create policy analytics_events_insert_own on analytics_events
+  for insert
+  with check (auth.uid() = user_id);
+
+drop policy if exists analytics_events_select_own on analytics_events;
+create policy analytics_events_select_own on analytics_events
+  for select
+  using (auth.uid() = user_id);
 
 -- =============================================================================
 -- Done. Verify Dreamer tables exist:

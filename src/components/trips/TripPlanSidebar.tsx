@@ -23,7 +23,6 @@ const SECTIONS: {
     label: "Itinerary",
     items: [
       { href: "", label: "Daily itinerary", hash: "itinerary" },
-      { href: "", label: "Activities", hash: "itinerary" },
       { href: "", label: "Hotels", hash: "hotels" },
       { href: "", label: "Transportation", hash: "transit" },
     ],
@@ -34,7 +33,6 @@ const SECTIONS: {
     items: [
       { href: "/things", label: "Things to do" },
       { href: "/explore", label: "Explorer" },
-      { href: "", label: "Hotels", hash: "hotels" },
     ],
   },
   {

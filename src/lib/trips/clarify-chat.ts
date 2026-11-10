@@ -65,10 +65,11 @@ export function localClarifyReply(
     budgetSplitDone &&
     budgetFoodDone
   ) {
+    // Never dead-end on "ready to generate" — keep asking like a travel agent.
     return {
-      reply: readyReply(place, brief.summary),
-      done: true,
-      choices: [],
+      reply: continueAgentReply(place, brief.summary, history),
+      done: false,
+      choices: continueAgentChoices(history),
     };
   }
 
@@ -222,9 +223,9 @@ export function localClarifyReply(
   }
 
   return {
-    reply: readyReply(place, brief.summary),
-    done: true,
-    choices: [],
+    reply: continueAgentReply(place, brief.summary, history),
+    done: false,
+    choices: continueAgentChoices(history),
   };
 }
 
@@ -284,11 +285,57 @@ function acknowledge(message: string, summary: string): string {
   return "I'll use that. ";
 }
 
-function readyReply(place: string, summary: string): string {
+function continueAgentReply(
+  place: string,
+  summary: string,
+  history: ChatLine[],
+): string {
   const lead = summary
-    ? `I have enough for ${place}: ${summary}.`
-    : `I have enough to shape ${place}.`;
-  return `${lead} Review the trip brief on the right, then tap Generate itinerary. You can still add a note below if something is missing.`;
+    ? `Noted for ${place}: ${summary}. `
+    : `Good progress on ${place}. `;
+  if (!asked(history, "hotel neighborhood")) {
+    return `${lead}Do you already have a hotel, or should we plan from a neighborhood feel?`;
+  }
+  if (!asked(history, "mornings or evenings")) {
+    return `${lead}Are you more of a mornings person or evenings person on this trip?`;
+  }
+  if (!asked(history, "surprise stop")) {
+    return `${lead}Want one surprise stop each day, or keep the plan predictable?`;
+  }
+  if (!asked(history, "travel day buffer")) {
+    return `${lead}On arrival day, should we keep things light after the flight?`;
+  }
+  return `${lead}What else should I know about how you travel — energy, deal-breakers, or must-haves?`;
+}
+
+function continueAgentChoices(history: ChatLine[]): ClarifyChoice[] {
+  if (!asked(history, "hotel neighborhood")) {
+    return [
+      { id: "hotel-booked", label: "Hotel already booked" },
+      { id: "hotel-suggest", label: "Suggest a neighborhood" },
+      { id: "hotel-flexible", label: "Flexible — decide later" },
+    ];
+  }
+  if (!asked(history, "mornings or evenings")) {
+    return [
+      { id: "mornings", label: "Mornings" },
+      { id: "evenings", label: "Evenings" },
+      { id: "both", label: "A bit of both" },
+    ];
+  }
+  if (!asked(history, "surprise stop")) {
+    return [
+      { id: "surprise-yes", label: "Yes — one surprise" },
+      { id: "surprise-no", label: "No surprises" },
+      { id: "surprise-maybe", label: "Only if it fits the vibe" },
+    ];
+  }
+  return [
+    { id: "more-energy", label: "Tell you about our energy" },
+    { id: "more-avoid", label: "Share deal-breakers" },
+    { id: "more-must", label: "Add a must-have" },
+    { id: "more-other", label: "Something else" },
+  ];
 }
 
 function normalize(value: string): string {

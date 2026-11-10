@@ -1,13 +1,22 @@
 "use client";
 
 import type { ActivityRow, TripLeg } from "@/lib/types/trip";
+import { FlightStatusChip } from "@/components/trips/FlightStatusChip";
 
 export function TripBookingsPanel({
   legs,
   activities,
+  flightNumber,
+  flightDate,
+  manualArrival,
+  onApplyDelay,
 }: {
   legs: TripLeg[];
   activities: ActivityRow[];
+  flightNumber?: string | null;
+  flightDate?: string | null;
+  manualArrival?: string | null;
+  onApplyDelay?: (minutes: number) => void;
 }) {
   const flights = activities.filter(
     (a) =>
@@ -30,10 +39,18 @@ export function TripBookingsPanel({
           Flights & bookings
         </h2>
         <p className="text-[11px] text-[#6B7280]">
-          Confirmed only when you marked a hotel as booked. Everything else is
-          suggested — not a reservation.
+          Confirmed hotels show when you marked them booked. Flight status uses
+          AviationStack when a key is set — otherwise enter a delay manually.
         </p>
       </div>
+
+      <FlightStatusChip
+        flightNumber={flightNumber}
+        date={flightDate}
+        manualArrival={manualArrival}
+        onApplyDelay={onApplyDelay}
+      />
+
       <div className="space-y-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
           Hotels
@@ -82,25 +99,23 @@ export function TripBookingsPanel({
           [...flights, ...transit].map((a) => (
             <div
               key={a.id}
-              className="flex items-start justify-between gap-2 rounded-[10px] border border-[#F0F2F8] px-3 py-2"
+              className="rounded-[10px] border border-[#F0F2F8] px-3 py-2"
             >
-              <div>
-                <p className="text-sm font-medium text-[#080B3A]">{a.name}</p>
-                <p className="text-xs text-[#6B7280]">
-                  {a.start_time?.slice(0, 5) ?? "Unscheduled"}
-                  {a.address ? ` · ${a.address}` : ""}
-                </p>
-              </div>
-              <span className="rounded-full bg-[#F5F7FF] px-2 py-0.5 text-[10px] font-semibold text-[#0400FF]">
-                Suggested
-              </span>
+              <p className="text-sm font-medium text-[#080B3A]">{a.name}</p>
+              <p className="text-xs text-[#6B7280]">
+                {[a.start_time, a.end_time].filter(Boolean).join(" – ")}
+              </p>
             </div>
           ))
         )}
       </div>
-      <div id="notes" className="text-xs text-[#9CA3AF]">
-        Waypoint does not invent booking confirmations. Forward or mark items
-        yourself to treat them as confirmed.
+      <div id="notes" className="rounded-[10px] border border-dashed border-[#E1E5F0] px-3 py-2">
+        <p className="text-xs font-semibold uppercase text-[#6B7280]">
+          Travel notes
+        </p>
+        <p className="mt-1 text-sm text-[#6B7280]">
+          Use the assistant to reshuffle days if your flight moves.
+        </p>
       </div>
     </section>
   );

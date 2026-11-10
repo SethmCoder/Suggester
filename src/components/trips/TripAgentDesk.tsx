@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChoiceList } from "@/components/chat/ChoiceList";
 import { Button } from "@/components/ui/Button";
-import { TRAVELER_STORAGE_KEY, type TravelerProfile } from "@/lib/profile/traveler";
 import { Input, Label } from "@/components/ui/Input";
+import { LeavePageLink } from "@/components/ui/LeavePageLink";
+import { TRAVELER_STORAGE_KEY, type TravelerProfile } from "@/lib/profile/traveler";
 import {
   destinationImageUrl,
   hasCuratedCityImage,
 } from "@/lib/destination-image";
+import { formatCityOverlay } from "@/lib/trips/city-label";
 import { tripDateInputBounds } from "@/lib/trips/dates";
 
 type PlaceDraft = {
@@ -18,18 +20,28 @@ type PlaceDraft = {
   departureDate?: string;
   nights?: number;
   country?: string;
+  countryCode?: string;
   suggestions: { key: string; label: string }[];
 };
 
 type ChatLine = { role: "agent" | "you"; text: string };
 
+const DREAM_OPTIONS = [
+  { id: "small", label: "Small local places, not tourist traps" },
+  { id: "sights", label: "The well-known sights" },
+  { id: "value", label: "Fun days that do not waste money" },
+  { id: "mix", label: "A mix of walking, food, and highlights" },
+  { id: "other", label: "Other" },
+];
+
 export function TripAgentDesk({
   places,
+  multiCity,
+  onMultiCity,
   tripTitle,
   onTripTitle,
   onCityInput,
   onPickSuggestion,
-  onLegDays,
   onLegDates,
   onAddCity,
   onRemoveCity,
@@ -44,13 +56,28 @@ export function TripAgentDesk({
   onIntensity,
   transport,
   onTransport,
-  party,
-  travelerMode,
-  onTravelerMode,
-  planningClarity,
-  onPlanningClarity,
+  partyType,
+  onPartyType,
+  kidAges,
+  onKidAges,
+  kidEnergy,
+  onKidEnergy,
+  travelerNotes,
+  onTravelerNotes,
+  budget,
+  onBudget,
+  dreamChoice,
+  onDreamChoice,
+  dreamOther,
+  onDreamOther,
   hotel,
-  flights,
+  flightNumber,
+  onFlightNumber,
+  flightLookup,
+  onLookupFlight,
+  manualArrival,
+  onManualArrival,
+  flightSummary,
   destination,
   cities,
   interests,
@@ -59,6 +86,7 @@ export function TripAgentDesk({
   idealTrip,
   onExchange,
   onBriefParsed,
+  sheetReady,
   canGenerate,
   loading,
   progress,
@@ -66,11 +94,12 @@ export function TripAgentDesk({
   onGenerate,
 }: {
   places: PlaceDraft[];
+  multiCity: boolean;
+  onMultiCity: (value: boolean) => void;
   tripTitle: string;
   onTripTitle: (value: string) => void;
   onCityInput: (index: number, value: string) => void;
   onPickSuggestion: (legIndex: number, suggestionIndex: number) => void;
-  onLegDays: (index: number, days: number) => void;
   onLegDates?: (
     index: number,
     dates: { arrivalDate: string; departureDate: string },
@@ -88,19 +117,28 @@ export function TripAgentDesk({
   onIntensity: (value: "relaxed" | "balanced" | "packed") => void;
   transport: string;
   onTransport: (value: string) => void;
-  party: string;
-  travelerMode: "business" | "leisure" | "";
-  onTravelerMode: (value: "business" | "leisure") => void;
-  planningClarity:
-    | "know_where_and_what"
-    | "know_where_not_what"
-    | "know_neither"
-    | "";
-  onPlanningClarity: (
-    value: "know_where_and_what" | "know_where_not_what" | "know_neither",
-  ) => void;
+  partyType: "solo" | "couple" | "family" | "friends" | "";
+  onPartyType: (value: "solo" | "couple" | "family" | "friends") => void;
+  kidAges: string;
+  onKidAges: (value: string) => void;
+  kidEnergy: "calm" | "balanced" | "high" | "";
+  onKidEnergy: (value: "calm" | "balanced" | "high") => void;
+  travelerNotes: string;
+  onTravelerNotes: (value: string) => void;
+  budget: string;
+  onBudget: (value: string) => void;
+  dreamChoice: string;
+  onDreamChoice: (value: string) => void;
+  dreamOther: string;
+  onDreamOther: (value: string) => void;
   hotel: ReactNode;
-  flights: ReactNode;
+  flightNumber: string;
+  onFlightNumber: (value: string) => void;
+  flightLookup: "idle" | "loading" | "found" | "miss";
+  onLookupFlight: () => void;
+  manualArrival: string;
+  onManualArrival: (value: string) => void;
+  flightSummary: string | null;
   destination: string;
   cities: string[];
   interests: string[];
@@ -109,6 +147,7 @@ export function TripAgentDesk({
   idealTrip: string;
   onExchange: (userText: string, reply: string) => void;
   onBriefParsed?: (extracted: Record<string, unknown>) => void;
+  sheetReady: boolean;
   canGenerate: boolean | null;
   loading: boolean;
   progress: string;
@@ -118,427 +157,554 @@ export function TripAgentDesk({
   const lead = places[0]?.city.trim() || "";
   const photo = lead && hasCuratedCityImage(lead);
   const dateBounds = tripDateInputBounds();
+  const overlay = lead
+    ? formatCityOverlay(lead, places[0]?.countryCode)
+    : "";
+  const cityStrip = places
+    .map((p) => p.city.trim())
+    .filter(Boolean)
+    .join(" → ");
 
   return (
-    <div className="mx-auto max-w-6xl" data-tour="tour-create-wizard">
-      <section className="mb-6 overflow-hidden rounded-[20px] border border-[#E1E5F0] bg-white shadow-[0_8px_24px_rgba(8,11,58,0.05)]">
-        {photo ? (
-          <div className="relative h-44 sm:h-56">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={destinationImageUrl(lead)}
-              alt=""
-              className="h-full w-full object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#080B3A]/70 to-transparent" />
-            <p className="absolute bottom-4 left-5 text-2xl font-bold text-white">
-              {lead}
+    <div className="mx-auto max-w-6xl space-y-6" data-tour="tour-create-wizard">
+      {/* Hero + trip header */}
+      <section className="overflow-hidden rounded-[20px] border border-[#E1E5F0] bg-white shadow-[0_8px_24px_rgba(8,11,58,0.05)]">
+        {!lead ? (
+          <div className="bg-gradient-to-br from-[#080B3A] via-[#12185C] to-[#0400FF] px-5 py-16 text-center text-white sm:py-20">
+            <p className="text-3xl font-bold tracking-tight">Plan a trip</p>
+            <p className="mx-auto mt-2 max-w-md text-sm text-white/75">
+              Start with a city. A landmark photo and your trip sheet appear once
+              you pick a place.
             </p>
+            <div className="mx-auto mt-6 max-w-sm text-left">
+              <CityField
+                label="Where first?"
+                city={places[0]?.city ?? ""}
+                suggestions={places[0]?.suggestions ?? []}
+                onChange={(value) => onCityInput(0, value)}
+                onPick={(index) => onPickSuggestion(0, index)}
+              />
+            </div>
           </div>
         ) : (
-          <div className="bg-[#080B3A] px-5 py-8 text-white">
-            <p className="text-2xl font-bold">{lead || "Where are you going?"}</p>
-          </div>
+          <>
+            <div className="relative h-52 sm:h-64">
+              {photo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={destinationImageUrl(lead)}
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#080B3A] to-[#1a237e] text-6xl font-bold text-white/30">
+                  {lead.slice(0, 1)}
+                </div>
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-[#080B3A]/80 via-[#080B3A]/20 to-transparent" />
+              <p className="absolute bottom-4 left-5 right-5 text-left text-xl font-bold text-white sm:text-2xl">
+                {overlay}
+              </p>
+            </div>
+
+            <div className="space-y-4 p-4 sm:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="inline-flex rounded-full bg-[#F5F7FF] p-1">
+                  <button
+                    type="button"
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                      !multiCity
+                        ? "bg-[#0400FF] text-white"
+                        : "text-[#0400FF]"
+                    }`}
+                    onClick={() => onMultiCity(false)}
+                  >
+                    Single city
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                      multiCity
+                        ? "bg-[#0400FF] text-white"
+                        : "text-[#0400FF]"
+                    }`}
+                    onClick={() => onMultiCity(true)}
+                  >
+                    Multi-city
+                  </button>
+                </div>
+                {multiCity && cityStrip ? (
+                  <p className="text-sm font-semibold text-[#080B3A]">
+                    {cityStrip}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <CityField
+                  label="City"
+                  city={places[0]?.city ?? ""}
+                  suggestions={places[0]?.suggestions ?? []}
+                  onChange={(value) => onCityInput(0, value)}
+                  onPick={(index) => onPickSuggestion(0, index)}
+                />
+                <div>
+                  <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
+                    Title
+                  </Label>
+                  <Input
+                    value={tripTitle}
+                    onChange={(e) => onTripTitle(e.target.value)}
+                    placeholder={`A trip to ${lead}`}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
+                    Trip start
+                  </Label>
+                  <Input
+                    type="date"
+                    value={startDate}
+                    min={dateBounds.min}
+                    max={dateBounds.max}
+                    onChange={(e) => onStartDate(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
+                    Trip end
+                  </Label>
+                  <Input
+                    type="date"
+                    value={endDate}
+                    min={startDate || dateBounds.min}
+                    max={dateBounds.max}
+                    onChange={(e) => onEndDate(e.target.value)}
+                  />
+                  {startDate && endDate ? (
+                    <p className="mt-1 text-xs text-[#6B7280]">
+                      {nights === 1 ? "1 night" : `${nights} nights`} whole trip
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+
+              {multiCity ? (
+                <div className="space-y-3 border-t border-[#F0F2F8] pt-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
+                    Stops (ordered by date)
+                  </p>
+                  {places.map((place, index) => (
+                    <div
+                      key={`stop-${index}-${place.arrivalDate ?? ""}`}
+                      className="grid items-end gap-3 rounded-[12px] border border-[#F0F2F8] bg-[#FAFBFF] p-3 sm:grid-cols-[1.2fr_1fr_1fr_auto]"
+                    >
+                      <CityField
+                        label={`Stop ${index + 1}`}
+                        city={place.city}
+                        suggestions={place.suggestions}
+                        onChange={(value) => onCityInput(index, value)}
+                        onPick={(pick) => onPickSuggestion(index, pick)}
+                      />
+                      <div>
+                        <Label className="text-xs uppercase text-[#6B7280]">
+                          Arrival
+                        </Label>
+                        <Input
+                          type="date"
+                          value={place.arrivalDate ?? ""}
+                          min={dateBounds.min}
+                          max={dateBounds.max}
+                          onChange={(e) => {
+                            const arrivalDate = e.target.value;
+                            const departureDate =
+                              place.departureDate &&
+                              place.departureDate >= arrivalDate
+                                ? place.departureDate
+                                : arrivalDate;
+                            onLegDates?.(index, {
+                              arrivalDate,
+                              departureDate,
+                            });
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs uppercase text-[#6B7280]">
+                          Departure
+                        </Label>
+                        <Input
+                          type="date"
+                          value={place.departureDate ?? ""}
+                          min={place.arrivalDate || dateBounds.min}
+                          max={dateBounds.max}
+                          onChange={(e) => {
+                            const departureDate = e.target.value;
+                            const arrivalDate =
+                              place.arrivalDate || departureDate;
+                            onLegDates?.(index, {
+                              arrivalDate,
+                              departureDate,
+                            });
+                          }}
+                        />
+                      </div>
+                      {index > 0 ? (
+                        <button
+                          type="button"
+                          className="pb-2 text-sm font-semibold text-[#B91C1C]"
+                          onClick={() => onRemoveCity(index)}
+                        >
+                          Remove
+                        </button>
+                      ) : (
+                        <span className="pb-2 text-xs text-[#9CA3AF]">First</span>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="text-sm font-semibold text-[#0400FF]"
+                    onClick={onAddCity}
+                  >
+                    Add city
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </>
         )}
-        <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5">
-          <CityField
-            label="Place"
-            city={places[0]?.city ?? ""}
-            suggestions={places[0]?.suggestions ?? []}
-            onChange={(value) => onCityInput(0, value)}
-            onPick={(index) => onPickSuggestion(0, index)}
-          />
-          <div>
-            <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
-              Title
-            </Label>
-            <Input
-              value={tripTitle}
-              onChange={(e) => onTripTitle(e.target.value)}
-              placeholder={lead ? `A trip to ${lead}` : "Title of the trip"}
-            />
-          </div>
-          <div>
-            <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
-              Arrival
-            </Label>
-            <Input
-              type="date"
-              value={startDate}
-              min={dateBounds.min}
-              max={dateBounds.max}
-              onChange={(e) => onStartDate(e.target.value)}
-            />
-          </div>
-          <div>
-            <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
-              Departure
-            </Label>
-            <Input
-              type="date"
-              value={endDate}
-              min={startDate || dateBounds.min}
-              max={dateBounds.max}
-              onChange={(e) => onEndDate(e.target.value)}
-            />
-            {startDate && endDate ? (
-              <p className="mt-1 text-xs text-[#6B7280]">
-                {nights === 1 ? "1 night" : `${nights} nights`} on this trip
-              </p>
-            ) : (
-              <p className="mt-1 text-xs text-[#6B7280]">
-                Pick arrival and departure (year {dateBounds.min.slice(0, 4)}–
-                {dateBounds.max.slice(0, 4)}).
-              </p>
-            )}
-          </div>
-        </div>
-        <div className="space-y-3 border-t border-[#F0F2F8] px-4 py-3 sm:px-5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
-            Who is this trip for?
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {(
-              [
-                { id: "leisure", label: "Leisure" },
-                { id: "business", label: "Business traveler" },
-              ] as const
-            ).map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => onTravelerMode(opt.id)}
-                className={`rounded-full px-3 py-1.5 text-sm font-medium ${
-                  travelerMode === opt.id
-                    ? "bg-[#0400FF] text-white"
-                    : "bg-[#F5F7FF] text-[#080B3A]"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
-            When you plan a trip, do you…
-          </p>
-          <div className="flex flex-col gap-2">
-            {(
-              [
-                {
-                  id: "know_where_and_what",
-                  label: "Know where you want to go and what you want to do",
-                },
-                {
-                  id: "know_where_not_what",
-                  label: "Know where you want to go but not what to do",
-                },
-                {
-                  id: "know_neither",
-                  label: "Don't know where or what yet",
-                },
-              ] as const
-            ).map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => onPlanningClarity(opt.id)}
-                className={`rounded-[10px] px-3 py-2 text-left text-sm font-medium ${
-                  planningClarity === opt.id
-                    ? "bg-[#0400FF] text-white"
-                    : "bg-[#F5F7FF] text-[#080B3A]"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        {places.slice(1).map((place, offset) => {
-          const index = offset + 1;
-          const placeNights =
-            place.nights ?? Math.max(0, (place.days || 1) - 1);
-          return (
-            <div
-              key={index}
-              className="grid items-end gap-3 border-t border-[#F0F2F8] px-4 py-3 sm:grid-cols-[1.2fr_1fr_1fr_auto] sm:px-5"
-            >
-              <CityField
-                label={`City ${index + 1}`}
-                city={place.city}
-                suggestions={place.suggestions}
-                onChange={(value) => onCityInput(index, value)}
-                onPick={(pick) => onPickSuggestion(index, pick)}
-              />
-              <div>
-                <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
-                  Arrival
-                </Label>
-                <Input
-                  type="date"
-                  value={place.arrivalDate ?? ""}
-                  min={dateBounds.min}
-                  max={dateBounds.max}
-                  onChange={(e) => {
-                    const arrivalDate = e.target.value;
-                    const departureDate =
-                      place.departureDate && place.departureDate >= arrivalDate
-                        ? place.departureDate
-                        : arrivalDate;
-                    onLegDates?.(index, { arrivalDate, departureDate });
-                  }}
-                />
-              </div>
-              <div>
-                <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
-                  Departure
-                </Label>
-                <Input
-                  type="date"
-                  value={place.departureDate ?? ""}
-                  min={place.arrivalDate || dateBounds.min}
-                  max={dateBounds.max}
-                  onChange={(e) => {
-                    const departureDate = e.target.value;
-                    const arrivalDate = place.arrivalDate || departureDate;
-                    onLegDates?.(index, { arrivalDate, departureDate });
-                  }}
-                />
-                <p className="mt-1 text-xs text-[#6B7280]">
-                  {placeNights === 1 ? "1 night" : `${placeNights} nights`}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="pb-2 text-sm font-semibold text-[#B91C1C]"
-                onClick={() => onRemoveCity(index)}
-              >
-                Remove
-              </button>
-            </div>
-          );
-        })}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#F0F2F8] px-4 py-3 sm:px-5">
-          <div className="flex flex-wrap items-end gap-3 text-sm text-[#6B7280]">
-            <div>
-              <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
-                Arrival in {places[0]?.city.trim() || "first city"}
-              </Label>
-              <Input
-                type="date"
-                value={places[0]?.arrivalDate ?? startDate}
-                min={dateBounds.min}
-                max={dateBounds.max}
-                onChange={(e) => {
-                  const arrivalDate = e.target.value;
-                  const departureDate =
-                    places[0]?.departureDate &&
-                    places[0].departureDate >= arrivalDate
-                      ? places[0].departureDate
-                      : endDate || arrivalDate;
-                  onLegDates?.(0, { arrivalDate, departureDate });
-                }}
-                className="w-44"
-              />
-            </div>
-            <div>
-              <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
-                Departure
-              </Label>
-              <Input
-                type="date"
-                value={places[0]?.departureDate ?? endDate}
-                min={places[0]?.arrivalDate || startDate || dateBounds.min}
-                max={dateBounds.max}
-                onChange={(e) => {
-                  const departureDate = e.target.value;
-                  const arrivalDate =
-                    places[0]?.arrivalDate || startDate || departureDate;
-                  onLegDates?.(0, { arrivalDate, departureDate });
-                }}
-                className="w-44"
-              />
-            </div>
-            <p className="pb-2">
-              {(places[0]?.nights ?? Math.max(0, (places[0]?.days ?? 1) - 1)) === 1
-                ? "1 night"
-                : `${places[0]?.nights ?? Math.max(0, (places[0]?.days ?? 1) - 1)} nights`}
-            </p>
-          </div>
-          <button
-            type="button"
-            className="text-sm font-semibold text-[#0400FF]"
-            onClick={onAddCity}
-          >
-            Add a city
-          </button>
-        </div>
       </section>
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.2fr)_340px]">
-        <section className="rounded-[20px] border border-[#E1E5F0] bg-white p-4 shadow-[0_8px_24px_rgba(8,11,58,0.05)] sm:p-6">
-          <AgentThread
-            destination={destination}
-            cities={cities}
-            startDate={startDate}
-            travelers={travelers}
-            interests={interests}
-            idealTrip={idealTrip}
-            tripTitle={tripTitle}
-            onExchange={onExchange}
-            onBriefParsed={onBriefParsed}
-            canGenerate={Boolean(canGenerate && lead && startDate)}
-            loading={loading}
-            onGenerate={onGenerate}
-          />
-        </section>
-        <aside
-          id="trip-brief-panel"
-          className="flex max-h-[calc(100vh-7rem)] flex-col rounded-[20px] border border-[#E1E5F0] bg-white p-5 shadow-[0_8px_24px_rgba(8,11,58,0.05)] lg:sticky lg:top-6"
-        >
-          <div className="min-h-0 flex-1 space-y-5 overflow-auto pr-1">
-            <h2 className="text-[18px] font-semibold text-[#080B3A]">Trip brief</h2>
-            <p className="mt-1 text-xs text-[#6B7280]">Fills in as you talk.</p>
-            <dl className="space-y-2.5 text-sm">
-              <BriefRow label="Title" value={tripTitle} />
-              <BriefRow label="Cities" value={cities.filter(Boolean).join(" → ")} />
-              <BriefRow
-                label="Dates"
-                value={
-                  startDate
-                    ? `${startDate}${endDate ? ` – ${endDate}` : ""}${
-                        nights
-                          ? ` · ${nights === 1 ? "1 night" : `${nights} nights`}`
-                          : ""
-                      }`
-                    : ""
-                }
+
+      {lead ? (
+        <>
+          <div className="grid items-start gap-6 lg:grid-cols-2">
+            <section className="rounded-[20px] border border-[#E1E5F0] bg-white p-4 shadow-[0_8px_24px_rgba(8,11,58,0.05)] sm:p-6">
+              <AgentThread
+                destination={destination}
+                cities={cities}
+                startDate={startDate}
+                travelers={travelers}
+                interests={interests}
+                idealTrip={idealTrip}
+                tripTitle={tripTitle}
+                onExchange={onExchange}
+                onBriefParsed={onBriefParsed}
               />
-              <BriefRow
-                label="Who"
-                value={
-                  travelerMode
-                    ? travelerMode === "business"
-                      ? "Business traveler"
-                      : "Leisure"
-                    : party
-                }
+            </section>
+
+            <aside
+              id="trip-brief-panel"
+              className="space-y-4 rounded-[20px] border border-[#E1E5F0] bg-white p-5 shadow-[0_8px_24px_rgba(8,11,58,0.05)]"
+            >
+              <h2 className="text-lg font-semibold text-[#080B3A]">
+                Manual input
+              </h2>
+              <p className="text-xs text-[#6B7280]">
+                The agent can fill this as you chat — or edit it yourself.
+              </p>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <Label className="text-xs uppercase text-[#6B7280]">
+                    Trip start
+                  </Label>
+                  <Input
+                    type="date"
+                    value={startDate}
+                    min={dateBounds.min}
+                    max={dateBounds.max}
+                    onChange={(e) => onStartDate(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs uppercase text-[#6B7280]">
+                    Trip end
+                  </Label>
+                  <Input
+                    type="date"
+                    value={endDate}
+                    min={startDate || dateBounds.min}
+                    max={dateBounds.max}
+                    onChange={(e) => onEndDate(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <MajorStopsField
+                stops={majorStops}
+                onChange={onMajorStopsChange}
               />
-              <BriefRow
-                label="Planning"
-                value={
-                  planningClarity === "know_where_and_what"
-                    ? "Know where and what"
-                    : planningClarity === "know_where_not_what"
-                      ? "Know where, not what"
-                      : planningClarity === "know_neither"
-                        ? "Exploring where and what"
-                        : ""
-                }
-              />
-            </dl>
-            {interests.length ? (
+
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
-                  Interests
+                <p className="text-[11px] font-semibold uppercase text-[#6B7280]">
+                  Dream trip
+                </p>
+                <div className="mt-2 flex flex-col gap-1.5">
+                  {DREAM_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => onDreamChoice(opt.id)}
+                      className={`rounded-[10px] px-3 py-2 text-left text-sm font-medium ${
+                        dreamChoice === opt.id
+                          ? "bg-[#0400FF] text-white"
+                          : "bg-[#F5F7FF] text-[#080B3A]"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                {dreamChoice === "other" ? (
+                  <Input
+                    className="mt-2"
+                    value={dreamOther}
+                    onChange={(e) => onDreamOther(e.target.value)}
+                    placeholder="Describe your dream trip"
+                  />
+                ) : null}
+              </div>
+
+              {hotel}
+
+              <div>
+                <p className="text-[11px] font-semibold uppercase text-[#6B7280]">
+                  Who is traveling
                 </p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  {interests.slice(0, 8).map((interest) => (
-                    <span
-                      key={interest}
-                      className="rounded-full bg-[#F5F7FF] px-2.5 py-1 text-xs font-medium text-[#080B3A]"
+                  {(
+                    [
+                      ["solo", "Solo"],
+                      ["couple", "Couple"],
+                      ["family", "Family"],
+                      ["friends", "Friends"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                        partyType === id
+                          ? "bg-[#080B3A] text-white"
+                          : "bg-[#F5F7FF] text-[#080B3A]"
+                      }`}
+                      onClick={() => onPartyType(id)}
                     >
-                      {interest}
-                    </span>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <span className="text-sm text-[#6B7280]">Travelers</span>
+                  <input
+                    type="number"
+                    min={1}
+                    aria-label="Travelers"
+                    value={travelers}
+                    onChange={(e) =>
+                      onTravelers(Math.max(1, Number(e.target.value) || 1))
+                    }
+                    className="w-16 rounded-[10px] border border-[#D1D7E5] px-2 py-1 text-center text-sm"
+                  />
+                </div>
+                {partyType === "family" ? (
+                  <div className="mt-3 space-y-2 rounded-[12px] border border-[#F0F2F8] bg-[#FAFBFF] p-3">
+                    <div>
+                      <Label className="text-xs uppercase text-[#6B7280]">
+                        Kids&apos; ages
+                      </Label>
+                      <Input
+                        value={kidAges}
+                        onChange={(e) => onKidAges(e.target.value)}
+                        placeholder="e.g. 8 and 12"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase text-[#6B7280]">
+                        Kids&apos; energy
+                      </p>
+                      <div className="mt-1 flex gap-1">
+                        {(
+                          [
+                            ["calm", "Calm"],
+                            ["balanced", "Balanced"],
+                            ["high", "High"],
+                          ] as const
+                        ).map(([id, label]) => (
+                          <button
+                            key={id}
+                            type="button"
+                            className={`flex-1 rounded-full px-2 py-1.5 text-xs font-semibold ${
+                              kidEnergy === id
+                                ? "bg-[#0400FF] text-white"
+                                : "bg-white text-[#0400FF]"
+                            }`}
+                            onClick={() => onKidEnergy(id)}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div>
+                <p className="text-[11px] font-semibold uppercase text-[#6B7280]">
+                  Pace
+                </p>
+                <div className="mt-2 flex gap-1 rounded-full bg-[#F5F7FF] p-1">
+                  {(["relaxed", "balanced", "packed"] as const).map((pace) => (
+                    <button
+                      key={pace}
+                      type="button"
+                      className={`flex-1 rounded-full px-2 py-1.5 text-xs font-semibold capitalize ${
+                        intensity === pace
+                          ? "bg-[#0400FF] text-white"
+                          : "text-[#0400FF]"
+                      }`}
+                      onClick={() => onIntensity(pace)}
+                    >
+                      {pace}
+                    </button>
                   ))}
                 </div>
               </div>
-            ) : null}
-            <MajorStopsField stops={majorStops} onChange={onMajorStopsChange} />
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
-                Pace
-              </p>
-              <div className="mt-2 flex gap-1 rounded-full bg-[#F5F7FF] p-1">
-                {(["relaxed", "balanced", "packed"] as const).map((pace) => (
-                  <button
-                    key={pace}
-                    type="button"
-                    className={`flex-1 rounded-full px-2 py-1.5 text-xs font-semibold capitalize ${
-                      intensity === pace ? "bg-[#0400FF] text-white" : "text-[#0400FF]"
-                    }`}
-                    onClick={() => onIntensity(pace)}
-                  >
-                    {pace}
-                  </button>
-                ))}
+
+              <div>
+                <p className="text-[11px] font-semibold uppercase text-[#6B7280]">
+                  Getting around
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {(
+                    [
+                      ["walking", "Walking"],
+                      ["transit", "Transit"],
+                      ["driving", "Driving"],
+                      ["cycling", "Cycling"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                        transport === value
+                          ? "bg-[#080B3A] text-white"
+                          : "bg-[#F5F7FF] text-[#080B3A]"
+                      }`}
+                      onClick={() => onTransport(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm text-[#6B7280]">Travelers</span>
-              <input
-                type="number"
-                min={1}
-                aria-label="Travelers"
-                value={travelers}
-                onChange={(e) => onTravelers(Math.max(1, Number(e.target.value) || 1))}
-                className="w-16 rounded-[10px] border border-[#D1D7E5] px-2 py-1 text-center text-sm text-[#080B3A]"
-              />
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
-                Getting around
-              </p>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {(
-                  [
-                    ["walking", "Walking"],
-                    ["transit", "Transit"],
-                    ["driving", "Driving"],
-                    ["cycling", "Cycling"],
-                  ] as const
-                ).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      transport === value
-                        ? "bg-[#080B3A] text-white"
-                        : "bg-[#F5F7FF] text-[#080B3A]"
-                    }`}
-                    onClick={() => onTransport(value)}
-                  >
-                    {label}
-                  </button>
-                ))}
+
+              <div>
+                <Label className="text-xs uppercase text-[#6B7280]">
+                  Anything else the planner should know
+                </Label>
+                <textarea
+                  value={travelerNotes}
+                  onChange={(e) => onTravelerNotes(e.target.value)}
+                  rows={3}
+                  className="mt-1 w-full rounded-[10px] border border-[#E1E5F0] px-3 py-2 text-sm"
+                  placeholder="Accessibility, dietary, must-avoid, vibes…"
+                />
               </div>
-            </div>
-            {hotel}
-            {flights}
+
+              <div className="space-y-2 rounded-[12px] border border-[#F0F2F8] p-3">
+                <p className="text-[11px] font-semibold uppercase text-[#6B7280]">
+                  Flight number
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Input
+                    value={flightNumber}
+                    onChange={(e) => onFlightNumber(e.target.value)}
+                    placeholder="e.g. NH118"
+                    className="max-w-[10rem]"
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={
+                      flightLookup === "loading" || flightNumber.trim().length < 3
+                    }
+                    onClick={onLookupFlight}
+                  >
+                    {flightLookup === "loading" ? "Looking up…" : "Look up"}
+                  </Button>
+                </div>
+                {flightSummary ? (
+                  <p className="text-sm text-[#080B3A]">{flightSummary}</p>
+                ) : null}
+                {(flightLookup === "miss" || !flightSummary) && (
+                  <div>
+                    <Label className="text-xs uppercase text-[#6B7280]">
+                      Arrival time (manual)
+                    </Label>
+                    <Input
+                      type="time"
+                      value={manualArrival}
+                      onChange={(e) => onManualArrival(e.target.value)}
+                    />
+                    <p className="mt-1 text-xs text-[#9CA3AF]">
+                      Used when AviationStack has no key or the flight is not
+                      found.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <Label className="text-xs uppercase text-[#6B7280]">
+                  Budget
+                </Label>
+                <Input
+                  value={budget}
+                  onChange={(e) => onBudget(e.target.value)}
+                  placeholder="e.g. $2500 total, mid-range food"
+                />
+              </div>
+
+              <div className="pt-2">
+                <LeavePageLink href="/plan" variant="secondary">
+                  View plans & billing
+                </LeavePageLink>
+              </div>
+            </aside>
           </div>
-          <div className="shrink-0 space-y-2 border-t border-[#F0F2F8] bg-white pt-4">
-            <p className="text-xs leading-relaxed text-[#6B7280]">
-              {!lead || !startDate
-                ? "Add a city and start date to generate."
-                : canGenerate === null
-                  ? "Checking whether generation is included."
-                  : canGenerate
-                    ? majorStops.length
-                      ? "When the chat says it’s ready, tap Generate. Major stops stay locked in."
-                      : "When the chat says it’s ready — or whenever the brief looks right — tap Generate itinerary."
-                    : "Free includes 3 generated trips. Upgrade on Plans for more, or your AI allowance may be used up."}
-            </p>
+
+          <div className="sticky bottom-3 z-20 space-y-2 rounded-[16px] border border-[#E1E5F0] bg-white/95 p-3 shadow-[0_8px_30px_rgba(8,11,58,0.12)] backdrop-blur">
             {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
             {progress ? <p className="text-sm text-[#0400FF]">{progress}</p> : null}
-            <Button
+            <button
               type="button"
-              className="w-full"
               onClick={onGenerate}
-              disabled={loading || !lead || !startDate}
+              disabled={loading || !lead || !startDate || canGenerate === false}
+              className={`w-full rounded-[12px] px-4 py-3.5 text-base font-semibold text-white transition ${
+                sheetReady && !loading
+                  ? "animate-pulse bg-[#0400FF] shadow-[0_0_24px_rgba(4,0,255,0.55)]"
+                  : "bg-[#0400FF]/80"
+              } disabled:cursor-not-allowed disabled:opacity-50`}
             >
-              {loading ? "Working…" : "Generate itinerary"}
-            </Button>
+              {loading ? "Building your trip…" : "Generate itinerary"}
+            </button>
+            {!sheetReady ? (
+              <p className="text-center text-xs text-[#6B7280]">
+                Add a city, trip dates, and a bit about who&apos;s traveling —
+                the button will pulse when you&apos;re ready.
+              </p>
+            ) : (
+              <p className="text-center text-xs text-[#0400FF]">
+                Sheet looks ready — tap Generate when you want the itinerary.
+              </p>
+            )}
           </div>
-        </aside>
-      </div>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -558,7 +724,9 @@ function CityField({
 }) {
   return (
     <div className="relative">
-      <Label className="text-xs uppercase tracking-wide text-[#6B7280]">{label}</Label>
+      <Label className="text-xs uppercase tracking-wide text-[#6B7280]">
+        {label}
+      </Label>
       <Input
         value={city}
         onChange={(e) => onChange(e.target.value)}
@@ -595,16 +763,6 @@ function readTraveler(): TravelerProfile | null {
   }
 }
 
-function BriefRow({ label, value }: { label: string; value: string }) {
-  if (!value.trim()) return null;
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <dt className="text-[#6B7280]">{label}</dt>
-      <dd className="line-clamp-2 text-right font-medium text-[#080B3A]">{value}</dd>
-    </div>
-  );
-}
-
 function MajorStopsField({
   stops,
   onChange,
@@ -630,10 +788,6 @@ function MajorStopsField({
       <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
         Major stops
       </p>
-      <p className="mt-1 text-xs leading-relaxed text-[#6B7280]">
-        Add places you already know. Waypoint will schedule them and fill the rest of each day
-        from your interests.
-      </p>
       <div className="mt-2 flex gap-2">
         <Input
           value={draft}
@@ -644,7 +798,7 @@ function MajorStopsField({
               addStop(draft);
             }
           }}
-          placeholder="e.g. Colosseum, Vatican Museums"
+          placeholder="e.g. Colosseum"
           aria-label="Add a major stop"
         />
         <Button
@@ -672,9 +826,7 @@ function MajorStopsField({
             </li>
           ))}
         </ul>
-      ) : (
-        <p className="mt-2 text-xs text-[#9299B5]">Optional — leave empty to plan from interests only.</p>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -689,9 +841,6 @@ function AgentThread({
   tripTitle,
   onExchange,
   onBriefParsed,
-  canGenerate,
-  loading,
-  onGenerate,
 }: {
   destination: string;
   cities: string[];
@@ -702,15 +851,11 @@ function AgentThread({
   tripTitle: string;
   onExchange: (userText: string, reply: string) => void;
   onBriefParsed?: (extracted: Record<string, unknown>) => void;
-  canGenerate: boolean;
-  loading: boolean;
-  onGenerate: () => void;
 }) {
   const [log, setLog] = useState<ChatLine[]>([]);
   const [choices, setChoices] = useState<{ id: string; label: string }[]>([]);
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [chatDone, setChatDone] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
   const onExchangeRef = useRef(onExchange);
   onExchangeRef.current = onExchange;
@@ -738,7 +883,10 @@ function AgentThread({
 
   const cityKey = cities.map((city) => city.trim()).filter(Boolean).join("|");
 
-  async function talk(history: { role: "user" | "assistant"; text: string }[], message: string) {
+  async function talk(
+    history: { role: "user" | "assistant"; text: string }[],
+    message: string,
+  ) {
     const res = await fetch("/api/trips/clarify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -755,9 +903,10 @@ function AgentThread({
       onBriefParsedRef.current?.(data.extracted as Record<string, unknown>);
     }
     return {
-      reply: (data.reply as string) || "Tell me a little more about how you want the days to feel.",
+      reply:
+        (data.reply as string) ||
+        "Tell me a little more about how you travel.",
       choices: (data.choices as { id: string; label: string }[]) ?? [],
-      done: Boolean(data.done),
     };
   }
 
@@ -771,7 +920,6 @@ function AgentThread({
           if (cancelled || userSpoke.current) return;
           setLog([{ role: "agent", text: turn.reply }]);
           setChoices(turn.choices);
-          setChatDone(turn.done);
           setStatus("ready");
         })
         .catch(() => {
@@ -782,7 +930,6 @@ function AgentThread({
       cancelled = true;
       window.clearTimeout(handle);
     };
-    // Re-greet only before the traveler has spoken, so naming a city updates the opening.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [destination, cityKey]);
 
@@ -790,7 +937,8 @@ function AgentThread({
     const said = (text ?? draft).trim();
     if (!said || status === "loading") return;
     userSpoke.current = true;
-    const asked = [...log].reverse().find((line) => line.role === "agent")?.text ?? "";
+    const asked =
+      [...log].reverse().find((line) => line.role === "agent")?.text ?? "";
     const history = log.map((line) => ({
       role: line.role === "you" ? ("user" as const) : ("assistant" as const),
       text: line.text,
@@ -803,8 +951,7 @@ function AgentThread({
       const turn = await talk(history, said);
       onExchangeRef.current(said, asked);
       setLog((prev) => [...prev, { role: "agent", text: turn.reply }]);
-      setChoices(turn.done ? [] : turn.choices);
-      setChatDone(turn.done);
+      setChoices(turn.choices);
       setStatus("ready");
     } catch {
       setStatus("error");
@@ -814,10 +961,12 @@ function AgentThread({
   return (
     <div className="flex min-h-[420px] flex-col">
       <div className="mb-3 rounded-[14px] border border-[#E8ECF6] bg-[#FAFBFF] px-3.5 py-2.5">
-        <p className="text-sm font-semibold text-[#080B3A]">Plan with the agent</p>
+        <p className="text-sm font-semibold text-[#080B3A]">
+          Travel agent chat
+        </p>
         <p className="mt-0.5 text-xs leading-relaxed text-[#6B7280]">
-          Answer the choices, or paste a full trip description — who you’re with, interests,
-          must-dos, budget. It will pull what it can, then ask only what’s still missing.
+          Talk like you would with an agent — who you are, how you travel, what
+          you care about. Paste a long brief anytime; it fills the manual sheet.
         </p>
       </div>
       <div className="flex-1 space-y-3">
@@ -833,46 +982,12 @@ function AgentThread({
             {line.text}
           </p>
         ))}
-        {status === "ready" && !chatDone ? (
+        {status === "ready" ? (
           <ChoiceList
             choices={choices}
             onPick={(label) => void send(label)}
             onOther={() => box.current?.focus()}
           />
-        ) : null}
-        {status === "ready" && chatDone ? (
-          <div className="rounded-[16px] border border-[#0400FF]/25 bg-[#F5F7FF] p-4">
-            <p className="text-sm font-semibold text-[#080B3A]">Ready to generate</p>
-            <p className="mt-1 text-sm leading-relaxed text-[#6B7280]">
-              The agent has enough to build days. Check the trip brief on the right, then generate
-              — or add one more note below first.
-            </p>
-            {!canGenerate ? (
-              <p className="mt-2 text-xs text-[#DC2626]">
-                Add a city and arrival date above before generating.
-              </p>
-            ) : null}
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button
-                type="button"
-                onClick={onGenerate}
-                disabled={loading || !canGenerate}
-              >
-                {loading ? "Working…" : "Generate itinerary"}
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  document
-                    .getElementById("trip-brief-panel")
-                    ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                }}
-              >
-                Review brief
-              </Button>
-            </div>
-          </div>
         ) : null}
         {status === "loading" ? (
           <p className="text-sm text-[#0400FF]">Thinking about the trip…</p>
@@ -889,13 +1004,7 @@ function AgentThread({
           rows={draft.length > 120 ? 5 : 2}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder={
-            chatDone
-              ? "Optional — add one more detail before generating"
-              : choices.length
-                ? "Other — type your own answer, or paste a longer trip description"
-                : "Describe the trip you want, or answer the question above"
-          }
+          placeholder="Answer, or paste a full trip description…"
           className="min-h-11 flex-1 resize-y bg-transparent px-2 py-1.5 text-sm text-[#080B3A] outline-none placeholder:text-[#9299B5]"
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && draft.trim().length < 200) {

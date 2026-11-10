@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServiceClient, createSupabaseServerClient } from "@/lib/supabase/server";
+import { mapBookingRow } from "@/lib/dreamer/ingest";
 import type { DreamerBooking } from "@/lib/dreamer/types";
 
 export async function GET(
@@ -31,22 +32,7 @@ export async function GET(
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  const bookings: DreamerBooking[] = (data ?? []).map((row) => ({
-    id: row.id,
-    ownerId: row.owner_id,
-    futureTripId: row.future_trip_id,
-    tripId: row.trip_id,
-    inboundEmailId: row.inbound_email_id,
-    kind: row.kind,
-    title: row.title,
-    parsed: row.parsed ?? {},
-    startsAt: row.starts_at,
-    endsAt: row.ends_at,
-    matchScore: row.match_score,
-    source: row.source,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }));
+  const bookings: DreamerBooking[] = (data ?? []).map((row) => mapBookingRow(row));
 
   return NextResponse.json({ bookings });
 }

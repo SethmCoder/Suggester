@@ -78,6 +78,10 @@ export interface TripPreferencesPayload {
   destinationAirport?: string;
   /** Estimated inbound flight from OpenFlights (no live schedule API). */
   inboundFlight?: InboundFlightPrefs;
+  /** Airline flight number e.g. NH118 (AviationStack when keyed). */
+  flightNumber?: string;
+  /** Manual or looked-up local arrival HH:MM. */
+  arrivalLocal?: string;
   travelers?: number;
   party?: "solo" | "couple" | "family" | "multigen" | "friends" | "business";
   /** Business vs leisure framing from the create form. */

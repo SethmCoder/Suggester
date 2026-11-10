@@ -118,8 +118,9 @@ describe("localClarifyReply with rich briefs", () => {
       history,
       "One or two things, then free time",
     );
-    expect(turn.done).toBe(true);
-    expect(turn.choices).toEqual([]);
-    expect(turn.reply.toLowerCase()).toMatch(/generate itinerary/);
+    // Travel-agent mode: never dead-ends on Generate; keeps interviewing.
+    expect(turn.done).toBe(false);
+    expect(turn.choices.length).toBeGreaterThan(0);
+    expect(turn.reply.toLowerCase()).not.toMatch(/generate itinerary/);
   });
 });

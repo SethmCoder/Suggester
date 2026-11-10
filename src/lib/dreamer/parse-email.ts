@@ -1,3 +1,4 @@
+import { citiesFromParsedIatas } from "./iata-cities";
 import type { ParsedBooking } from "./types";
 
 const IATA = /\b([A-Z]{3})\b/g;
@@ -29,9 +30,7 @@ export function parseBookingFromEmailText(input: {
   }
 
   const dateMatch =
-    blob.match(
-      /\b(20\d{2}-\d{2}-\d{2})\b/,
-    ) ||
+    blob.match(/\b(20\d{2}-\d{2}-\d{2})\b/) ||
     blob.match(
       /\b((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:,?\s+20\d{2})?)\b/i,
     );
@@ -49,9 +48,14 @@ export function parseBookingFromEmailText(input: {
   }
 
   const confMatch = blob.match(
-    /\b(?:confirmation|conf(?:irmation)?(?:\s*#| number)?|PNR|record locator)\s*[:#]?\s*([A-Z0-9]{5,8})\b/i,
+    /\b(?:confirmation(?:\s*(?:#|number|code))?|PNR|record locator)\s*[:#]?\s*([A-Z0-9]{5,8})\b/i,
   );
-  const confirmation = confMatch?.[1]?.toUpperCase() ?? null;
+  const rawConf = confMatch?.[1]?.toUpperCase() ?? null;
+  const confirmation =
+    rawConf &&
+    !["SUBJECT", "FLIGHT", "HOTEL", "THANKS", "NUMBER", "CODE"].includes(rawConf)
+      ? rawConf
+      : null;
 
   const cabinMatch = blob.match(
     /\b(economy|premium economy|business|first)\b/i,
@@ -62,13 +66,17 @@ export function parseBookingFromEmailText(input: {
     /\b(?:hotel|stay at|reservation at)\s+([A-Z][A-Za-z0-9 &'.,-]{2,60})/i,
   );
 
-  const cities: string[] = [];
-  if (/tokyo|hnd|nrt/i.test(blob)) cities.push("Tokyo");
-  if (/paris|cdg|ory/i.test(blob)) cities.push("Paris");
-  if (/rome|fco/i.test(blob)) cities.push("Rome");
-  if (/barcelona|bcn/i.test(blob)) cities.push("Barcelona");
-  if (/cairo|egypt|cai/i.test(blob)) cities.push("Cairo");
-  if (/seattle|sea\b/i.test(blob)) cities.push("Seattle");
+  const cities = new Set<string>();
+  for (const c of citiesFromParsedIatas({ fromIata, toIata })) cities.add(c);
+  if (/tokyo|hnd|nrt/i.test(blob)) cities.add("Tokyo");
+  if (/paris|cdg|ory/i.test(blob)) cities.add("Paris");
+  if (/rome|fco/i.test(blob)) cities.add("Rome");
+  if (/barcelona|bcn/i.test(blob)) cities.add("Barcelona");
+  if (/cairo|egypt|cai/i.test(blob)) cities.add("Cairo");
+  if (/seattle|sea\b/i.test(blob)) cities.add("Seattle");
+  if (/london|lhr|lgw/i.test(blob)) cities.add("London");
+  if (/dubai|dxb/i.test(blob)) cities.add("Dubai");
+  if (/osaka|kix/i.test(blob)) cities.add("Osaka");
 
   let kind: ParsedBooking["kind"] = "other";
   if (fromIata && toIata) kind = "flight";
@@ -77,7 +85,7 @@ export function parseBookingFromEmailText(input: {
 
   return {
     kind,
-    cities,
+    cities: [...cities],
     fromIata,
     toIata,
     cabin,
@@ -90,17 +98,35 @@ export function parseBookingFromEmailText(input: {
   };
 }
 
+/** Inherit city/date context from a primary (usually flight) booking onto a secondary. */
+export function inheritBookingContext(
+  secondary: ParsedBooking,
+  primary: ParsedBooking | null | undefined,
+): ParsedBooking {
+  if (!primary) return secondary;
+  const cities =
+    secondary.cities?.length
+      ? secondary.cities
+      : primary.cities?.length
+        ? primary.cities
+        : [];
+  return {
+    ...secondary,
+    cities,
+    startDate: secondary.startDate ?? primary.startDate ?? null,
+    endDate: secondary.endDate ?? primary.endDate ?? null,
+  };
+}
+
 export function verifyInboundSignature(
   rawBody: string,
   signatureHeader: string | null,
   secret: string | undefined,
 ): boolean {
   if (!secret) {
-    // Dev without secret: accept only when explicitly allowed.
     return process.env.DREAMER_INBOUND_ALLOW_UNSIGNED === "1";
   }
   if (!signatureHeader) return false;
-  // Resend-style: simple shared secret header match for v1.
   return (
     signatureHeader === secret ||
     signatureHeader === `sha256=${secret}` ||

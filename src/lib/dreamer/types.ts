@@ -1,5 +1,5 @@
 export type DreamerBookingKind = "flight" | "hotel" | "rail" | "other";
-export type DreamerBookingSource = "email_forward" | "manual";
+export type DreamerBookingSource = "email_forward" | "manual" | "paste";
 export type InboundEmailStatus =
   | "received"
   | "parsed"
@@ -35,6 +35,7 @@ export type DreamerBooking = {
   inboundEmailId?: string | null;
   kind: DreamerBookingKind;
   title: string;
+  summary?: string | null;
   parsed: ParsedBooking;
   startsAt?: string | null;
   endsAt?: string | null;
@@ -52,6 +53,7 @@ export type InboundEmailRow = {
   toAddresses: string[];
   subject?: string | null;
   textBody?: string | null;
+  htmlBody?: string | null;
   status: InboundEmailStatus;
   parseError?: string | null;
   receivedAt: string;
@@ -59,8 +61,25 @@ export type InboundEmailRow = {
 
 export type DreamerSuggestion = {
   id: string;
-  kind: "climate" | "stay" | "nearby" | "note";
+  kind: "climate" | "stay" | "nearby" | "note" | "detour";
   title: string;
   body: string;
-  confidence: "catalog" | "forecast" | "estimate";
+  confidence: "catalog" | "forecast" | "estimate" | "search";
+  transportMethod?: string | null;
+  costEstimateLabel?: string | null;
+  reviewStatus?: "pending" | "accepted" | "dismissed";
+};
+
+export type DreamerStayEvent = {
+  title: string;
+  date: string;
+  sourceUrl: string;
+  snippet: string;
+};
+
+export type DreamerStayAdvise = {
+  events: DreamerStayEvent[];
+  stayUntil: string | null;
+  rationale: string;
+  catalogStayHint?: string | null;
 };

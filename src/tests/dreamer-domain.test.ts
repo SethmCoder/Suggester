@@ -7,6 +7,7 @@ import {
 } from "@/lib/dreamer/mailbox";
 import { pickBestMatch, scoreBookingMatch } from "@/lib/dreamer/match-booking";
 import {
+  inheritBookingContext,
   parseBookingFromEmailText,
   verifyInboundSignature,
 } from "@/lib/dreamer/parse-email";
@@ -15,6 +16,10 @@ import {
   buildDreamerSuggestions,
   materializeDatesFromBooking,
 } from "@/lib/dreamer/suggestions";
+import { cityFromIata } from "@/lib/dreamer/iata-cities";
+import { summarizeParsedBooking } from "@/lib/dreamer/summary";
+import { stayAdviseFromEvents } from "@/lib/dreamer/stay-advise";
+import { bookingHasConcreteEvidence } from "@/lib/dreamer/ingest";
 
 describe("Dreamer D1–D10", () => {
   it("D1 shared inbox has no +token", () => {
@@ -127,17 +132,136 @@ describe("Dreamer D1–D10", () => {
       destination: "Tokyo",
       month: 7,
       stayDays: 3,
+      hasEvidence: true,
     });
     expect(tips.length).toBeGreaterThan(0);
     for (const tip of tips) {
       expect(tip.body).not.toMatch(/fireworks on 20\d{2}/i);
     }
+    expect(
+      buildDreamerSuggestions({
+        destination: "Tokyo",
+        month: 7,
+        hasEvidence: false,
+      }),
+    ).toEqual([]);
 
     const senders = extractSenderCandidates({
       from: "Delta <noreply@delta.com>",
-      textBody: "---------- Forwarded message ----------\nFrom: Seth <seth@gmail.com>\n",
+      textBody:
+        "---------- Forwarded message ----------\nFrom: Seth <seth@gmail.com>\n",
     });
     expect(senders).toContain("noreply@delta.com");
     expect(senders).toContain("seth@gmail.com");
+  });
+});
+
+describe("Dreamer paste / stay / summary", () => {
+  it("HND maps to Tokyo and preferred Seattle loses to Tokyo when score gap is large", () => {
+    expect(cityFromIata("HND")).toBe("Tokyo");
+    const parsed = parseBookingFromEmailText({
+      text: "SEA → HND on 2026-12-24 confirmation AB12CD",
+    });
+    expect(parsed.cities).toContain("Tokyo");
+    const seattle = {
+      id: "dream-sea",
+      kind: "dream" as const,
+      destination: "Seattle",
+      status: "wishlist",
+    };
+    const tokyo = {
+      id: "dream-tokyo",
+      kind: "dream" as const,
+      destination: "Tokyo",
+      status: "wishlist",
+    };
+    const best = pickBestMatch(parsed, [seattle, tokyo], 3, {
+      preferredId: "dream-sea",
+      preferredSlack: 2.5,
+    });
+    expect(best?.candidate.id).toBe("dream-tokyo");
+  });
+
+  it("preferred city wins when scores are close", () => {
+    const parsed = parseBookingFromEmailText({
+      text: "Hotel confirmation ABCDE12 stay at Park Hyatt on 2026-12-25",
+    });
+    const tokyo = {
+      id: "dream-tokyo",
+      kind: "dream" as const,
+      destination: "Tokyo",
+      status: "wishlist",
+    };
+    const other = {
+      id: "dream-other",
+      kind: "dream" as const,
+      destination: "Osaka",
+      status: "wishlist",
+    };
+    const best = pickBestMatch(parsed, [tokyo, other], 2, {
+      preferredId: "dream-tokyo",
+      preferredSlack: 3,
+    });
+    expect(best?.candidate.id).toBe("dream-tokyo");
+  });
+
+  it("hotel inherits flight city/date context", () => {
+    const flight = parseBookingFromEmailText({
+      text: "SEA → HND on 2026-12-24 confirmation AB12CD",
+    });
+    const hotel = parseBookingFromEmailText({
+      text: "Hotel confirmation ZZ99AA stay at Park Hyatt",
+    });
+    const merged = inheritBookingContext(hotel, flight);
+    expect(merged.startDate).toBe("2026-12-24");
+    expect(merged.cities).toContain("Tokyo");
+  });
+
+  it("summary is fact-only and evidence gate works", () => {
+    const parsed = parseBookingFromEmailText({
+      subject: "Pasted booking",
+      text: "SEA → HND on 2026-12-24\nConfirmation: AB12CD\neconomy",
+    });
+    const summary = summarizeParsedBooking(parsed);
+    expect(summary).toContain("SEA → HND");
+    expect(summary).toContain("2026-12-24");
+    expect(summary).toContain("AB12CD");
+    expect(parsed.confirmation).toBe("AB12CD");
+    expect(bookingHasConcreteEvidence(parsed)).toBe(true);
+    expect(
+      bookingHasConcreteEvidence({ kind: "other", cities: ["Tokyo"] }),
+    ).toBe(false);
+  });
+
+  it("stay advise never invents stayUntil without dated events", () => {
+    const empty = stayAdviseFromEvents({
+      city: "Tokyo",
+      landDate: "2026-12-24",
+      events: [],
+    });
+    expect(empty.stayUntil).toBeNull();
+    expect(empty.rationale).toMatch(/not invented/i);
+
+    const undatedSnippetsIgnored = stayAdviseFromEvents({
+      city: "Tokyo",
+      landDate: "2026-12-24",
+      events: [],
+    });
+    expect(undatedSnippetsIgnored.stayUntil).toBeNull();
+
+    const withEvent = stayAdviseFromEvents({
+      city: "Tokyo",
+      landDate: "2026-12-24",
+      events: [
+        {
+          title: "Winter illumination",
+          date: "2026-12-28",
+          sourceUrl: "https://example.com/event",
+          snippet: "Runs through Dec 28, 2026",
+        },
+      ],
+    });
+    expect(withEvent.stayUntil).toBe("2026-12-28");
+    expect(withEvent.rationale).toMatch(/2026-12-28/);
   });
 });

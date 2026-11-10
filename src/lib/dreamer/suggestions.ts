@@ -12,14 +12,18 @@ function findCatalog(destination: string) {
 
 /**
  * Grounded suggestion feed — catalog seasons + similarTo only.
- * Never invents event dates or festivals.
+ * Never invents event dates or festivals. Detours are reviewable.
  */
 export function buildDreamerSuggestions(input: {
   destination: string;
   month?: number | null;
   stayDays?: number | null;
   forecastNote?: string | null;
+  /** Only emit climate/detour tips after concrete booking evidence. */
+  hasEvidence?: boolean;
 }): DreamerSuggestion[] {
+  if (!input.hasEvidence) return [];
+
   const out: DreamerSuggestion[] = [];
   const dest = findCatalog(input.destination);
   const month = input.month ?? null;
@@ -42,13 +46,17 @@ export function buildDreamerSuggestions(input: {
         .filter((d): d is NonNullable<typeof d> => Boolean(d))
         .filter((d) => !d.warmMonths.includes(month))
         .slice(0, 2);
-      if (cooler.length) {
+      for (const c of cooler) {
         out.push({
-          id: "climate-cooler",
-          kind: "climate",
-          title: "Cooler places around your trip",
-          body: `Since ${dest.name} is typically warm then, you could schedule something cooler before or after — catalog neighbors: ${cooler.map((c) => c.name).join(", ")}.`,
-          confidence: "catalog",
+          id: `detour-${c.id}`,
+          kind: "detour",
+          title: `Cooler detour: ${c.name}`,
+          body: `You planned ${dest.name} around month ${month}; it is typically warm then. A cooler catalog neighbor is ${c.name}. This extra stop would usually merit rail or a short flight.`,
+          confidence: "estimate",
+          transportMethod: "rail or short flight",
+          costEstimateLabel:
+            "Cost omitted — no live fare source; review before adding.",
+          reviewStatus: "pending",
         });
       }
     }
@@ -60,15 +68,15 @@ export function buildDreamerSuggestions(input: {
       out.push({
         id: "stay-short",
         kind: "stay",
-        title: "Stay length",
-        body: `You mentioned ${input.stayDays} days. Catalog guidance for ${dest.name} is usually ${min}–${max} days — consider a longer stay if you like ${dest.experiences[0] ?? "the city"}.`,
+        title: "Stay length (catalog)",
+        body: `You have ${input.stayDays} days of booking evidence. Catalog guidance for ${dest.name} is usually ${min}–${max} days — soft guidance only, not a dated event.`,
         confidence: "catalog",
       });
     } else if (input.stayDays > max) {
       out.push({
         id: "stay-long",
         kind: "stay",
-        title: "Stay length",
+        title: "Stay length (catalog)",
         body: `${input.stayDays} days is on the long side versus the catalog range of ${min}–${max} for ${dest.name}.`,
         confidence: "catalog",
       });
@@ -103,4 +111,19 @@ export function materializeDatesFromBooking(input: {
     endDate,
     nights: Math.max(0, stayDays - 1),
   };
+}
+
+/** Catalog-only places for Dreamer Places tab (not Trip Wizard). */
+export function dreamerPlaceIdeas(destination: string): {
+  name: string;
+  kind: string;
+  note: string;
+}[] {
+  const dest = findCatalog(destination);
+  if (!dest) return [];
+  return (dest.attractions ?? []).slice(0, 8).map((name) => ({
+    name,
+    kind: "attraction",
+    note: `Catalog place in ${dest.name} — confirm hours locally.`,
+  }));
 }

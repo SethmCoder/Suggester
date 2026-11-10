@@ -6,11 +6,14 @@ import {
   resolveOwnerBySender,
   sharedInboundAddress,
 } from "@/lib/dreamer/mailbox";
-import { pickBestMatch, type MatchCandidate } from "@/lib/dreamer/match-booking";
+import type { MatchCandidate } from "@/lib/dreamer/match-booking";
 import {
-  parseBookingFromEmailText,
-  verifyInboundSignature,
-} from "@/lib/dreamer/parse-email";
+  bookingHasConcreteEvidence,
+  parseAndSummarize,
+  resolveMatch,
+} from "@/lib/dreamer/ingest";
+import { verifyInboundSignature } from "@/lib/dreamer/parse-email";
+import { datesFromDreamAndBooking } from "@/lib/dreamer/materialize";
 
 export async function POST(req: Request) {
   const raw = await req.text();
@@ -47,6 +50,11 @@ export async function POST(req: Request) {
   const textBody = String(
     data.text ?? data.text_body ?? data.body ?? "",
   ).slice(0, 50_000);
+  const htmlBody = data.html
+    ? String(data.html).slice(0, 100_000)
+    : data.html_body
+      ? String(data.html_body).slice(0, 100_000)
+      : null;
   const senders = extractSenderCandidates({
     from: data.from ? String(data.from) : null,
     replyTo: data.reply_to
@@ -66,12 +74,12 @@ export async function POST(req: Request) {
 
   const svc = createServiceClient();
   if (!svc) {
-    // Offline / test path — process in memory only
-    const parsed = parseBookingFromEmailText({ subject, text: textBody });
+    const { parsed, summary } = parseAndSummarize({ subject, text: textBody });
     return NextResponse.json({
       offline: true,
       messageId,
       parsed,
+      summary,
       status: "received",
       inbox: sharedInboundAddress(),
       senders,
@@ -114,7 +122,8 @@ export async function POST(req: Request) {
   }
 
   const status = ownerId ? "received" : "unassigned";
-  const parsedEarly = parseBookingFromEmailText({ subject, text: textBody });
+  const early = parseAndSummarize({ subject, text: textBody });
+  const parsedEarly = early.parsed;
 
   const { data: row, error } = await svc
     .from("inbound_emails")
@@ -125,6 +134,7 @@ export async function POST(req: Request) {
       to_addresses: toAddresses,
       subject,
       text_body: textBody,
+      html_body: htmlBody,
       status,
     })
     .select("id")
@@ -153,7 +163,19 @@ export async function POST(req: Request) {
     });
   }
 
-  const parsed = parseBookingFromEmailText({ subject, text: textBody });
+  const { data: priorForOwner } = await svc
+    .from("dreamer_bookings")
+    .select("parsed, kind, future_trip_id")
+    .eq("owner_id", ownerId)
+    .order("created_at", { ascending: true })
+    .limit(20);
+
+  const primaryFlight = (priorForOwner ?? []).find((b) => b.kind === "flight");
+  const { parsed, title, summary } = parseAndSummarize({
+    subject,
+    text: textBody,
+    primaryContext: primaryFlight?.parsed ?? null,
+  });
 
   const { data: dreams } = await svc
     .from("future_trips")
@@ -186,11 +208,7 @@ export async function POST(req: Request) {
     })),
   ];
 
-  const best = pickBestMatch(parsed, candidates);
-  const title =
-    parsed.kind === "flight" && parsed.fromIata && parsed.toIata
-      ? `${parsed.fromIata} → ${parsed.toIata}`
-      : parsed.hotelName || subject || "Forwarded booking";
+  const best = resolveMatch({ parsed, candidates });
 
   const { data: booking, error: bookErr } = await svc
     .from("dreamer_bookings")
@@ -201,7 +219,7 @@ export async function POST(req: Request) {
       inbound_email_id: row.id,
       kind: parsed.kind ?? "other",
       title,
-      parsed,
+      parsed: { ...parsed, summary },
       starts_at: parsed.startDate ? `${parsed.startDate}T12:00:00Z` : null,
       match_score: best?.score ?? null,
       source: "email_forward",
@@ -217,6 +235,38 @@ export async function POST(req: Request) {
     })
     .eq("id", row.id);
 
+  let planShift = false;
+  if (
+    best?.candidate.kind === "dream" &&
+    bookingHasConcreteEvidence(parsed)
+  ) {
+    const dream = (dreams ?? []).find((d) => d.id === best.candidate.id);
+    if (dream && !dream.converted_trip_id) {
+      const dates = datesFromDreamAndBooking({
+        booking: parsed,
+        potentialStart: dream.potential_start,
+        potentialEnd: dream.potential_end,
+      });
+      await svc
+        .from("future_trips")
+        .update({
+          status: "planning",
+          potential_start: dates.startDate,
+          potential_end: dates.endDate,
+          preferences: {
+            dreamer: {
+              awaitingBookings: false,
+              evidenceReady: true,
+              planShiftAt: new Date().toISOString(),
+            },
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", dream.id);
+      planShift = true;
+    }
+  }
+
   return NextResponse.json({
     id: row.id,
     bookingId: booking?.id,
@@ -226,5 +276,7 @@ export async function POST(req: Request) {
       ? { id: best.candidate.id, kind: best.candidate.kind, score: best.score }
       : null,
     parsed,
+    summary,
+    planShift,
   });
 }

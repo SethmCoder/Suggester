@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PlanSummary } from "@/components/billing/PlanSummary";
 import { DemoBanner } from "@/components/demo/DemoBanner";
+import { SignupToPlanFunnel } from "@/components/settings/SignupToPlanFunnel";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import {
@@ -236,6 +237,8 @@ export default function SettingsPage() {
           <PlanSummary />
         </div>
       </section>
+
+      <SignupToPlanFunnel />
 
       {/* Avatar */}
       <section className="rounded-2xl border border-[#E1E5F0] bg-white p-6 shadow-sm">

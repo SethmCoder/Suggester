@@ -20,6 +20,8 @@ import { budgetFromConversation } from "@/lib/trips/budget";
 import type { InboundFlightPrefs } from "@/lib/types/trip";
 import { assertValidDateRange, nightsBetween } from "@/lib/trips/dates";
 import { applyTripDatesToLegs } from "@/lib/trips/legs";
+import { AnalyticsEvent } from "@/lib/analytics/events";
+import { trackServerEvent } from "@/lib/analytics/track";
 
 const legSchema = z.object({
   city: z.string().min(1),
@@ -91,6 +93,12 @@ const bodySchema = z.object({
   accessibility: z.string().optional(),
   dayStart: z.string().optional(),
   dayEnd: z.string().optional(),
+  flightNumber: z.string().max(16).optional(),
+  arrivalLocal: z.string().max(8).optional(),
+  partyType: z.enum(["solo", "couple", "family", "friends"]).optional(),
+  kidAges: z.string().max(80).optional(),
+  kidEnergy: z.enum(["calm", "balanced", "high"]).optional(),
+  travelerNotes: z.string().max(2000).optional(),
   prefersHiddenGems: z.boolean().optional(),
   mustSee: z.array(z.string()).default([]),
   preferred: z.array(z.string()).default([]),
@@ -244,8 +252,16 @@ export async function POST(req: Request) {
       }
     }
 
-    const dayStart =
-      inboundFlight?.suggestedDayStart ?? body.dayStart ?? "09:00";
+    const arrivalHHMM = body.arrivalLocal?.slice(0, 5);
+    const lateArrival =
+      arrivalHHMM &&
+      (() => {
+        const [h, m] = arrivalHHMM.split(":").map(Number);
+        return (h ?? 0) * 60 + (m ?? 0) >= 18 * 60;
+      })();
+    const dayStart = lateArrival
+      ? "10:00"
+      : inboundFlight?.suggestedDayStart ?? body.dayStart ?? "09:00";
 
     const destinationLabel = body.legs?.length
       ? body.legs.map((l) => l.city).join(" → ")
@@ -284,6 +300,8 @@ export async function POST(req: Request) {
         originAirport: inboundFlight?.fromIata ?? body.originAirport,
         destinationAirport: inboundFlight?.toIata ?? body.destinationAirport,
         inboundFlight,
+        flightNumber: body.flightNumber,
+        arrivalLocal: body.arrivalLocal,
         travelers: body.travelers,
         budget: body.budget ?? budgetFromConversation(body.idealTrip).total,
         budgetAllocation:
@@ -406,6 +424,17 @@ export async function POST(req: Request) {
       kind: "full",
       request: body,
       response: { warnings: generated.warnings, popularityUsed: generated.popularityUsed },
+    });
+
+    await trackServerEvent({
+      event: AnalyticsEvent.TripPlanned,
+      userId: user.id,
+      properties: {
+        tripId,
+        destination: destinationLabel,
+        multiCity: (resolvedLegs?.length ?? 0) > 1,
+      },
+      path: "/trips/new",
     });
 
     const res = NextResponse.json({ tripId, warnings: generated.warnings });

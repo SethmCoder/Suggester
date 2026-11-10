@@ -5,13 +5,13 @@ import {
   nearbyAirports,
   searchAirports,
 } from "@/lib/flights/openflights";
+import { lookupFlightByNumber } from "@/lib/flights/aviationstack";
 
 /**
- * OpenFlights-backed airport / route lookup (no commercial flight API).
+ * OpenFlights airport / route lookup + AviationStack flight-number lookup.
  * GET ?q=SEA — airport search
- * GET ?q=sea&lat=&lng= — search biased to area
- * GET ?lat=&lng= — nearest airports (empty q)
  * GET ?from=SEA&to=HND — estimate block time + arrival
+ * GET ?flight=NH118&date=YYYY-MM-DD — flight number status (AviationStack)
  * GET ?from=SEA&routes=1 — sample destinations from origin
  */
 export async function GET(req: Request) {
@@ -21,7 +21,17 @@ export async function GET(req: Request) {
     const from = searchParams.get("from");
     const to = searchParams.get("to");
     const routes = searchParams.get("routes");
+    const flight = searchParams.get("flight");
+    const flightDate = searchParams.get("date");
     const dep = searchParams.get("dep") ?? undefined;
+
+    if (flight) {
+      const status = await lookupFlightByNumber({
+        flightNumber: flight,
+        date: flightDate,
+      });
+      return NextResponse.json({ flight: status });
+    }
     // Important: Number(null) === 0, so only parse when params are present
     const latRaw = searchParams.get("lat");
     const lngRaw = searchParams.get("lng");

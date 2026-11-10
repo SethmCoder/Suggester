@@ -838,6 +838,36 @@ export function ItineraryEditor({
             <TripBookingsPanel
               legs={legs}
               activities={days.flatMap((d) => d.activities)}
+              flightDate={startDate}
+              onApplyDelay={(minutes) => {
+                setDays((prev) => {
+                  if (!prev[0]) return prev;
+                  return prev.map((day, index) => {
+                    if (index !== 0) return day;
+                    return {
+                      ...day,
+                      activities: day.activities.map((activity) => {
+                        if (!activity.start_time) return activity;
+                        const nextStart = shiftActivityStartTime(
+                          activity.start_time,
+                          minutes,
+                        );
+                        return {
+                          ...activity,
+                          start_time: nextStart,
+                          planning_note: [
+                            activity.planning_note,
+                            `Shifted +${minutes}m for flight delay`,
+                          ]
+                            .filter(Boolean)
+                            .join(" · "),
+                        };
+                      }),
+                    };
+                  });
+                });
+                setSaveState("idle");
+              }}
             />
             {legs.length > 0 ? (
               <section

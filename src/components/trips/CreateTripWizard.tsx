@@ -45,7 +45,10 @@ import {
   nightsBetween,
   sanitizeTripDate,
 } from "@/lib/trips/dates";
+import { sortLegsByArrivalDate } from "@/lib/trips/sort-legs";
 import type { PlanningClarity, TravelerMode } from "@/lib/types/trip";
+import { AnalyticsEvent } from "@/lib/analytics/events";
+import { trackClientEvent } from "@/lib/analytics/client";
 
 const INTERCITY_MODES: { value: LegTransitMode; label: string }[] = [
   { value: "auto", label: "Auto (planner picks)" },
@@ -77,6 +80,13 @@ const INTERESTS = [
   "nightlife",
   "culture",
 ];
+
+const DREAM_OPTIONS_LABELS: Record<string, string> = {
+  small: "Small local places, not tourist traps",
+  sights: "The well-known sights",
+  value: "Fun days that do not waste money",
+  mix: "A mix of walking, food, and highlights",
+};
 
 type LegDraft = {
   city: string;
@@ -237,7 +247,34 @@ export function CreateTripWizard({
   const [routeAirlines, setRouteAirlines] = useState<AirlineOption[]>([]);
   const [majorStops, setMajorStops] = useState<string[]>([]);
   const [legs, setLegs] = useState<LegDraft[]>([emptyLeg()]);
+  const [multiCity, setMultiCity] = useState(false);
+  const [partyType, setPartyType] = useState<
+    "solo" | "couple" | "family" | "friends" | ""
+  >("");
+  const [kidAges, setKidAges] = useState("");
+  const [kidEnergy, setKidEnergy] = useState<"calm" | "balanced" | "high" | "">(
+    "",
+  );
+  const [travelerNotes, setTravelerNotes] = useState("");
+  const [dreamChoice, setDreamChoice] = useState("");
+  const [dreamOther, setDreamOther] = useState("");
+  const [flightNumber, setFlightNumber] = useState("");
+  const [manualArrival, setManualArrival] = useState("");
+  const [flightLookup, setFlightLookup] = useState<
+    "idle" | "loading" | "found" | "miss"
+  >("idle");
+  const [flightSummary, setFlightSummary] = useState<string | null>(null);
   const futureLoaded = useRef(false);
+  const wizardTracked = useRef(false);
+
+  useEffect(() => {
+    if (previewMode || wizardTracked.current) return;
+    wizardTracked.current = true;
+    trackClientEvent(AnalyticsEvent.WizardOpened, {
+      futureTripId: futureTripId ?? null,
+      destination: destinationParam ?? null,
+    });
+  }, [previewMode, futureTripId, destinationParam]);
 
   useEffect(() => {
     if (destinationParam && !futureTripId && !futureLoaded.current) {
@@ -335,6 +372,66 @@ export function CreateTripWizard({
   }>({});
 
   const endDate = form.endDate;
+
+  async function lookupFlightNumber() {
+    const code = flightNumber.trim();
+    if (code.length < 3) return;
+    setFlightLookup("loading");
+    setFlightSummary(null);
+    try {
+      const params = new URLSearchParams({
+        flight: code,
+      });
+      if (form.startDate) params.set("date", form.startDate);
+      const res = await fetch(`/api/flights/lookup?${params}`);
+      const data = (await res.json()) as {
+        flight?: {
+          found?: boolean;
+          airline?: string | null;
+          fromIata?: string | null;
+          toIata?: string | null;
+          arrivalTime?: string | null;
+          status?: string | null;
+          delayed?: boolean;
+          delayMinutes?: number | null;
+          rawNote?: string;
+        };
+      };
+      const f = data.flight;
+      if (f?.found) {
+        setFlightLookup("found");
+        const bits = [
+          f.airline,
+          f.fromIata && f.toIata ? `${f.fromIata} → ${f.toIata}` : null,
+          f.arrivalTime ? `arrives ~${f.arrivalTime}` : null,
+          f.delayed && f.delayMinutes
+            ? `delayed ${f.delayMinutes} min`
+            : f.status,
+        ].filter(Boolean);
+        setFlightSummary(bits.join(" · "));
+        if (f.arrivalTime) setManualArrival(f.arrivalTime);
+        if (f.fromIata) {
+          setForm((current) => ({
+            ...current,
+            originAirport: f.fromIata || current.originAirport,
+            destinationAirport: f.toIata || current.destinationAirport,
+            chosenAirline: f.airline || current.chosenAirline,
+          }));
+        }
+      } else {
+        setFlightLookup("miss");
+        setFlightSummary(
+          f?.rawNote ||
+            "Flight not found — enter arrival time manually so we can plan around landing.",
+        );
+      }
+    } catch {
+      setFlightLookup("miss");
+      setFlightSummary(
+        "Lookup unavailable — enter arrival time manually.",
+      );
+    }
+  }
 
   const tripNights = useMemo(() => {
     if (!form.startDate || !form.endDate) return 0;
@@ -648,6 +745,11 @@ export function CreateTripWizard({
   }
 
   async function submit() {
+    if (!previewMode) {
+      trackClientEvent(AnalyticsEvent.GenerateClicked, {
+        multiCity: legs.length > 1,
+      });
+    }
     setLoading(true);
     setError(null);
     setPlanLimited(false);
@@ -746,8 +848,10 @@ export function CreateTripWizard({
       hotel: legs[0]?.hotel || undefined,
       dietary: form.dietary,
       accessibility: form.accessibility,
-      dayStart: form.dayStart,
+      dayStart: manualArrival || form.dayStart,
       dayEnd: form.dayEnd,
+      flightNumber: flightNumber.trim() || undefined,
+      arrivalLocal: manualArrival || undefined,
       prefersHiddenGems: form.prefersHiddenGems,
       mustSee: stops.mustSee,
       preferred: stops.preferred,
@@ -761,6 +865,18 @@ export function CreateTripWizard({
       flightPricePoint: form.flightPricePoint,
       chosenAirline: form.chosenAirline || undefined,
       tripTitle: form.tripTitle.trim() || undefined,
+      partyType: partyType || undefined,
+      kidAges: partyType === "family" ? kidAges || undefined : undefined,
+      kidEnergy: partyType === "family" ? kidEnergy || undefined : undefined,
+      travelerNotes: [
+        travelerNotes,
+        partyType === "family" && kidAges ? `Kids ages: ${kidAges}` : "",
+        partyType === "family" && kidEnergy
+          ? `Kids energy: ${kidEnergy}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n") || undefined,
       idealTrip: idealTripWithMajorStops(
         [
           form.tripTitle.trim() ? `Trip title: ${form.tripTitle.trim()}` : "",
@@ -1001,6 +1117,7 @@ export function CreateTripWizard({
         departureDate: leg.departureDate,
         nights: leg.nights,
         country: leg.country,
+        countryCode: leg.countryCode,
         suggestions: (citySuggestions[index] ?? []).map((c) => ({
           key: String(c.id),
           label: c.label,
@@ -1018,19 +1135,16 @@ export function CreateTripWizard({
         const city = citySuggestions[legIndex]?.[suggestionIndex];
         if (city) pickCity(legIndex, city);
       }}
-      onLegDays={(index, days) =>
-        setLegs((prev) =>
-          prev.map((leg, i) =>
-            i === index
-              ? {
-                  ...leg,
-                  days,
-                  nights: Math.max(0, days - 1),
-                }
-              : leg,
-          ),
-        )
-      }
+      multiCity={multiCity}
+      onMultiCity={(value) => {
+        setMultiCity(value);
+        if (value && legs.length < 2) {
+          /* keep single until they add */
+        }
+        if (!value && legs.length > 1) {
+          setLegs((prev) => sortLegsByArrivalDate(prev).slice(0, 1));
+        }
+      }}
       onLegDates={(index, dates) => {
         const arrivalDate = sanitizeTripDate(dates.arrivalDate);
         const departureDate = sanitizeTripDate(dates.departureDate);
@@ -1041,41 +1155,44 @@ export function CreateTripWizard({
           return;
         }
         setLegs((prev) =>
-          prev.map((leg, i) =>
-            i === index ? legWithDates(leg, arrivalDate, departureDate) : leg,
+          sortLegsByArrivalDate(
+            prev.map((leg, i) =>
+              i === index ? legWithDates(leg, arrivalDate, departureDate) : leg,
+            ),
           ),
         );
-        if (index === 0) {
-          setForm((current) => ({
+        setForm((current) => {
+          const starts = [
+            arrivalDate,
+            ...legs
+              .filter((_, i) => i !== index)
+              .map((l) => l.arrivalDate)
+              .filter(Boolean),
+          ] as string[];
+          const ends = [
+            departureDate,
+            ...legs
+              .filter((_, i) => i !== index)
+              .map((l) => l.departureDate)
+              .filter(Boolean),
+          ] as string[];
+          const tripStart = starts.sort()[0] || current.startDate;
+          const tripEnd = ends.sort().at(-1) || current.endDate;
+          return {
             ...current,
-            startDate: arrivalDate,
-            endDate:
-              sanitizeTripDate(current.endDate) &&
-              sanitizeTripDate(current.endDate)! >= departureDate
-                ? sanitizeTripDate(current.endDate)
-                : departureDate,
-          }));
-        }
-        if (index === legs.length - 1) {
-          setForm((current) => ({
-            ...current,
-            endDate: departureDate,
-            startDate:
-              sanitizeTripDate(current.startDate) &&
-              sanitizeTripDate(current.startDate)! <= arrivalDate
-                ? sanitizeTripDate(current.startDate)
-                : arrivalDate,
-          }));
-        }
+            startDate: tripStart,
+            endDate: tripEnd,
+          };
+        });
       }}
       onAddCity={() => {
+        setMultiCity(true);
         setLegs((prev) => {
-          const last = prev[prev.length - 1];
+          const ordered = sortLegsByArrivalDate(prev);
+          const last = ordered[ordered.length - 1];
           const arrival =
             last?.departureDate || form.endDate || form.startDate || "";
-          const departure = arrival
-            ? addCalendarDays(arrival, 2)
-            : "";
+          const departure = arrival ? addCalendarDays(arrival, 2) : "";
           const next = emptyLeg({
             days: 3,
             transitFromPrevious: "auto",
@@ -1091,11 +1208,16 @@ export function CreateTripWizard({
                   : current.endDate,
             }));
           }
-          return [...prev, withDates];
+          return sortLegsByArrivalDate([...ordered, withDates]);
         });
       }}
       onRemoveCity={(index) =>
-        setLegs((prev) => (prev.length < 2 ? prev : prev.filter((_, i) => i !== index)))
+        setLegs((prev) => {
+          if (prev.length < 2) return prev;
+          const next = prev.filter((_, i) => i !== index);
+          if (next.length < 2) setMultiCity(false);
+          return sortLegsByArrivalDate(next);
+        })
       }
       startDate={form.startDate}
       endDate={endDate}
@@ -1129,15 +1251,51 @@ export function CreateTripWizard({
       onIntensity={(intensity) => setForm((current) => ({ ...current, intensity }))}
       transport={form.transport}
       onTransport={(transport) => setForm((current) => ({ ...current, transport }))}
-      party={party}
-      travelerMode={form.travelerMode}
-      onTravelerMode={(travelerMode) =>
-        setForm((current) => ({ ...current, travelerMode }))
-      }
-      planningClarity={form.planningClarity}
-      onPlanningClarity={(planningClarity) =>
-        setForm((current) => ({ ...current, planningClarity }))
-      }
+      partyType={partyType}
+      onPartyType={(value) => {
+        setPartyType(value);
+        setParty(
+          value === "solo"
+            ? "Solo traveler"
+            : value === "couple"
+              ? "Couple"
+              : value === "family"
+                ? "Family"
+                : value === "friends"
+                  ? "Friends"
+                  : "",
+        );
+        if (value === "solo") {
+          setKidAges("");
+          setKidEnergy("");
+          setForm((current) => ({ ...current, travelers: 1 }));
+        }
+      }}
+      kidAges={kidAges}
+      onKidAges={setKidAges}
+      kidEnergy={kidEnergy}
+      onKidEnergy={setKidEnergy}
+      travelerNotes={travelerNotes}
+      onTravelerNotes={setTravelerNotes}
+      budget={form.budget}
+      onBudget={(budget) => setForm((current) => ({ ...current, budget }))}
+      dreamChoice={dreamChoice}
+      onDreamChoice={(value) => {
+        setDreamChoice(value);
+        const label =
+          DREAM_OPTIONS_LABELS[value] ||
+          (value === "other" ? dreamOther : "");
+        if (label) {
+          setForm((current) => ({
+            ...current,
+            idealTrip: current.idealTrip
+              ? `${current.idealTrip}\nDream: ${label}`
+              : `Dream: ${label}`,
+          }));
+        }
+      }}
+      dreamOther={dreamOther}
+      onDreamOther={setDreamOther}
       destination={firstLeg?.city ?? ""}
       cities={legs.map((leg) => leg.city)}
       interests={[
@@ -1152,14 +1310,30 @@ export function CreateTripWizard({
       idealTrip={form.idealTrip}
       onExchange={onExchange}
       onBriefParsed={onBriefParsed}
+      sheetReady={Boolean(
+        firstLeg?.city.trim() &&
+          form.startDate &&
+          form.endDate &&
+          (partyType || party || form.travelers > 0),
+      )}
       canGenerate={canGenerate}
       loading={loading}
       progress={progress}
       error={error}
       onGenerate={() => void submit()}
+      flightNumber={flightNumber}
+      onFlightNumber={setFlightNumber}
+      flightLookup={flightLookup}
+      onLookupFlight={() => void lookupFlightNumber()}
+      manualArrival={manualArrival}
+      onManualArrival={setManualArrival}
+      flightSummary={flightSummary}
       hotel={
         firstLeg?.city.trim() ? (
-          <div className="space-y-2 border-t border-[#F0F2F8] pt-3">
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase text-[#6B7280]">
+              Hotel
+            </p>
             <HotelChoice
               city={firstLeg.city}
               booked={firstLeg.hotelBooked}
@@ -1169,12 +1343,16 @@ export function CreateTripWizard({
               selectedName={firstLeg.hotel}
               onBooked={(hotelBooked) =>
                 setLegs((prev) =>
-                  prev.map((leg, index) => (index === 0 ? { ...leg, hotelBooked } : leg)),
+                  prev.map((leg, index) =>
+                    index === 0 ? { ...leg, hotelBooked } : leg,
+                  ),
                 )
               }
               onBrand={(hotelBrand) =>
                 setLegs((prev) =>
-                  prev.map((leg, index) => (index === 0 ? { ...leg, hotelBrand } : leg)),
+                  prev.map((leg, index) =>
+                    index === 0 ? { ...leg, hotelBrand } : leg,
+                  ),
                 )
               }
               onClear={() =>
@@ -1202,7 +1380,9 @@ export function CreateTripWizard({
               }
               onPlace={(hotelPlace) =>
                 setLegs((prev) =>
-                  prev.map((leg, index) => (index === 0 ? { ...leg, hotelPlace } : leg)),
+                  prev.map((leg, index) =>
+                    index === 0 ? { ...leg, hotelPlace } : leg,
+                  ),
                 )
               }
               onPick={(hotel) =>
@@ -1222,7 +1402,9 @@ export function CreateTripWizard({
                   ),
                 )
               }
-              onResults={(hotels) => setRecLists((prev) => ({ ...prev, 0: hotels }))}
+              onResults={(hotels) =>
+                setRecLists((prev) => ({ ...prev, 0: hotels }))
+              }
             />
             {firstLeg.hotelBooked ? (
               <CityHotelField
@@ -1249,102 +1431,12 @@ export function CreateTripWizard({
               />
             ) : firstLeg.hotel ? (
               <p className="text-xs text-[#080B3A]">
-                Planning around <span className="font-semibold">{firstLeg.hotel}</span>
+                Planning around{" "}
+                <span className="font-semibold">{firstLeg.hotel}</span>
               </p>
             ) : null}
           </div>
         ) : null
-      }
-      flights={
-        <div className="space-y-3 border-t border-[#F0F2F8] pt-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
-            Flight
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="relative">
-              <Input
-                value={form.originAirport}
-                onChange={(e) => {
-                  const originAirport = e.target.value.toUpperCase();
-                  setForm((current) => ({ ...current, originAirport }));
-                  void searchAirportsFor("origin", originAirport, departureCoords);
-                }}
-                onFocus={() => setAirportOpen("origin")}
-                onBlur={() => {
-                  window.setTimeout(() => {
-                    void refreshFlightEstimate();
-                    setOriginAirportSuggestions([]);
-                    setAirportOpen((open) => (open === "origin" ? null : open));
-                  }, 150);
-                }}
-                placeholder="From"
-                aria-label="From airport"
-                autoComplete="off"
-              />
-              {airportOpen === "origin" ? (
-                <SuggestionList
-                  items={originAirportSuggestions.map((a) => ({
-                    key: a.iata + a.name,
-                    label: a.label,
-                  }))}
-                  onPick={(index) => pickAirport("origin", originAirportSuggestions[index])}
-                />
-              ) : null}
-            </div>
-            <div className="relative">
-              <Input
-                value={form.destinationAirport}
-                onChange={(e) => {
-                  const destinationAirport = e.target.value.toUpperCase();
-                  setForm((current) => ({ ...current, destinationAirport }));
-                  const near =
-                    firstLeg?.lat != null && firstLeg?.lng != null
-                      ? { lat: firstLeg.lat, lng: firstLeg.lng }
-                      : null;
-                  void searchAirportsFor("dest", destinationAirport, near);
-                }}
-                onFocus={() => setAirportOpen("dest")}
-                onBlur={() => {
-                  window.setTimeout(() => {
-                    void refreshFlightEstimate();
-                    setDestAirportSuggestions([]);
-                    setAirportOpen((open) => (open === "dest" ? null : open));
-                  }, 150);
-                }}
-                placeholder="To"
-                aria-label="To airport"
-                autoComplete="off"
-              />
-              {airportOpen === "dest" ? (
-                <SuggestionList
-                  items={destAirportSuggestions.map((a) => ({
-                    key: a.iata + a.name,
-                    label: a.label,
-                  }))}
-                  onPick={(index) => pickAirport("dest", destAirportSuggestions[index])}
-                />
-              ) : null}
-            </div>
-          </div>
-          {flightHint ? (
-            <p className="text-[11px] leading-snug text-[#6B7280]">{flightHint}</p>
-          ) : null}
-          <FlightRestrictions
-            airlines={routeAirlines}
-            preferred={form.preferredAirlines}
-            pricePoint={form.flightPricePoint}
-            chosen={form.chosenAirline}
-            onPreferred={(preferredAirlines) =>
-              setForm((current) => ({ ...current, preferredAirlines }))
-            }
-            onPricePoint={(flightPricePoint) =>
-              setForm((current) => ({ ...current, flightPricePoint }))
-            }
-            onChoose={(chosenAirline) =>
-              setForm((current) => ({ ...current, chosenAirline }))
-            }
-          />
-        </div>
       }
     />
     </div>

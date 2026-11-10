@@ -1,3 +1,4 @@
+import { cityFromIata, primaryArrivalCity } from "./iata-cities";
 import type { ParsedBooking } from "./types";
 
 export type MatchCandidate = {
@@ -47,14 +48,16 @@ function dateProximity(
 
 /**
  * Score how well a parsed booking matches an owner's dream or trip.
- * Higher is better. Threshold for auto-attach is typically >= 3.
+ * Arrival IATA city (HND → Tokyo) is weighted hardest.
  */
 export function scoreBookingMatch(
   parsed: ParsedBooking,
   candidate: MatchCandidate,
 ): number {
+  const arrivalCity = primaryArrivalCity(parsed);
   const cities = [
     ...(parsed.cities ?? []),
+    arrivalCity ?? "",
     parsed.hotelName ?? "",
   ].filter(Boolean);
   const iatas = [parsed.fromIata, parsed.toIata].filter(Boolean) as string[];
@@ -68,6 +71,8 @@ export function scoreBookingMatch(
     const list = candidate.iatas ?? [];
     if (list.some((x) => x.toUpperCase() === iata.toUpperCase())) score += 4;
     if (norm(candidate.destination).includes(norm(iata))) score += 2;
+    const mapped = cityFromIata(iata);
+    if (mapped) score += overlapScore(candidate.destination, [mapped]);
   }
   score += dateProximity(candidate.startDate, parsed.startDate ?? null);
 
@@ -77,7 +82,10 @@ export function scoreBookingMatch(
   }
   if (candidate.kind === "dream") score += 0.5;
 
-  // Tokyo / HND heuristic: IATA city codes often appear in destination text weakly
+  if (arrivalCity) {
+    score += overlapScore(candidate.destination, [arrivalCity]) * 1.5;
+  }
+
   if (parsed.toIata && /tokyo|japan|hnd|nrt/i.test(candidate.destination)) {
     if (/hnd|nrt/i.test(parsed.toIata)) score += 2;
   }
@@ -93,12 +101,36 @@ export function pickBestMatch(
   parsed: ParsedBooking,
   candidates: MatchCandidate[],
   threshold = 3,
+  options?: {
+    preferredId?: string | null;
+    /** Prefer preferred when within this many points of the top score. */
+    preferredSlack?: number;
+  },
 ): { candidate: MatchCandidate; score: number } | null {
   let best: { candidate: MatchCandidate; score: number } | null = null;
+  let preferred: { candidate: MatchCandidate; score: number } | null = null;
   for (const c of candidates) {
     const score = scoreBookingMatch(parsed, c);
     if (!best || score > best.score) best = { candidate: c, score };
+    if (options?.preferredId && c.id === options.preferredId) {
+      preferred = { candidate: c, score };
+    }
   }
+
+  const slack = options?.preferredSlack ?? 2;
+
+  // Paste/drop on a city card: keep preferred unless another dream clearly wins
+  // (e.g. HND → Tokyo while pasted on Seattle).
+  if (preferred) {
+    if (!best || best.candidate.id === preferred.candidate.id) {
+      return preferred;
+    }
+    if (best.score - preferred.score > slack && best.score >= threshold) {
+      return best;
+    }
+    return preferred;
+  }
+
   if (!best || best.score < threshold) return null;
   return best;
 }

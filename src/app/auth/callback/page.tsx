@@ -99,6 +99,17 @@ function CallbackInner() {
         .then((res) => res.json())
         .catch(() => null);
       if (cancelled) return;
+      if (!intro?.skipIntro) {
+        void fetch("/api/analytics/event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event: "signup_completed",
+            properties: { type: type ?? "session" },
+            path: "/auth/callback",
+          }),
+        }).catch(() => null);
+      }
       if (intro?.skipIntro) {
         window.location.assign(next);
         return;

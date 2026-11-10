@@ -58,21 +58,23 @@ const bodySchema = z.object({
   traveler: travelerSchema.nullable().optional(),
 });
 
-const SYSTEM = `You are Trip Wizard, writing this chat for one specific trip. Be warm and concrete. Do not quote their whole message back.
+const SYSTEM = `You are a travel agent for Waypoint, chatting about one specific trip. Be warm, curious, and concrete. Do not quote their whole message back.
 
-Travelers often paste a long brief (who they travel with, ages, interests, must-dos, budget, pace). First extract what they already said. In one short sentence, acknowledge only the useful facts (for example: family with a 12-year-old, food and museums, Colosseum). Then ask exactly one follow-up about something still missing.
+You are not ChatGPT listing generic tips — you interview the traveler like an agent who will fill their trip sheet.
+
+Travelers often paste a long brief (who they travel with, ages, interests, must-dos, budget, pace). First extract what they already said. In one short sentence, acknowledge only the useful facts. Then ask exactly one follow-up about something still missing.
 
 Never re-ask a fact they already gave. Never repeat a question that is already in the history.
 
-If more than one city is listed, talk about the whole trip. Do not ask only about the first city.
+If more than one city is listed, talk about the whole trip.
 
 Do not ask how many days, the dates, or which cities they are visiting — those are already chosen in the form.
 
 Every follow-up is multiple choice. Write 3 or 4 short options. Do not include Other; the app adds that.
 
-Before done=true, make sure these are covered either in their messages or earlier questions: who is traveling (or kids/ages), walk comfort, indoors vs outdoors, day pace, and three budget topics (whole-trip amount, how money is used, restaurant style). Skip any topic already answered in the long brief.
+Always keep done=false. Never say you are ready to build the trip, never tell them to tap Generate, and never end the conversation. When core topics are covered, ask deeper travel-agent questions (hotel neighborhood, mornings vs evenings, arrival-day energy, deal-breakers, surprises).
 
-When enough is covered, set done=true, leave choices empty, and tell them to review the trip brief on the right and tap Generate itinerary.
+Cover when missing: who is traveling (kids/ages if family), walk comfort, indoors vs outdoors, day pace, budget, hotel preference, and anything personal that helps plan.
 
 If a saved traveler profile or past trip names are provided, use only those facts. Do not invent hotels, fares, hours, ratings, or reservations.
 Return JSON only: {"reply":"...","done":false,"choices":[{"id":"a","label":"..."}]}`;
@@ -132,13 +134,25 @@ export async function POST(req: Request) {
     ) &&
     !repeatsBudgetTopic(history, modeled.reply);
   const reply = modelOk && modeled ? modeled : local;
+  // Generate is user-driven via the pulsing button — chat never ends the interview.
+  const choices =
+    reply.choices.length >= 2
+      ? reply.choices
+      : [
+          { id: "more-vibe", label: "Tell you more about our vibe" },
+          { id: "more-avoid", label: "Share deal-breakers" },
+          { id: "more-must", label: "Add a must-have" },
+        ];
   return NextResponse.json({
-    reply: reply.reply,
-    done: reply.done,
-    choices: reply.choices,
-    allowOther: !reply.done,
+    reply: reply.reply.replace(
+      /tap Generate itinerary|ready to generate|I can build this/gi,
+      "tell me a bit more",
+    ),
+    done: false,
+    choices,
+    allowOther: true,
     summary: reply.reply,
-    question: reply.done ? null : { id: "chat", prompt: reply.reply },
+    question: { id: "chat", prompt: reply.reply },
     why: null,
     questions: [],
     extracted,
