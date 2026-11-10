@@ -4,6 +4,9 @@ import { logger } from "@/lib/logger";
 /** Default Groq model. Override with GROQ_MODEL, including qwen/qwen3.8-27b. */
 export const DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b";
 
+/** Vision-capable model for screenshot / image transcription. Override with GROQ_VISION_MODEL. */
+export const DEFAULT_GROQ_VISION_MODEL = "qwen/qwen3.8-27b";
+
 export type GroqEffort = "low" | "medium" | "high";
 
 export type GroqHeaderSource = { get(name: string): string | null };
@@ -16,6 +19,15 @@ export type GroqQuota = {
 };
 
 type GroqMessage = { role: "system" | "user" | "assistant"; content: string };
+
+export type GroqVisionContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+export type GroqVisionMessage = {
+  role: "system" | "user" | "assistant";
+  content: string | GroqVisionContentPart[];
+};
 
 export type GroqChatRequest = {
   model?: string;
@@ -33,6 +45,14 @@ export type GroqChatRequest = {
   };
   effort?: GroqEffort;
   /** Briefs and other copy can be skipped when the free-tier quota is already spent. */
+  optional?: boolean;
+};
+
+export type GroqVisionChatRequest = {
+  model?: string;
+  temperature?: number;
+  messages: GroqVisionMessage[];
+  effort?: GroqEffort;
   optional?: boolean;
 };
 
@@ -55,6 +75,15 @@ export function groqModel(): string {
 export function proGroqModel(): string {
   const configured = process.env.GROQ_PRO_MODEL?.trim();
   return configured || groqModel();
+}
+
+export function groqVisionModel(): string {
+  const configured = process.env.GROQ_VISION_MODEL?.trim();
+  if (configured) return configured;
+  // Prefer a known multimodal id when GROQ_MODEL is still the text-only default.
+  const textModel = groqModel();
+  if (textModel === DEFAULT_GROQ_MODEL) return DEFAULT_GROQ_VISION_MODEL;
+  return textModel;
 }
 
 export function resetGroqQuotaForTests() {
@@ -190,6 +219,31 @@ export async function groqChat(request: GroqChatRequest): Promise<string | null>
         temperature: request.temperature ?? 0.3,
         messages: request.messages,
         response_format: request.responseFormat,
+        reasoning_format: "parsed",
+        reasoning_effort: request.effort ?? "low",
+      })
+      .withResponse();
+    return {
+      content: data.choices[0]?.message?.content ?? null,
+      headers: response.headers,
+    };
+  });
+}
+
+/** Multimodal completion for confirmation screenshots (image + text prompt). */
+export async function groqVisionChat(
+  request: GroqVisionChatRequest,
+): Promise<string | null> {
+  const groq = groqClient();
+  if (!groq) return null;
+  const model = request.model?.trim() || groqVisionModel();
+  return completeGroqChat({ optional: request.optional }, async () => {
+    const { data, response } = await groq.chat.completions
+      .create({
+        model,
+        temperature: request.temperature ?? 0.2,
+        // SDK message content typing is string-only; vision parts are valid at runtime.
+        messages: request.messages as GroqMessage[],
         reasoning_format: "parsed",
         reasoning_effort: request.effort ?? "low",
       })

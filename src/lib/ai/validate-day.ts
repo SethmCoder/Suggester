@@ -35,7 +35,10 @@ export function noteIsGeneric(note?: string): boolean {
 
 export function dropRepeatedExperiences<
   T extends { placeId: string; name: string; priority?: string; types?: string[] },
->(items: T[]): { kept: T[]; dropped: T[] } {
+>(
+  items: T[],
+  options?: { minSightseeing?: number },
+): { kept: T[]; dropped: T[] } {
   const kept: T[] = [];
   const dropped: T[] = [];
   let previous = "";
@@ -52,6 +55,24 @@ export function dropRepeatedExperiences<
     }
     kept.push(item);
     previous = bucket;
+  }
+
+  // Don't gut a day when the candidate pool is mostly one experience type.
+  const minSightseeing = options?.minSightseeing ?? 0;
+  const sightseeingCount = (list: T[]) =>
+    list.filter(
+      (item) =>
+        !item.placeId.startsWith("flight:") &&
+        !item.placeId.startsWith("transit:"),
+    ).length;
+  if (minSightseeing > 0 && sightseeingCount(kept) < minSightseeing) {
+    for (const item of dropped.splice(0)) {
+      if (sightseeingCount(kept) >= minSightseeing) {
+        dropped.push(item);
+        continue;
+      }
+      kept.push(item);
+    }
   }
   return { kept, dropped };
 }

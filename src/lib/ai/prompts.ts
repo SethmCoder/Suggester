@@ -7,7 +7,7 @@ Never invent places, opening hours, popularity, social-media virality, or travel
 The scheduler moves each visit into published opening hours when a source lists them, and leaves off a place that is closed that day. Do not guess a time the source did not publish.
 NEVER invent vague relative stops such as "a bakery near your hotel", "lunch nearby", or "cafe by the hotel".
 Every activity must use an exact placeId from the candidate list (a real named place).
-Fill each day with several of those places. Never leave a day empty, and never schedule a placeholder such as "free day" or "free block".
+Return one day object for EVERY dayIndex in the day plan. Fill each day with 3–5 real candidate places (relaxed ≈3, balanced ≈3–4, packed ≈4–5). Never leave a day empty or with only one stop, and never schedule a placeholder such as "free day" or "free block".
 Online-interest / popularity scores are SECONDARY ranking hints only — traveler interests, geography, pace, and budget matter more.
 When a hotel anchor is provided for a day, prefer candidates close to that hotel.
 Never invent hotel names or review quotes. Use only the hotel anchor name that was provided.
@@ -107,7 +107,8 @@ Candidates (ONLY these placeIds are valid — never invent unnamed places):
 ${candidateLines.join("\n")}
 
 Rules:
-- Schedule major stops first (priority must_see). Then fill remaining slots from preferred stops and traveler interests.
+- Include every dayIndex from the day plan above — not only day 0.
+- Schedule major stops first (priority must_see). Then fill remaining slots from preferred stops and traveler interests until each day has several stops.
 - On wet forecast days, fill with indoor candidates; skip outdoor parks/beaches/viewpoints unless they are hard must-sees with no indoor substitute.
 - Online-interest hints are SECONDARY. Prefer traveler interests, hotel proximity, weather fit, and a realistic schedule.
 - Never invent social-media virality or vague "near hotel" fillers.

@@ -334,13 +334,16 @@ function fallbackSchedule(
   );
 }
 
+function stopsPerDay(intensity: TripPreferencesInput["intensity"]): number {
+  return intensity === "packed" ? 4 : intensity === "relaxed" ? 2 : 3;
+}
+
 function fallbackScheduleMultiCity(
   prefs: TripPreferencesInput,
   candidates: RankedCandidate[],
   dayPlan: ReturnType<typeof expandLegsToDays>,
 ): ItineraryGeneration {
-  const perDay =
-    prefs.intensity === "packed" ? 4 : prefs.intensity === "relaxed" ? 2 : 3;
+  const perDay = stopsPerDay(prefs.intensity);
   const used = new Set<string>();
   const must = prefs.mustSee ?? [];
   const soft = prefs.preferred ?? [];
@@ -393,6 +396,39 @@ function fallbackScheduleMultiCity(
     result.push({ dayIndex: day.dayIndex, activities });
   }
   return { days: result };
+}
+
+/** Top up sparse model days so every dayPlan day has a full candidate slate. */
+export function mergeSparseAiSchedule(input: {
+  ai: ItineraryGeneration;
+  fallback: ItineraryGeneration;
+  dayPlan: ReturnType<typeof expandLegsToDays>;
+  perDay: number;
+}): ItineraryGeneration {
+  const aiBy = new Map(input.ai.days.map((day) => [day.dayIndex, day]));
+  const fbBy = new Map(input.fallback.days.map((day) => [day.dayIndex, day]));
+  const used = new Set<string>();
+  const days = input.dayPlan.map((assignment) => {
+    const existing = aiBy.get(assignment.dayIndex)?.activities ?? [];
+    const merged = [...existing];
+    for (const act of existing) used.add(act.placeId);
+    if (merged.length < input.perDay) {
+      for (const extra of fbBy.get(assignment.dayIndex)?.activities ?? []) {
+        if (merged.length >= input.perDay) break;
+        if (used.has(extra.placeId)) continue;
+        used.add(extra.placeId);
+        merged.push(extra);
+      }
+    }
+    return { dayIndex: assignment.dayIndex, activities: merged };
+  });
+  return {
+    days,
+    warnings: [
+      ...(input.ai.warnings ?? []),
+      ...(input.fallback.warnings ?? []),
+    ],
+  };
 }
 
 export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
@@ -734,6 +770,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
     })
     .join("\n");
 
+  const deterministic = fallbackScheduleMultiCity(prefs, filtered, dayPlan);
   let ai = await callGroq(
     prefs,
     filtered,
@@ -742,8 +779,17 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
   );
   let modelUnavailable = false;
   if (!ai) {
-    ai = fallbackScheduleMultiCity(prefs, filtered, dayPlan);
+    ai = deterministic;
     modelUnavailable = true;
+  } else {
+    // Models often return only day 0 with a single stop — top up from the
+    // deterministic slate so later days and full days still get places.
+    ai = mergeSparseAiSchedule({
+      ai,
+      fallback: deterministic,
+      dayPlan,
+      perDay: stopsPerDay(prefs.intensity),
+    });
   }
 
   const warnings = ai.warnings ?? [];
@@ -987,7 +1033,8 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
         travelMinutesFromPrev: 0,
       });
       usedPlaces.add(placeId);
-      usedAcross.add(placeId);
+      // Defer usedAcross until the day is finalized — hours/variety filters may
+      // drop this stop, and burning the id early leaves later days empty.
       cursorTime = addMinutes(startTime, durationMinutes + 15);
       return true;
     };
@@ -1222,7 +1269,9 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       },
     );
     for (const drop of clocked.dropped) warnings.push(drop.reason);
-    const varied = dropRepeatedExperiences(clocked.kept);
+    const varied = dropRepeatedExperiences(clocked.kept, {
+      minSightseeing: Math.min(target, 3),
+    });
     if (varied.dropped.length) {
       warnings.push("A repeated kind of stop was left off so the day is not two of the same experience.");
     }
@@ -1300,6 +1349,16 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       warnings.push(
         `Day ${assignment.dayIndex + 1} weather: ${formatWeatherLine(dayWeather)}.`,
       );
+    }
+
+    for (const act of finished) {
+      if (
+        act.placeId.startsWith("flight:") ||
+        act.placeId.startsWith("transit:")
+      ) {
+        continue;
+      }
+      usedAcross.add(act.placeId);
     }
 
     days.push({

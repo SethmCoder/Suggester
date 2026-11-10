@@ -95,9 +95,9 @@ export function DreamerBoard() {
       <header>
         <h1 className="text-3xl font-bold text-[#080B3A]">Future Plans</h1>
         <p className="mt-2 max-w-2xl text-sm text-[#6B7280]">
-          Save where you want to go. Paste or forward a confirmation — Future
-          Plans fills bookings from the email, then suggests places once
-          evidence exists.
+          Save where you want to go. Paste, screenshot, or forward a
+          confirmation — Future Plans fills bookings from evidence, then
+          suggests places once it exists.
         </p>
       </header>
 
@@ -119,8 +119,8 @@ export function DreamerBoard() {
             </Button>
           </div>
           <p className="mt-2 text-xs text-[#6B7280]">
-            Forward from the email on your Waypoint account. Or paste directly
-            onto a city card below.
+            Forward from the email on your Waypoint account. Or paste text /
+            drop a screenshot onto a city card below.
           </p>
         </section>
       ) : null}

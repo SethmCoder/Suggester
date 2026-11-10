@@ -203,7 +203,7 @@ export function DreamerDetail({ id }: { id: string }) {
       if (!res.ok) {
         throw new Error(
           data.code === "evidence_required"
-            ? "Paste a confirmation email first — trips are built from booking evidence only."
+            ? "Paste a confirmation or screenshot first — trips are built from booking evidence only."
             : (data.error ?? "Could not build trip"),
         );
       }
@@ -390,7 +390,7 @@ export function DreamerDetail({ id }: { id: string }) {
                 Empty itinerary
               </p>
               <p className="mt-1 text-sm text-[#6B7280]">
-                Paste or forward a confirmation to add concrete evidence.
+                Paste, screenshot, or forward a confirmation to add evidence.
               </p>
             </div>
           ) : (

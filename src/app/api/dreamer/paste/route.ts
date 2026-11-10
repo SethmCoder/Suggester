@@ -9,6 +9,10 @@ import {
   resolveMatch,
 } from "@/lib/dreamer/ingest";
 import type { MatchCandidate } from "@/lib/dreamer/match-booking";
+import {
+  extractTextFromConfirmationScreenshot,
+  normalizeScreenshotDataUrl,
+} from "@/lib/dreamer/parse-screenshot";
 import type { ParsedBooking } from "@/lib/dreamer/types";
 import { datesFromDreamAndBooking } from "@/lib/dreamer/materialize";
 import { recordConfirmationEvidence } from "@/lib/dreamer/record-evidence";
@@ -55,7 +59,34 @@ function localPasteResponse(input: {
       : null,
     parsed,
     summary,
+    text: input.text || undefined,
   };
+}
+
+async function textFromOptionalScreenshot(
+  image: string | null,
+): Promise<{ text: string } | { error: string; status: number }> {
+  if (!image) return { text: "" };
+  const normalized = normalizeScreenshotDataUrl(image);
+  if ("error" in normalized) {
+    return { error: normalized.error, status: 400 };
+  }
+  if (!process.env.GROQ_API_KEY) {
+    return {
+      error:
+        "Screenshot reading needs AI configured (GROQ_API_KEY). Paste the confirmation text instead.",
+      status: 503,
+    };
+  }
+  const text = await extractTextFromConfirmationScreenshot(normalized.dataUrl);
+  if (!text) {
+    return {
+      error:
+        "Could not read that screenshot — try a clearer crop or paste the confirmation text.",
+      status: 422,
+    };
+  }
+  return { text };
 }
 
 export async function POST(req: Request) {
@@ -69,6 +100,10 @@ export async function POST(req: Request) {
     html?: string;
     subject?: string;
     preferredFutureTripId?: string | null;
+    /** Confirmation screenshot as a data URL (JPEG/PNG/WebP/GIF). */
+    image?: string | null;
+    /** Return parsed fields without saving a booking (trip wizard). */
+    parseOnly?: boolean;
   };
   try {
     body = (await req.json()) as typeof body;
@@ -76,17 +111,50 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const text = String(body.text ?? "").trim();
+  let text = String(body.text ?? "").trim();
   const html = body.html ? String(body.html).slice(0, 100_000) : null;
+  const image = typeof body.image === "string" ? body.image : null;
+  const parseOnly = Boolean(body.parseOnly);
+
+  if (image) {
+    const fromShot = await textFromOptionalScreenshot(image);
+    if ("error" in fromShot) {
+      return NextResponse.json(
+        { error: fromShot.error },
+        { status: fromShot.status },
+      );
+    }
+    text = fromShot.text;
+  }
+
   if (text.length < 8 && !html) {
     return NextResponse.json(
-      { error: "Paste a confirmation email (at least a few lines)." },
+      {
+        error:
+          "Paste a confirmation email, or drop a screenshot of the booking.",
+      },
       { status: 400 },
     );
   }
 
-  const subject = body.subject?.trim() || "Pasted booking";
+  const subject =
+    body.subject?.trim() ||
+    (image ? "Screenshot booking" : "Pasted booking");
   const preferredFutureTripId = body.preferredFutureTripId ?? null;
+
+  if (parseOnly) {
+    const summarized = parseAndSummarize({
+      subject,
+      text: text || html || "",
+    });
+    return NextResponse.json({
+      parseOnly: true,
+      text: text || undefined,
+      parsed: summarized.parsed,
+      summary: summarized.summary,
+      title: summarized.title,
+    });
+  }
 
   const cookieStore = await cookies();
   const demo = isDemoCookie(cookieStore.get(DEMO_COOKIE)?.value);

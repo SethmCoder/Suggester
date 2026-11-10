@@ -54,8 +54,13 @@ export async function saveGeneratedItinerary(input: {
       source: "ai",
     }));
 
-    const { error: actErr } = await supabase.from("activities").insert(activities);
-    if (actErr) throw actErr;
+    // PostgREST rejects insert([]) — empty days are still valid itinerary rows.
+    if (activities.length) {
+      const { error: actErr } = await supabase
+        .from("activities")
+        .insert(activities);
+      if (actErr) throw actErr;
+    }
   }
 
   await supabase

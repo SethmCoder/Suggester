@@ -81,6 +81,7 @@ export function TripAgentDesk({
   confirmationPaste,
   onConfirmationPaste,
   onApplyConfirmation,
+  onApplyConfirmationScreenshot,
   onFillSavedFlight,
   destination,
   cities,
@@ -144,6 +145,7 @@ export function TripAgentDesk({
   confirmationPaste: string;
   onConfirmationPaste: (value: string) => void;
   onApplyConfirmation: () => void;
+  onApplyConfirmationScreenshot?: (file: File | Blob) => Promise<void>;
   onFillSavedFlight: () => void;
   destination: string;
   cities: string[];
@@ -179,6 +181,24 @@ export function TripAgentDesk({
     .map((p) => (p.geonameId != null ? String(p.geonameId) : ""))
     .filter(Boolean)
     .join("|");
+  const screenshotInputRef = useRef<HTMLInputElement>(null);
+  const [screenshotBusy, setScreenshotBusy] = useState(false);
+  const [screenshotError, setScreenshotError] = useState<string | null>(null);
+
+  async function handleScreenshotFile(file: File | Blob) {
+    if (!onApplyConfirmationScreenshot) return;
+    setScreenshotBusy(true);
+    setScreenshotError(null);
+    try {
+      await onApplyConfirmationScreenshot(file);
+    } catch (e) {
+      setScreenshotError(
+        e instanceof Error ? e.message : "Could not read screenshot",
+      );
+    } finally {
+      setScreenshotBusy(false);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-6" data-tour="tour-create-wizard">
@@ -640,24 +660,63 @@ export function TripAgentDesk({
                   Inbound flight (from your confirmation)
                 </p>
                 <p className="text-xs text-[#6B7280]">
-                  Paste the airline confirmation — we read the flight number and
-                  times from the email. No live flight lookup.
+                  Paste the airline confirmation or a screenshot — we read the
+                  flight number and times from what you provide. No live flight
+                  lookup.
                 </p>
                 <textarea
                   value={confirmationPaste}
                   onChange={(e) => onConfirmationPaste(e.target.value)}
+                  onPaste={(e) => {
+                    const items = e.clipboardData?.items;
+                    if (!items || !onApplyConfirmationScreenshot) return;
+                    for (const item of items) {
+                      if (item.type.startsWith("image/")) {
+                        e.preventDefault();
+                        const blob = item.getAsFile();
+                        if (blob) void handleScreenshotFile(blob);
+                        return;
+                      }
+                    }
+                  }}
                   rows={4}
                   className="w-full rounded-[10px] border border-[#E1E5F0] px-3 py-2 text-sm"
-                  placeholder="Paste confirmation email text here…"
+                  placeholder="Paste confirmation email text or a screenshot…"
                 />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={confirmationPaste.trim().length < 8}
-                  onClick={onApplyConfirmation}
-                >
-                  Use confirmation times
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={confirmationPaste.trim().length < 8}
+                    onClick={onApplyConfirmation}
+                  >
+                    Use confirmation times
+                  </Button>
+                  {onApplyConfirmationScreenshot ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={screenshotBusy}
+                      onClick={() => screenshotInputRef.current?.click()}
+                    >
+                      {screenshotBusy ? "Reading…" : "Upload screenshot"}
+                    </Button>
+                  ) : null}
+                </div>
+                <input
+                  ref={screenshotInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) void handleScreenshotFile(file);
+                  }}
+                />
+                {screenshotError ? (
+                  <p className="text-xs text-[#B42318]">{screenshotError}</p>
+                ) : null}
                 <div className="flex flex-wrap items-end gap-2">
                   <div>
                     <Label className="text-xs uppercase text-[#6B7280]">

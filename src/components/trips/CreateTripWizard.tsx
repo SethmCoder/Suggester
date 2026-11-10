@@ -396,13 +396,10 @@ export function CreateTripWizard({
 
   const endDate = form.endDate;
 
-  function applyConfirmationPaste() {
-    const text = confirmationPaste.trim();
-    if (text.length < 8) return;
-    const parsed = parseBookingFromEmailText({
-      subject: "Pasted booking",
-      text,
-    });
+  function applyParsedConfirmation(
+    parsed: ReturnType<typeof parseBookingFromEmailText>,
+    textForCommunity?: string,
+  ) {
     if (parsed.flightNumber) setFlightNumber(parsed.flightNumber);
     if (parsed.arrivalLocal) setManualArrival(parsed.arrivalLocal);
     if (parsed.fromIata || parsed.toIata || parsed.startDate) {
@@ -415,12 +412,57 @@ export function CreateTripWizard({
       }));
     }
     setFlightSummary(summarizeParsedBooking(parsed));
-    // Signed-in: contribute schedule facts to the shared Supabase flight DB.
-    void fetch("/api/flights/community", {
+    const communityText = textForCommunity?.trim();
+    if (communityText && communityText.length >= 8) {
+      void fetch("/api/flights/community", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: "Pasted booking",
+          text: communityText,
+        }),
+      }).catch(() => null);
+    }
+  }
+
+  function applyConfirmationPaste() {
+    const text = confirmationPaste.trim();
+    if (text.length < 8) return;
+    applyParsedConfirmation(
+      parseBookingFromEmailText({
+        subject: "Pasted booking",
+        text,
+      }),
+      text,
+    );
+  }
+
+  async function applyConfirmationScreenshot(file: File | Blob) {
+    const { prepareScreenshotDataUrl } = await import(
+      "@/lib/dreamer/screenshot-client"
+    );
+    const image = await prepareScreenshotDataUrl(file);
+    const res = await fetch("/api/dreamer/paste", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subject: "Pasted booking", text }),
-    }).catch(() => null);
+      body: JSON.stringify({
+        image,
+        parseOnly: true,
+        subject: "Screenshot booking",
+      }),
+    });
+    const data = (await res.json()) as {
+      error?: string;
+      text?: string;
+      parsed?: ReturnType<typeof parseBookingFromEmailText>;
+      summary?: string;
+    };
+    if (!res.ok || !data.parsed) {
+      throw new Error(data.error ?? "Could not read screenshot");
+    }
+    if (data.text) setConfirmationPaste(data.text);
+    applyParsedConfirmation(data.parsed, data.text);
+    if (data.summary) setFlightSummary(data.summary);
   }
 
   async function fillSavedFlight() {
@@ -1496,6 +1538,7 @@ export function CreateTripWizard({
       confirmationPaste={confirmationPaste}
       onConfirmationPaste={setConfirmationPaste}
       onApplyConfirmation={applyConfirmationPaste}
+      onApplyConfirmationScreenshot={applyConfirmationScreenshot}
       onFillSavedFlight={() => void fillSavedFlight()}
       hotel={
         firstLeg?.city.trim() ? (
