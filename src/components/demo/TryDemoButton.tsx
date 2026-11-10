@@ -9,6 +9,7 @@ import {
   listDemoTrips,
 } from "@/lib/demo/data";
 import { saveOfflineTrip } from "@/lib/offline/trips";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 function seedDemoOffline() {
   for (const trip of listDemoTrips()) {
@@ -40,18 +41,28 @@ export function TryDemoButton({
     } catch {
       /* localStorage may be blocked */
     }
+
     try {
       const res = await fetch("/api/demo/start", { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Could not start demo");
-      router.push("/dashboard");
-      router.refresh();
     } catch {
       // Offline demo: local copies are enough to browse Paris + Dubai
-      router.push("/dashboard");
-      router.refresh();
-      setLoading(false);
     }
+
+    // Clear any leftover personal session from browser storage.
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = createClient();
+        await supabase.auth.signOut({ scope: "local" });
+      } catch {
+        /* continue into demo anyway */
+      }
+    }
+
+    router.push("/dashboard");
+    router.refresh();
+    setLoading(false);
   }
 
   return (
@@ -60,7 +71,7 @@ export function TryDemoButton({
       variant={variant}
       className={className}
       disabled={loading}
-      onClick={startDemo}
+      onClick={() => void startDemo()}
     >
       {loading ? "Starting demo…" : "Try demo"}
     </Button>

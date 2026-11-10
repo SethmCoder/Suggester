@@ -986,8 +986,9 @@ function AgentThread({
           Travel agent chat
         </p>
         <p className="mt-0.5 text-xs leading-relaxed text-[#6B7280]">
-          Talk like you would with an agent — who you are, how you travel, what
-          you care about. Paste a long brief anytime; it fills the manual sheet.
+          Ask anything about this trip — pace, hotels, must-sees, deal-breakers.
+          Freeform requests are followed, not only the suggested buttons. Paste a
+          long brief anytime to fill the sheet.
         </p>
       </div>
       <div className="flex-1 space-y-3">

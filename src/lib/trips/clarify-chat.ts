@@ -42,8 +42,11 @@ export function localClarifyReply(
   const covered = coveredClarifyTopics(userCorpus, input.interests);
   const brief = parseTripBrief(userCorpus);
   const heard = acknowledge(trimmed, brief.summary);
+  const freeform = isFreeformRequest(trimmed);
 
-  const dreamDone = asked(history, DREAM_MARK) || covered.dream;
+  // Freeform instructions count as the vibe — don't force the canned dream MCQ.
+  const dreamDone =
+    asked(history, DREAM_MARK) || covered.dream || freeform;
   const partyDone = asked(history, PARTY_MARK) || covered.party;
   const walkDone = asked(history, WALK_MARK) || covered.walk;
   const settingDone = asked(history, SETTING_MARK) || covered.setting;
@@ -67,10 +70,33 @@ export function localClarifyReply(
   ) {
     // Never dead-end on "ready to generate" — keep asking like a travel agent.
     return {
-      reply: continueAgentReply(place, brief.summary, history),
+      reply: freeform
+        ? `${heard}${continueAgentReply(place, brief.summary, history)}`
+        : continueAgentReply(place, brief.summary, history),
       done: false,
       choices: continueAgentChoices(history),
     };
+  }
+
+  if (freeform && trimmed) {
+    // Offline / model-down path: still honor freeform text instead of ignoring it.
+    const next = nextUncoveredQuestion({
+      place,
+      heard,
+      history,
+      covered,
+      interests: input.interests,
+      cities,
+      partyDone,
+      walkDone,
+      settingDone,
+      paceDone,
+      leadDone,
+      budgetTotalDone,
+      budgetSplitDone,
+      budgetFoodDone,
+    });
+    if (next) return next;
   }
 
   if (!dreamDone) {
@@ -340,4 +366,107 @@ function continueAgentChoices(history: ChatLine[]): ClarifyChoice[] {
 
 function normalize(value: string): string {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+export function isFreeformRequest(message: string): boolean {
+  const t = message.trim();
+  if (!t) return false;
+  if (t.length >= 48) return true;
+  return /\b(i want|i need|please|can you|could you|add |include |avoid |prefer|make sure|don'?t |hotel|near |museum|instead|change |remove |focus on|day \d|light day|more food|less )\b/i.test(
+    t,
+  );
+}
+
+function nextUncoveredQuestion(input: {
+  place: string;
+  heard: string;
+  history: ChatLine[];
+  covered: ReturnType<typeof coveredClarifyTopics>;
+  interests: string[];
+  cities: string[];
+  partyDone: boolean;
+  walkDone: boolean;
+  settingDone: boolean;
+  paceDone: boolean;
+  leadDone: boolean;
+  budgetTotalDone: boolean;
+  budgetSplitDone: boolean;
+  budgetFoodDone: boolean;
+}): ClarifyTurn | null {
+  const { heard, place, history, cities } = input;
+  if (cities.length > 1 && !asked(history, WHERE_MARK)) {
+    return {
+      reply: `${heard}Which part of ${place} should carry that — ${cities.join(" or ")}?`,
+      done: false,
+      choices: [
+        ...cities.slice(0, 3).map((city, index) => ({
+          id: `city-${index}`,
+          label: `Mostly ${city}`,
+        })),
+        { id: "split", label: "Split it across every city" },
+      ],
+    };
+  }
+  if (!input.partyDone) {
+    return {
+      reply: `${heard}Who is traveling on this trip?`,
+      done: false,
+      choices: [
+        { id: "solo", label: "Just me" },
+        { id: "couple", label: "A couple" },
+        { id: "family", label: "Family with kids" },
+        { id: "friends", label: "Friends" },
+      ],
+    };
+  }
+  if (!input.paceDone) {
+    return {
+      reply: `${heard}How full should the days feel?`,
+      done: false,
+      choices: [
+        { id: "relaxed", label: "Relaxed — lots of downtime" },
+        { id: "balanced", label: "Balanced" },
+        { id: "packed", label: "Packed — see a lot" },
+      ],
+    };
+  }
+  if (!input.walkDone) {
+    return {
+      reply: `${heard}How long a walk between stops is comfortable?`,
+      done: false,
+      choices: [
+        { id: "walk-15", label: "Under 15 minutes" },
+        { id: "walk-30", label: "About 30 minutes is fine" },
+        { id: "walk-any", label: "Happy to walk farther" },
+      ],
+    };
+  }
+  if (!input.settingDone) {
+    return {
+      reply: `${heard}Mostly indoors or outdoors?`,
+      done: false,
+      choices: [
+        { id: "indoor", label: "Mostly indoors" },
+        { id: "outdoor", label: "Mostly outdoors" },
+        { id: "either", label: "Either is fine" },
+      ],
+    };
+  }
+  if (!input.budgetTotalDone) {
+    return {
+      reply: `${heard}How much is set aside for the whole trip (roughly)?`,
+      done: false,
+      choices: [
+        { id: "b500", label: "Under $500" },
+        { id: "b1500", label: "$500–$1,500" },
+        { id: "b3000", label: "$1,500–$3,000" },
+        { id: "bmore", label: "More than $3,000" },
+      ],
+    };
+  }
+  return {
+    reply: `${heard}${continueAgentReply(place, "", history)}`,
+    done: false,
+    choices: continueAgentChoices(history),
+  };
 }

@@ -110,7 +110,7 @@ const bodySchema = z.object({
   flightPricePoint: z.enum(["any", "budget", "standard", "premium"]).optional(),
   chosenAirline: z.string().optional(),
   idempotencyKey: z.string().max(120).optional(),
-  futureTripId: z.string().uuid().optional(),
+  futureTripId: z.string().min(1).max(120).optional(),
   legs: z.array(legSchema).optional(),
 });
 
@@ -134,7 +134,14 @@ export async function POST(req: Request) {
     } = await supabase.auth.getUser();
 
     if (!user) {
-      return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+      return NextResponse.json(
+        {
+          error: "Sign in required",
+          code: "sign_in_required",
+          hint: "Use demo mode or sign in to generate a trip.",
+        },
+        { status: 401 },
+      );
     }
 
     const gate = gateFeature(

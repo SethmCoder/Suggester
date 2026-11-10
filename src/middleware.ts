@@ -91,16 +91,24 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (user) {
-    if (demo) {
-      response.cookies.set(DEMO_COOKIE, "", {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-        path: "/",
-        maxAge: 0,
-      });
+  // Demo mode wins over a leftover personal session. Try Demo signs out first;
+  // if a session cookie remains, still serve the demo account experience.
+  if (demo) {
+    if (
+      isProtected &&
+      path.startsWith("/trips/") &&
+      !isDemoTripPath(path) &&
+      !isDemoCreatedTrip(path) &&
+      path !== "/trips/new"
+    ) {
+      return NextResponse.redirect(new URL("/trips/demo-paris", request.url));
     }
+    if (isProtected || path === "/login" || path === "/signup") {
+      return NextResponse.next();
+    }
+  }
+
+  if (user) {
     const introDone = request.cookies.get(INTRO_COOKIE)?.value === "1";
     // Signed-in users who open login go home. Signup stays reachable so
     // "Create account" can clear the session and show the new-account form.
@@ -130,19 +138,6 @@ export async function middleware(request: NextRequest) {
       return welcome;
     }
     return response;
-  }
-
-  // Demo cookie unlocks dashboard, sample trips, the planner, and trips it creates.
-  if (demo && isProtected) {
-    if (
-      path.startsWith("/trips/") &&
-      !isDemoTripPath(path) &&
-      !isDemoCreatedTrip(path) &&
-      path !== "/trips/new"
-    ) {
-      return NextResponse.redirect(new URL("/trips/demo-paris", request.url));
-    }
-    return NextResponse.next();
   }
 
   if (isProtected && !demo) {

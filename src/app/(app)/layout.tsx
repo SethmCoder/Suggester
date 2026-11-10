@@ -16,6 +16,15 @@ export default async function AppLayout({
   const cookieStore = await cookies();
   const demo = isDemoCookie(cookieStore.get(DEMO_COOKIE)?.value);
 
+  if (demo) {
+    // Demo account wins — never show a personal email while demo is active.
+    return (
+      <AppShell userEmail="demo@waypoint.app" displayName="Demo traveler">
+        {children}
+      </AppShell>
+    );
+  }
+
   try {
     const supabase = await createSupabaseServerClient();
     const {
@@ -32,10 +41,6 @@ export default async function AppLayout({
     }
   } catch {
     /* Supabase optional */
-  }
-
-  if (demo && !email) {
-    displayName = "Traveler";
   }
 
   return (

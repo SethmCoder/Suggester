@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { localClarifyReply, replyRepeats } from "@/lib/trips/clarify-chat";
+import {
+  isFreeformRequest,
+  localClarifyReply,
+  replyRepeats,
+} from "@/lib/trips/clarify-chat";
 import type { ClarifyInput } from "@/lib/trips/clarify";
 import { localIntroFollowUp, profileFromIntro, scriptedIntroTurn } from "@/lib/profile/intro-chat";
 
@@ -19,6 +23,18 @@ describe("clarify conversation", () => {
     expect(turn.reply).toMatch(/Kyoto/);
     expect(turn.choices.length).toBeGreaterThanOrEqual(3);
     expect(turn.reply.toLowerCase()).not.toMatch(/what would a dream version/);
+    expect(turn.done).toBe(false);
+  });
+
+  it("follows freeform requests instead of forcing the dream MCQ", () => {
+    const said =
+      "Please make day 1 light after we land, focus on quiet museums, and avoid tourist traps";
+    expect(isFreeformRequest(said)).toBe(true);
+    const turn = localClarifyReply(input, [], said);
+    expect(turn.reply.toLowerCase()).not.toMatch(/closest to the days you want/);
+    expect(turn.reply.toLowerCase()).toMatch(
+      /who is traveling|how full|walk|indoors|outdoors|set aside|hotel|morning|evening|surprise|deal-breaker|must-have|energy|factor that|got it|i'll|noted/i,
+    );
     expect(turn.done).toBe(false);
   });
 

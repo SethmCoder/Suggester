@@ -3,6 +3,7 @@ import { z } from "zod";
 import { emptyTraveler, type TravelerProfile } from "@/lib/profile/traveler";
 import { budgetQuestionsPending, repeatsBudgetTopic } from "@/lib/trips/budget";
 import {
+  isFreeformRequest,
   localClarifyReply,
   replyIgnoresTraveler,
   replyRepeats,
@@ -58,26 +59,25 @@ const bodySchema = z.object({
   traveler: travelerSchema.nullable().optional(),
 });
 
-const SYSTEM = `You are a travel agent for Waypoint, chatting about one specific trip. Be warm, curious, and concrete. Do not quote their whole message back.
+const SYSTEM = `You are a travel agent for Waypoint for one specific trip. Be warm, curious, and concrete. Do not quote their whole message back.
 
-You are not ChatGPT listing generic tips — you interview the traveler like an agent who will fill their trip sheet.
+Follow what the traveler actually asked. If they give freeform instructions (pace, hotel area, must-sees, avoid list, arrival-day energy, “make day 1 light”, “more food less museums”), acknowledge those specifics and apply them — do not ignore them to run a canned interview script.
 
-Travelers often paste a long brief (who they travel with, ages, interests, must-dos, budget, pace). First extract what they already said. In one short sentence, acknowledge only the useful facts. Then ask exactly one follow-up about something still missing.
+You also fill their trip sheet. When they state facts, put structured updates in sheetUpdates (only fields they clearly stated). Allowed keys: party, childAges, travelers, interests, mustSee, avoid, intensity (relaxed|balanced|packed), transport, indoorOutdoor (indoor|outdoor|either), maxWalkMinutes, budgetTotal, budgetAllocation, restaurantStyle, dreamStyle (local|sights|value|mix), summary.
 
-Never re-ask a fact they already gave. Never repeat a question that is already in the history.
+If they pasted a long brief: one short sentence acknowledging useful facts, then exactly one follow-up about something still missing.
 
+Never re-ask a fact they already gave. Never repeat a question already in history.
+Do not ask how many days, the dates, or which cities — those are on the form.
 If more than one city is listed, talk about the whole trip.
 
-Do not ask how many days, the dates, or which cities they are visiting — those are already chosen in the form.
+Choices: when a follow-up fits multiple choice, return 3–4 short options (no Other; the app adds it). When they asked something open-ended or gave instructions, choices may be empty or soft next-steps — never invent fake options that ignore their request.
 
-Every follow-up is multiple choice. Write 3 or 4 short options. Do not include Other; the app adds that.
-
-Always keep done=false. Never say you are ready to build the trip, never tell them to tap Generate, and never end the conversation. When core topics are covered, ask deeper travel-agent questions (hotel neighborhood, mornings vs evenings, arrival-day energy, deal-breakers, surprises).
-
-Cover when missing: who is traveling (kids/ages if family), walk comfort, indoors vs outdoors, day pace, budget, hotel preference, and anything personal that helps plan.
-
-If a saved traveler profile or past trip names are provided, use only those facts. Do not invent hotels, fares, hours, ratings, or reservations.
-Return JSON only: {"reply":"...","done":false,"choices":[{"id":"a","label":"..."}]}`;
+Always done=false. Never say you are ready to generate or tell them to tap Generate.
+When core topics are covered, ask deeper agent questions (hotel neighborhood, mornings vs evenings, arrival-day energy, deal-breakers).
+Do not invent hotels, fares, hours, ratings, or reservations.
+Return JSON only:
+{"reply":"...","done":false,"choices":[{"id":"a","label":"..."}],"sheetUpdates":{}}`;
 
 export async function POST(req: Request) {
   const body = bodySchema.parse(await req.json());
@@ -116,33 +116,50 @@ export async function POST(req: Request) {
   const traveler = mergeTraveler(savedTraveler, body.traveler);
   const local = localClarifyReply(input, history, message);
   const opening = history.every((line) => line.role !== "assistant");
-  const richMessage = message.length >= 80;
+  // Prefer the model whenever the traveler said something — including short freeform asks.
+  // Only skip the model on the silent opening greeting (empty message).
   const modeled =
-    opening && !richMessage
+    opening && !message
       ? null
-      : await modelReply(input, history, message, pastTrips, traveler, body.tripTitle, extracted);
+      : await modelReply(
+          input,
+          history,
+          message,
+          pastTrips,
+          traveler,
+          body.tripTitle,
+          extracted,
+        );
   const previous = [...history].reverse().find((line) => line.role === "assistant")?.text;
-  const modelOk =
+  const freeform = isFreeformRequest(message);
+  const modelOk = Boolean(
     modeled &&
-    !replyIgnoresTraveler(message, modeled.reply) &&
-    !replyRepeats(previous, modeled.reply) &&
-    (modeled.done || modeled.choices.length >= 2) &&
-    !(
-      modeled.done &&
-      (stillNeedsBudget(history, covered) ||
-        constraintsStillOpen(history, input.interests, covered))
-    ) &&
-    !repeatsBudgetTopic(history, modeled.reply);
+      !replyIgnoresTraveler(message, modeled.reply) &&
+      !replyRepeats(previous, modeled.reply) &&
+      (freeform || modeled.choices.length >= 2 || !message) &&
+      !(
+        modeled.done &&
+        (stillNeedsBudget(history, covered) ||
+          constraintsStillOpen(history, input.interests, covered))
+      ) &&
+      !repeatsBudgetTopic(history, modeled.reply),
+  );
   const reply = modelOk && modeled ? modeled : local;
+  const mergedExtracted = {
+    ...extracted,
+    ...(modelOk && modeled?.sheetUpdates ? modeled.sheetUpdates : {}),
+  };
   // Generate is user-driven via the pulsing button — chat never ends the interview.
   const choices =
     reply.choices.length >= 2
       ? reply.choices
-      : [
-          { id: "more-vibe", label: "Tell you more about our vibe" },
-          { id: "more-avoid", label: "Share deal-breakers" },
-          { id: "more-must", label: "Add a must-have" },
-        ];
+      : freeform && modelOk
+        ? reply.choices
+        : [
+            { id: "more-vibe", label: "Tell you more about our vibe" },
+            { id: "more-avoid", label: "Share deal-breakers" },
+            { id: "more-must", label: "Add a must-have" },
+          ];
   return NextResponse.json({
     reply: reply.reply.replace(
       /tap Generate itinerary|ready to generate|I can build this/gi,
@@ -155,7 +172,7 @@ export async function POST(req: Request) {
     question: { id: "chat", prompt: reply.reply },
     why: null,
     questions: [],
-    extracted,
+    extracted: mergedExtracted,
     source: modelOk ? "model" : "rules",
   });
 }
@@ -249,6 +266,10 @@ async function recentTripNames(): Promise<string[]> {
   }
 }
 
+type ModeledTurn = ClarifyTurn & {
+  sheetUpdates?: Record<string, unknown>;
+};
+
 async function modelReply(
   input: ClarifyInput,
   history: ChatLine[],
@@ -257,13 +278,13 @@ async function modelReply(
   traveler: TravelerProfile | null,
   tripTitle?: string,
   extracted?: ReturnType<typeof parseTripBrief>,
-): Promise<ClarifyTurn | null> {
+): Promise<ModeledTurn | null> {
   if (!process.env.GROQ_API_KEY) return null;
   try {
     const { groqChat } = await import("@/lib/ai/groq");
     const raw = await groqChat({
       temperature: 0.4,
-      effort: message.length >= 80 ? "medium" : "low",
+      effort: message.length >= 48 || isFreeformRequest(message) ? "medium" : "low",
       responseFormat: { type: "json_object" },
       messages: [
         { role: "system", content: SYSTEM },
@@ -282,6 +303,7 @@ async function modelReply(
             alreadyExtracted: extracted ?? null,
             history,
             message,
+            freeformRequest: isFreeformRequest(message),
           }),
         },
       ],
@@ -293,12 +315,22 @@ async function modelReply(
   }
 }
 
-function parseTurn(raw: string): ClarifyTurn | null {
+function parseTurn(raw: string): ModeledTurn | null {
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) return null;
-  let parsed: { reply?: unknown; done?: unknown; choices?: unknown };
+  let parsed: {
+    reply?: unknown;
+    done?: unknown;
+    choices?: unknown;
+    sheetUpdates?: unknown;
+  };
   try {
-    parsed = JSON.parse(match[0]) as { reply?: unknown; done?: unknown; choices?: unknown };
+    parsed = JSON.parse(match[0]) as {
+      reply?: unknown;
+      done?: unknown;
+      choices?: unknown;
+      sheetUpdates?: unknown;
+    };
   } catch {
     return null;
   }
@@ -314,5 +346,16 @@ function parseTurn(raw: string): ClarifyTurn | null {
       if (choices.length >= 4) break;
     }
   }
-  return { reply: parsed.reply.trim(), done: parsed.done === true, choices };
+  const sheetUpdates =
+    parsed.sheetUpdates &&
+    typeof parsed.sheetUpdates === "object" &&
+    !Array.isArray(parsed.sheetUpdates)
+      ? (parsed.sheetUpdates as Record<string, unknown>)
+      : undefined;
+  return {
+    reply: parsed.reply.trim(),
+    done: parsed.done === true,
+    choices,
+    sheetUpdates,
+  };
 }

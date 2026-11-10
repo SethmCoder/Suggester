@@ -626,16 +626,23 @@ export function CreateTripWizard({
     let cancelled = false;
     void fetch("/api/billing")
       .then((res) => res.json())
-      .then((data: { generateAllowed?: boolean }) => {
-        if (!cancelled) setCanGenerate(Boolean(data.generateAllowed));
+      .then((data: { generateAllowed?: boolean; signedIn?: boolean }) => {
+        if (cancelled) return;
+        // Demo / unsigned always generate via demo-create; don't lock the button
+        // behind a billing probe that can fail offline.
+        if (previewMode || !data.signedIn) {
+          setCanGenerate(true);
+          return;
+        }
+        setCanGenerate(Boolean(data.generateAllowed));
       })
       .catch(() => {
-        if (!cancelled) setCanGenerate(false);
+        if (!cancelled) setCanGenerate(previewMode ? true : null);
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [previewMode]);
 
   function noteFromChat(text: string) {
     if (
@@ -668,6 +675,9 @@ export function CreateTripWizard({
       : [];
     const mustSee = Array.isArray(extracted.mustSee)
       ? extracted.mustSee.filter((item): item is string => typeof item === "string")
+      : [];
+    const avoid = Array.isArray(extracted.avoid)
+      ? extracted.avoid.filter((item): item is string => typeof item === "string")
       : [];
     const partyLabel =
       typeof extracted.party === "string" ? extracted.party : undefined;
@@ -719,13 +729,25 @@ export function CreateTripWizard({
         typeof extracted.summary === "string" && extracted.summary.trim()
           ? extracted.summary.trim()
           : "";
-      const idealTrip =
-        note && !current.idealTrip.toLowerCase().includes(note.toLowerCase())
-          ? [current.idealTrip.trim(), note].filter(Boolean).join(". ")
-          : current.idealTrip;
+      const avoidNote = avoid.length ? `Avoid: ${avoid.join(", ")}` : "";
+      const idealTrip = [current.idealTrip.trim(), note, avoidNote]
+        .filter(Boolean)
+        .filter((part, index, all) => {
+          const lower = part.toLowerCase();
+          return all.findIndex((item) => item.toLowerCase() === lower) === index;
+        })
+        .join(". ");
+      const existingAvoid = splitList(current.avoid);
+      const mergedAvoid = [...existingAvoid];
+      for (const item of avoid) {
+        if (!mergedAvoid.some((row) => row.toLowerCase() === item.toLowerCase())) {
+          mergedAvoid.push(item);
+        }
+      }
       return {
         ...current,
         interests: mergedInterests.slice(0, 12),
+        avoid: mergedAvoid.slice(0, 12).join(", "),
         travelers,
         intensity,
         transport,
@@ -759,12 +781,11 @@ export function CreateTripWizard({
     }
   }
 
+  async function ensureDemoSession() {
+    await fetch("/api/demo/start", { method: "POST" }).catch(() => null);
+  }
+
   async function submit() {
-    if (!previewMode) {
-      trackClientEvent(AnalyticsEvent.GenerateClicked, {
-        multiCity: legs.length > 1,
-      });
-    }
     setLoading(true);
     setError(null);
     setPlanLimited(false);
@@ -790,6 +811,7 @@ export function CreateTripWizard({
       setForm((current) => ({ ...current, startDate, endDate }));
     }
 
+    let signedIn = false;
     try {
       const created = countCreatedOfflineTrips();
       const gate = await fetch("/api/billing", {
@@ -797,6 +819,7 @@ export function CreateTripWizard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "sync", created }),
       }).then((res) => res.json());
+      signedIn = Boolean(gate.signedIn);
       if (gate.plan !== "pro" && gate.remaining === 0) {
         setPlanLimited(true);
         setError(PLAN_LIMIT_MESSAGE);
@@ -806,6 +829,15 @@ export function CreateTripWizard({
       }
     } catch {
       /* the create route still enforces the cap */
+    }
+
+    // Live session wins over SSR previewMode — unsigned users always generate
+    // via demo-create (after ensuring the demo cookie), never /api/trips/create.
+    const useDemo = previewMode || !signedIn;
+    if (!useDemo) {
+      trackClientEvent(AnalyticsEvent.GenerateClicked, {
+        multiCity: legs.length > 1,
+      });
     }
     const destination = legs.map((l) => l.city).filter(Boolean).join(" → ");
     const talked = budgetFromConversation(Object.values(clarifyAnswers).join("\n"));
@@ -833,6 +865,10 @@ export function CreateTripWizard({
         ...effectiveInterests(readIntelligence()),
       ]),
     ];
+    const uuidRe =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const linkedFutureId =
+      futureTripId && uuidRe.test(futureTripId) ? futureTripId : undefined;
     const body = {
       destination,
       departureCity: form.departureCity,
@@ -870,9 +906,9 @@ export function CreateTripWizard({
       prefersHiddenGems: form.prefersHiddenGems,
       mustSee: stops.mustSee,
       preferred: stops.preferred,
-      futureTripId: futureTripId || undefined,
-      idempotencyKey: futureTripId
-        ? `future:${futureTripId}`
+      futureTripId: linkedFutureId,
+      idempotencyKey: linkedFutureId
+        ? `future:${linkedFutureId}`
         : undefined,
       optional: splitList(form.optional),
       avoid: splitList(form.avoid),
@@ -949,45 +985,59 @@ export function CreateTripWizard({
         })),
     };
 
-    if (previewMode) {
-      try {
-        setProgress("Generating itinerary…");
-        const res = await fetch("/api/trips/demo-create", {
+    async function finishDemoGenerate() {
+      setProgress("Generating itinerary…");
+      await ensureDemoSession();
+      let res = await fetch("/api/trips/demo-create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      let data = await res.json();
+      if (res.status === 401) {
+        await ensureDemoSession();
+        res = await fetch("/api/trips/demo-create", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
-        const data = await res.json();
-        if (!res.ok) {
-          if (data.code === "plan_limit") setPlanLimited(true);
-          throw new Error(data.error ?? "Could not generate this trip");
-        }
-        const tripId = createOfflineTripId();
-        saveOfflineTrip(
-          offlineSnapshotFromGenerated({
-            tripId,
-            destination: data.destination || destination || "Untitled trip",
-            startDate,
-            endDate,
-            days: (data.days ?? []) as GeneratedDay[],
-            legs: body.legs,
-            title: form.tripTitle.trim() || undefined,
-            budget: {
-              total: body.budget,
-              currency: body.currency,
-              allocation: body.budgetAllocation,
-              restaurantStyle: body.restaurantStyle,
-            },
-          }),
-        );
-        if (futureTripId) {
-          updateFutureTrip(futureTripId, {
-            convertedTripId: tripId,
-            status: "ready",
-          });
-        }
-        router.push(`/trips/${tripId}`);
-        router.refresh();
+        data = await res.json();
+      }
+      if (!res.ok) {
+        if (data.code === "plan_limit") setPlanLimited(true);
+        throw new Error(data.error ?? "Could not generate this trip");
+      }
+      const tripId = createOfflineTripId();
+      saveOfflineTrip(
+        offlineSnapshotFromGenerated({
+          tripId,
+          destination: data.destination || destination || "Untitled trip",
+          startDate,
+          endDate,
+          days: (data.days ?? []) as GeneratedDay[],
+          legs: body.legs,
+          title: form.tripTitle.trim() || undefined,
+          budget: {
+            total: body.budget,
+            currency: body.currency,
+            allocation: body.budgetAllocation,
+            restaurantStyle: body.restaurantStyle,
+          },
+        }),
+      );
+      if (futureTripId) {
+        updateFutureTrip(futureTripId, {
+          convertedTripId: tripId,
+          status: "ready",
+        });
+      }
+      router.push(`/trips/${tripId}`);
+      router.refresh();
+    }
+
+    if (useDemo) {
+      try {
+        await finishDemoGenerate();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not generate this trip");
       } finally {
@@ -1002,13 +1052,18 @@ export function CreateTripWizard({
         setError("The planner needs a connection to look up real places.");
         return;
       }
+      setProgress("Generating itinerary…");
       const res = await fetch("/api/trips/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      setProgress("Generating itinerary…");
       const data = await res.json();
+      if (res.status === 401) {
+        // Session expired mid-flow — generate on the demo path instead.
+        await finishDemoGenerate();
+        return;
+      }
       if (!res.ok) {
         if (data.code === "plan_limit") setPlanLimited(true);
         throw new Error(data.error ?? "Failed");

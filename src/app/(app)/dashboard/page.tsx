@@ -99,9 +99,16 @@ export default function DashboardPage() {
           } catch {
             /* ignore */
           }
+          // Demo account only — hide personal offline / cloud trips.
+          const demoOffline = listOfflineTrips().filter(
+            (t) => t.id.startsWith("demo-") || t.id.startsWith("offline-"),
+          );
           setTrips(
             visibleTrips(
-              mergeTrips(remote.length ? remote : listDemoTrips(), listOfflineTrips()),
+              mergeTrips(
+                remote.length ? remote : listDemoTrips(),
+                demoOffline,
+              ),
             ),
           );
         } else {

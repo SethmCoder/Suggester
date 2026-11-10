@@ -126,11 +126,25 @@ export async function POST(req: Request) {
     });
   }
 
-  const row = await upsertUserFlightFromParsed(svc, parsed, user.id);
-  return NextResponse.json({
-    ok: Boolean(row),
-    stored: row,
-    parsed,
-    summary: summarizeParsedBooking(parsed),
-  });
+  try {
+    const row = await upsertUserFlightFromParsed(svc, parsed, user.id);
+    return NextResponse.json({
+      ok: Boolean(row),
+      stored: row,
+      parsed,
+      summary: summarizeParsedBooking(parsed),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Store failed";
+    // Never surface raw Supabase key errors to the confirmation UI.
+    return NextResponse.json({
+      ok: false,
+      offline: true,
+      parsed,
+      summary: summarizeParsedBooking(parsed),
+      warning: /invalid api key|jwt|unauthorized/i.test(message)
+        ? undefined
+        : message,
+    });
+  }
 }

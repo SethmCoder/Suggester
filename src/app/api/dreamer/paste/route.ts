@@ -1,4 +1,6 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { DEMO_COOKIE, isDemoCookie } from "@/lib/demo/session";
 import { createServiceClient, createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   bookingHasConcreteEvidence,
@@ -86,11 +88,14 @@ export async function POST(req: Request) {
   const subject = body.subject?.trim() || "Pasted booking";
   const preferredFutureTripId = body.preferredFutureTripId ?? null;
 
+  const cookieStore = await cookies();
+  const demo = isDemoCookie(cookieStore.get(DEMO_COOKIE)?.value);
+
   // Demo / unsigned: keep bookings on-device so paste still works.
-  if (!user) {
+  if (!user || demo) {
     return NextResponse.json(
       localPasteResponse({
-        ownerId: "local",
+        ownerId: demo ? "demo" : user?.id ?? "local",
         text,
         html,
         subject,
@@ -115,6 +120,15 @@ export async function POST(req: Request) {
       }),
     );
   }
+
+  const offline = () =>
+    localPasteResponse({
+      ownerId: user.id,
+      text,
+      html,
+      subject,
+      preferredFutureTripId,
+    });
 
   const { data: priorBookings } = preferredFutureTripId
     ? await svc
@@ -154,16 +168,9 @@ export async function POST(req: Request) {
     .single();
 
   if (emailErr || !emailRow) {
-    const missing = /inbound_emails|schema cache/i.test(emailErr?.message ?? "");
-    return NextResponse.json(
-      {
-        error: emailErr?.message ?? "Could not store email",
-        needsMigration: missing ? "009_dreamer_inbound.sql" : undefined,
-        parsed,
-        summary,
-      },
-      { status: missing ? 503 : 400 },
-    );
+    // Bad service-role key / RLS / missing tables must not block paste —
+    // keep the booking on-device so confirmations still work.
+    return NextResponse.json(offline());
   }
 
   const { data: dreams } = await svc
@@ -240,10 +247,7 @@ export async function POST(req: Request) {
           parse_error: retry.error?.message ?? bookErr.message,
         })
         .eq("id", emailRow.id);
-      return NextResponse.json(
-        { error: retry.error?.message ?? bookErr.message },
-        { status: 400 },
-      );
+      return NextResponse.json(offline());
     }
     bookingRow = retry.data;
     bookErr = null;
@@ -254,10 +258,7 @@ export async function POST(req: Request) {
       .from("inbound_emails")
       .update({ status: "failed", parse_error: bookErr?.message ?? null })
       .eq("id", emailRow.id);
-    return NextResponse.json(
-      { error: bookErr?.message ?? "Could not save booking" },
-      { status: 400 },
-    );
+    return NextResponse.json(offline());
   }
 
   // Grow traveler flight/stay DBs + booking-grounded intelligence (no PNR).
