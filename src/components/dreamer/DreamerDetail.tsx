@@ -195,8 +195,8 @@ export function DreamerDetail({ id }: { id: string }) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-10">
         <p className="text-sm text-[#6B7280]">Dream not found on this device.</p>
-        <Link href="/dreamer" className="text-sm font-semibold text-[#0400FF]">
-          Back to Dreamer
+        <Link href="/future-plans" className="text-sm font-semibold text-[#0400FF]">
+          Back to Future Plans
         </Link>
       </div>
     );
@@ -210,8 +210,8 @@ export function DreamerDetail({ id }: { id: string }) {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
-      <Link href="/dreamer" className="text-sm font-semibold text-[#0400FF]">
-        ← Dreams
+      <Link href="/future-plans" className="text-sm font-semibold text-[#0400FF]">
+        ← Future Plans
       </Link>
 
       <header className="overflow-hidden rounded-[20px] border border-[#E1E5F0] bg-white">
@@ -228,7 +228,7 @@ export function DreamerDetail({ id }: { id: string }) {
               <p className="text-3xl font-bold text-white">{name}</p>
               <p className="mt-1 text-sm text-white/80">
                 {waiting
-                  ? "Dreaming — waiting for your first confirmation"
+                  ? "Waiting for your first confirmation"
                   : isPlan
                     ? "Planning from booking evidence"
                     : `${bookings.length} booking${bookings.length === 1 ? "" : "s"} in`}
@@ -240,7 +240,7 @@ export function DreamerDetail({ id }: { id: string }) {
             <p className="text-3xl font-bold">{name}</p>
             <p className="mt-1 text-sm text-white/80">
               {waiting
-                ? "Dreaming — waiting for your first confirmation"
+                ? "Waiting for your first confirmation"
                 : "Planning from booking evidence"}
             </p>
           </div>
@@ -382,7 +382,7 @@ export function DreamerDetail({ id }: { id: string }) {
           {waiting ? (
             <p className="text-sm text-[#6B7280]">
               Suggestions stay off until the first dated booking lands. This is
-              not the Trip Wizard — Dreamer only advises from confirmations.
+              not the Trip Wizard — Future Plans only advises from confirmations.
             </p>
           ) : (
             <>
@@ -504,7 +504,7 @@ export function DreamerDetail({ id }: { id: string }) {
       {tab === "places" ? (
         <section className="rounded-[14px] border border-[#E1E5F0] bg-white p-4">
           <h2 className="text-sm font-semibold text-[#080B3A]">
-            Places (Dreamer)
+            Places
           </h2>
           <p className="mt-1 text-sm text-[#6B7280]">
             Separate from Trip Wizard — catalog attractions for {name}. Confirm

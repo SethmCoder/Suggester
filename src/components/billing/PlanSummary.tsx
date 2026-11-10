@@ -33,10 +33,10 @@ export function PlanSummary({ tone = "dark" }: { tone?: "dark" | "light" }) {
     <p className={`text-sm ${light ? "text-[#C5CAE5]" : "text-[#6B7280]"}`}>
       {text}{" "}
       <Link
-        href="/plan"
+        href="/settings"
         className={`inline-flex items-center gap-1 font-semibold underline ${light ? "text-white" : "text-[#0400FF]"}`}
       >
-        See plans
+        Manage billing
         <IconExternalLink size={11} className="opacity-80" aria-hidden />
       </Link>
     </p>

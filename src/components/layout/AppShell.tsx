@@ -10,7 +10,6 @@ import { UserAvatar } from "./UserAvatar";
 import { FirstRunTour } from "@/components/tutorial/FirstRunTour";
 import {
   IconCompass,
-  IconCredit,
   IconHelp,
   IconHome,
   IconMap,
@@ -38,11 +37,10 @@ const PRIMARY: NavItem[] = [
   { href: "/explore", label: "Explorer", icon: IconMap },
   { href: "/things", label: "Things", icon: IconSpark },
   { href: "/wishlist", label: "Wishlist", icon: IconPin, tour: "tour-nav-saved" },
-  { href: "/dreamer", label: "Dreamer", icon: IconPlane },
+  { href: "/future-plans", label: "Future Plans", icon: IconPlane },
 ];
 
 const SECONDARY: NavItem[] = [
-  { href: "/plan", label: "Plans", icon: IconCredit },
   { href: "/profile", label: "Profile", icon: IconUser },
   { href: "/help", label: "Help", icon: IconHelp, tour: "tour-nav-help" },
   { href: "/settings", label: "Settings", icon: IconSettings },

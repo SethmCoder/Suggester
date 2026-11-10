@@ -38,8 +38,8 @@ export async function POST(req: Request) {
     customer_email: user.email ?? undefined,
     client_reference_id: user.id,
     line_items: [{ price_data: proPriceData(interval), quantity: 1 }],
-    success_url: `${origin}/plan?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${origin}/plan?checkout=cancel`,
+    success_url: `${origin}/settings?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${origin}/settings?checkout=cancel`,
     metadata: { userId: user.id, interval },
     subscription_data: { metadata: { userId: user.id, interval } },
   });

@@ -28,6 +28,6 @@ export async function GET(
   return NextResponse.json({
     places: dreamerPlaceIdeas(destination),
     source: "catalog",
-    note: "Dreamer Places is separate from Trip Wizard — catalog-grounded only.",
+    note: "Future Plans places are separate from Trip Wizard — catalog-grounded only.",
   });
 }

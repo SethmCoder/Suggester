@@ -19,7 +19,7 @@ const FAQS = [
   },
   {
     q: "What is the difference between Free and Pro?",
-    a: "Free includes 3 trips and the standard planner. Pro removes the trip cap and uses the more detailed planner. Open Plans to see the monthly price in your currency.",
+    a: "Free includes 3 trips and the standard planner. Pro removes the trip cap and uses the more detailed planner. Open Settings to see billing and pricing.",
   },
   {
     q: "Where are my trips saved?",

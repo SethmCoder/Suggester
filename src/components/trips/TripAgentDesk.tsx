@@ -691,8 +691,8 @@ export function TripAgentDesk({
               </div>
 
               <div className="pt-2">
-                <LeavePageLink href="/plan" variant="secondary">
-                  View plans & billing
+                <LeavePageLink href="/settings" variant="secondary">
+                  Billing & settings
                 </LeavePageLink>
               </div>
             </aside>

@@ -6,5 +6,5 @@ export default async function FutureTripRedirectPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  redirect(`/dreamer/${id}`);
+  redirect(`/future-plans/${id}`);
 }

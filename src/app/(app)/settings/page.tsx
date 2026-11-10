@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { PlanSummary } from "@/components/billing/PlanSummary";
+import { BillingPlansPanel } from "@/components/billing/BillingPlansPanel";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { SignupToPlanFunnel } from "@/components/settings/SignupToPlanFunnel";
 import { Button } from "@/components/ui/Button";
@@ -227,16 +227,11 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-2xl font-semibold">Settings</h1>
         <p className="mt-1 text-sm text-[#6B7280]">
-          Account, photo, and maps.
+          Account, billing, photo, and maps.
         </p>
       </div>
 
-      <section className="rounded-2xl border border-[#E1E5F0] bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold">Plan</h2>
-        <div className="mt-2">
-          <PlanSummary />
-        </div>
-      </section>
+      <BillingPlansPanel />
 
       <SignupToPlanFunnel />
 

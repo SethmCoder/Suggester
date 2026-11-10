@@ -17,8 +17,8 @@ const TIPS = [
   },
   {
     title: "Forward a booking",
-    body: "Dreamer stays empty until a confirmation email arrives.",
-    href: "/dreamer",
+    body: "Future Plans stays empty until a confirmation email arrives.",
+    href: "/future-plans",
   },
 ];
 

@@ -84,7 +84,7 @@ export function DreamerBoard() {
       });
       setDestination("");
       refresh();
-      window.location.href = `/dreamer/${trip.id}`;
+      window.location.href = `/future-plans/${trip.id}`;
     } finally {
       setCreating(false);
     }
@@ -93,10 +93,10 @@ export function DreamerBoard() {
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-8">
       <header>
-        <h1 className="text-3xl font-bold text-[#080B3A]">Dreamer</h1>
+        <h1 className="text-3xl font-bold text-[#080B3A]">Future Plans</h1>
         <p className="mt-2 max-w-2xl text-sm text-[#6B7280]">
-          Save where you want to go. Paste or forward a confirmation — Dreamer
-          fills bookings like TripIt, then suggests places like Yelp once
+          Save where you want to go. Paste or forward a confirmation — Future
+          Plans fills bookings from the email, then suggests places once
           evidence exists.
         </p>
       </header>
@@ -135,14 +135,14 @@ export function DreamerBoard() {
             className="max-w-sm"
           />
           <Button type="button" disabled={creating} onClick={() => void createDream()}>
-            {creating ? "Saving…" : "Start dreaming"}
+            {creating ? "Saving…" : "Start planning"}
           </Button>
         </div>
       </section>
 
       {trips.length === 0 ? (
         <div className="rounded-[16px] border border-dashed border-[#D1D7E5] bg-white px-5 py-10 text-center">
-          <p className="text-sm font-semibold text-[#080B3A]">No dreams yet</p>
+          <p className="text-sm font-semibold text-[#080B3A]">No future plans yet</p>
           <p className="mt-1 text-sm text-[#6B7280]">
             Add a destination above. It stays blank until the first booking
             email arrives.
@@ -162,7 +162,7 @@ export function DreamerBoard() {
                 className="overflow-hidden rounded-[14px] border border-[#E1E5F0] bg-white"
               >
                 <Link
-                  href={`/dreamer/${trip.id}`}
+                  href={`/future-plans/${trip.id}`}
                   className="flex hover:bg-[#FAFBFF]"
                 >
                   {photo ? (
@@ -200,7 +200,7 @@ export function DreamerBoard() {
                     </div>
                     <p className="text-sm text-[#6B7280]">
                       {waiting
-                        ? "Empty dream — paste or forward a confirmation to fill this in."
+                        ? "Empty plan — paste or forward a confirmation to fill this in."
                         : `${bookingCount} booking${bookingCount === 1 ? "" : "s"} attached`}
                     </p>
                     <p className="text-xs text-[#9CA3AF]">
