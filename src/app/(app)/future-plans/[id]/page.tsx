@@ -1,10 +1,5 @@
-import { DreamerDetail } from "@/components/dreamer/DreamerDetail";
+import { redirect } from "next/navigation";
 
-export default async function FuturePlanDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-  return <DreamerDetail id={id} />;
+export default function FuturePlanDetailPage() {
+  redirect("/dashboard");
 }

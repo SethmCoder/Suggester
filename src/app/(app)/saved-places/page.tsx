@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 
-/** Saved Places now lives under Wishlist with collections and future-trip links. */
-export default function SavedPlacesRedirectPage() {
+export default function SavedPlacesPage() {
   redirect("/wishlist");
 }

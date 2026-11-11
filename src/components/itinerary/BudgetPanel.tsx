@@ -13,7 +13,6 @@ import {
   budgetProgress,
   categoryLabel,
   createExpenseId,
-  spentByCategory,
   type ExpenseCategory,
   type TripExpense,
 } from "@/lib/trips/expenses";
@@ -56,11 +55,6 @@ export function BudgetPanel({
     () => budgetProgress(expenses, plan?.total, tripCurrency),
     [expenses, plan?.total, tripCurrency],
   );
-  const byCategory = useMemo(
-    () => spentByCategory(expenses, tripCurrency),
-    [expenses, tripCurrency],
-  );
-
   const [label, setLabel] = useState("");
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState(tripCurrency);
@@ -144,8 +138,7 @@ export function BudgetPanel({
         <div>
           <h2 className="text-sm font-semibold text-[#080B3A]">Budget</h2>
           <p className="mt-0.5 text-xs text-[#6B7280]">
-            Track tickets and other purchases against this trip’s ceiling. Foreign
-            amounts convert with live ECB reference rates.
+            Log purchases against your trip total. Other currencies convert automatically.
           </p>
         </div>
         {progress.percentUsed != null ? (
@@ -206,22 +199,6 @@ export function BudgetPanel({
           />
         </div>
       ) : null}
-
-      <div className="mt-4 grid gap-2 sm:grid-cols-5">
-        {EXPENSE_CATEGORIES.map((key) => (
-          <div
-            key={key}
-            className="rounded-[12px] border border-[#E8ECF6] bg-[#FAFBFF] px-3 py-2"
-          >
-            <p className="text-[11px] font-medium uppercase tracking-wide text-[#6B7280]">
-              {categoryLabel(key)}
-            </p>
-            <p className="mt-0.5 text-sm font-semibold text-[#080B3A]">
-              {formatMoney(byCategory[key], tripCurrency)}
-            </p>
-          </div>
-        ))}
-      </div>
 
       <div className="mt-4 rounded-[14px] border border-[#D1D7E5] bg-[#F8F9FC] p-3">
         <p className="text-sm font-semibold text-[#080B3A]">Log a purchase</p>

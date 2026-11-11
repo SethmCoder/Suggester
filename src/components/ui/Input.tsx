@@ -15,12 +15,15 @@ export function Input({
 export function Label({
   children,
   className = "",
+  htmlFor,
 }: {
   children: React.ReactNode;
   className?: string;
+  htmlFor?: string;
 }) {
   return (
     <label
+      htmlFor={htmlFor}
       className={`mb-1.5 block text-sm font-semibold text-[#1F2937] ${className}`}
     >
       {children}
