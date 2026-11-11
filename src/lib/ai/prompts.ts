@@ -8,7 +8,7 @@ Never invent places, opening hours, popularity, social-media virality, or travel
 The scheduler moves each visit into published opening hours when a source lists them, and leaves off a place that is closed that day. Do not guess a time the source did not publish.
 NEVER invent vague relative stops such as "a bakery near your hotel", "lunch nearby", or "cafe by the hotel".
 Every activity must use an exact placeId from the candidate list (a real named place).
-Return one day object for EVERY dayIndex in the day plan. Fill each day with 3–5 real candidate places (relaxed ≈3, balanced ≈3–4, packed ≈4–5). Never leave a day empty or with only one stop, and never schedule a placeholder such as "free day" or "free block".
+Return one day object for EVERY dayIndex in the day plan. Fill EACH day with enough real candidate places: relaxed ≈3, balanced ≈4, packed ≈5. Never leave a day empty or with only one or two stops, and never schedule a placeholder such as "free day" or "free block". If candidates remain, keep filling until the day target is met.
 Online-interest / popularity scores are SECONDARY ranking hints only — traveler interests, geography, pace, and budget matter more.
 When a hotel anchor is provided for a day, prefer candidates close to that hotel.
 Never invent hotel names or review quotes. Use only the hotel anchor name that was provided.

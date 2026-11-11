@@ -450,14 +450,15 @@ export function DreamerDetail({ id }: { id: string }) {
           </h2>
           {waiting ? (
             <p className="text-sm text-[#6B7280]">
-              Suggestions stay off until the first dated booking lands. This is
-              not the Trip Wizard — Future Plans only advises from confirmations.
+              Forward a confirmation email (or paste it on Bookings) first. Once
+              evidence lands, this tab suggests stay length and places from those
+              bookings — separate from generating a full Trip Wizard itinerary.
             </p>
           ) : (
             <>
               <p className="text-sm text-[#4B5563]">
-                Concrete bookings are in. Stay length is researched first; climate
-                detours come after for your review.
+                Bookings are in. Stay length is researched from that evidence;
+                then AI suggests places for you to review on the Places tab.
               </p>
 
               <div className="rounded-[10px] border border-[#EEF2FF] bg-[#F8F9FF] px-3 py-3">
@@ -573,15 +574,16 @@ export function DreamerDetail({ id }: { id: string }) {
       {tab === "places" ? (
         <section className="rounded-[14px] border border-[#E1E5F0] bg-white p-4">
           <h2 className="text-sm font-semibold text-[#080B3A]">
-            Places
+            AI place suggestions
           </h2>
           <p className="mt-1 text-sm text-[#6B7280]">
-            Separate from Trip Wizard — catalog attractions for {name}. Confirm
-            hours locally.
+            After you forward bookings, Waypoint suggests catalog places for{" "}
+            {name}. Confirm hours locally before you go.
           </p>
           {waiting ? (
             <p className="mt-3 text-sm text-[#6B7280]">
-              Add booking evidence first, then places unlock around your dates.
+              Forward or paste a confirmation first — place suggestions unlock
+              from that evidence.
             </p>
           ) : places.length === 0 ? (
             <p className="mt-3 text-sm text-[#6B7280]">

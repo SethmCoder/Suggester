@@ -350,7 +350,8 @@ function fallbackSchedule(
 }
 
 function stopsPerDay(intensity: TripPreferencesInput["intensity"]): number {
-  return intensity === "packed" ? 4 : intensity === "relaxed" ? 2 : 3;
+  // Keep in sync with stopCap — every first plan should fill the day.
+  return intensity === "packed" ? 5 : intensity === "relaxed" ? 3 : 4;
 }
 
 function fallbackScheduleMultiCity(
@@ -1344,7 +1345,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       },
     );
     for (const drop of constrained.dropped) warnings.push(drop.reason);
-    const finished = constrained.kept.map((activity) => {
+    let finished = constrained.kept.map((activity) => {
       const note = constrained.notes[activity.placeId];
       const extra = [note?.fee, note?.access, note?.cuisine].filter(Boolean).join(" ");
       const estimateWalk =
@@ -1359,6 +1360,72 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
         scheduleWarnings: [...(activity.scheduleWarnings ?? []), ...estimateWalk],
       };
     });
+
+    // Guarantee a full first plan: hours/constraint filters can gut a day —
+    // top up from remaining researched places so every day has real stops.
+    const finishedSightseeing = () =>
+      finished.filter(
+        (item) =>
+          !item.placeId.startsWith("transit:") &&
+          !item.placeId.startsWith("flight:"),
+      ).length;
+    if (finishedSightseeing() < target) {
+      const already = new Set(finished.map((item) => item.placeId));
+      let cursor =
+        finished.length > 0
+          ? addMinutes(
+              finished[finished.length - 1].startTime,
+              finished[finished.length - 1].durationMinutes + 15,
+            )
+          : defaultStart.slice(0, 5);
+      const refillPool = [
+        ...cityPool.filter((c) => !already.has(c.placeId) && !usedAcross.has(c.placeId)),
+        ...filtered.filter(
+          (c) =>
+            !already.has(c.placeId) &&
+            !usedAcross.has(c.placeId) &&
+            (!c.city || c.city === assignment.city),
+        ),
+      ];
+      const seenRefill = new Set<string>();
+      for (const candidate of refillPool) {
+        if (finishedSightseeing() >= target) break;
+        if (seenRefill.has(candidate.placeId)) continue;
+        seenRefill.add(candidate.placeId);
+        const hit = byId.get(candidate.placeId);
+        if (!hit) continue;
+        finished.push({
+          placeId: candidate.placeId,
+          name: hit.displayName,
+          address: hit.formattedAddress,
+          lat: hit.lat,
+          lng: hit.lng,
+          startTime: cursor,
+          durationMinutes: isSitDown(candidate.types) ? 75 : 90,
+          priority: "preferred",
+          planningNote: `Filled so day ${assignment.dayIndex + 1} in ${assignment.city} stays complete.`,
+          hoursVerified: false,
+          scheduleWarnings: [
+            "Added to keep this day full after filtering — confirm hours before you go.",
+          ],
+          travelMinutesFromPrev: 0,
+          types: candidate.types ?? [],
+          wheelchair: hit.wheelchair,
+          fee: hit.fee,
+          cuisine: hit.cuisine,
+          hoursWindow: null,
+          openingHours: undefined,
+          dayDate,
+        } as (typeof finished)[number]);
+        already.add(candidate.placeId);
+        cursor = addMinutes(cursor, (isSitDown(candidate.types) ? 75 : 90) + 15);
+      }
+      if (finishedSightseeing() < target) {
+        warnings.push(
+          `Day ${assignment.dayIndex + 1} in ${assignment.city} still has only ${finishedSightseeing()} stops — the place list for this city was thin.`,
+        );
+      }
+    }
 
     if (dayWeather) {
       warnings.push(

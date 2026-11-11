@@ -59,11 +59,13 @@ export function stopCap(input: {
   tightBudget?: boolean;
 }): number {
   let cap = input.intensity === "relaxed" ? 3 : input.intensity === "packed" ? 5 : 4;
+  // Family / business trips stay a bit lighter, but never under 3 sightseeing stops.
   if (input.party === "family" || input.party === "multigen" || input.party === "business") {
-    cap = Math.min(cap, 3);
+    cap = Math.min(cap, 4);
+    cap = Math.max(cap, 3);
   }
-  if (input.tightBudget || input.intensity === "relaxed") cap = Math.min(cap, 3);
-  return cap;
+  if (input.tightBudget) cap = Math.min(cap, 3);
+  return Math.max(3, cap);
 }
 
 export function nameIsAvoided(name: string, avoid: string[]): boolean {

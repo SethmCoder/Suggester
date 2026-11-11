@@ -95,10 +95,15 @@ export function DreamerBoard() {
       <header>
         <h1 className="text-3xl font-bold text-[#080B3A]">Future Plans</h1>
         <p className="mt-2 max-w-2xl text-sm text-[#6B7280]">
-          Save where you want to go. Paste, screenshot, or forward a
-          confirmation — Future Plans fills bookings from evidence, then
-          suggests places once it exists.
+          Plan a future trip here first. Forward booking emails (or paste a
+          confirmation), then Waypoint turns that evidence into bookings and AI
+          place suggestions — before you open the full Trip Wizard.
         </p>
+        <ol className="mt-3 max-w-2xl list-decimal space-y-1 pl-5 text-sm text-[#4B5563]">
+          <li>Start a plan with a destination</li>
+          <li>Forward or paste flight/hotel confirmations</li>
+          <li>Review AI stay tips and place suggestions on the plan</li>
+        </ol>
       </header>
 
       {mailbox ? (

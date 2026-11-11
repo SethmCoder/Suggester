@@ -124,8 +124,10 @@ describe("constraint fixtures", () => {
 
   it("downranks nightlife for a family and keeps the day shorter", () => {
     expect(partyFit(["nightlife", "bar"], "family")).toBeLessThan(partyFit(["park"], "family"));
-    expect(stopCap({ intensity: "packed", party: "family" })).toBe(3);
+    expect(stopCap({ intensity: "packed", party: "family" })).toBe(4);
     expect(stopCap({ intensity: "packed", party: "friends" })).toBe(5);
+    expect(stopCap({ intensity: "relaxed" })).toBe(3);
+    expect(stopCap({ intensity: "balanced" })).toBe(4);
   });
 
   it("does not call a place accessible when the wheelchair tag is missing", () => {
