@@ -77,6 +77,14 @@ import {
 } from "../weather/open-meteo";
 import { isOutdoorPlace } from "../weather/codes";
 import type { WeatherForecast } from "../weather/types";
+import {
+  languageDisplayName,
+  normalizeLanguage,
+} from "../i18n/preference";
+
+function languageNameForPrompt(code?: string): string {
+  return languageDisplayName(normalizeLanguage(code));
+}
 
 export interface TripPreferencesInput {
   destination: string;
@@ -119,6 +127,8 @@ export interface TripPreferencesInput {
     lng?: number;
     note?: string;
   };
+  /** BCP-47-ish app language from settings (en, ja, …). */
+  language?: string;
 }
 
 export interface GeneratedActivity {
@@ -277,7 +287,12 @@ async function callGroq(
       },
     },
     messages: [
-      { role: "system", content: buildItinerarySystemPrompt() },
+      {
+        role: "system",
+        content: buildItinerarySystemPrompt(
+          languageNameForPrompt(prefs.language),
+        ),
+      },
       {
         role: "user",
         content: buildItineraryUserPrompt({

@@ -15,10 +15,11 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { AssistantPatch } from "@/lib/ai/patch";
 import { shiftActivityStartTime } from "@/lib/ai/scheduler";
+import type { GeneratedDay } from "@/lib/ai/generate-itinerary";
 import {
   DEMO_CONTENT_VERSION,
   getDemoTripPayload,
@@ -30,6 +31,7 @@ import {
   saveOfflineExpenses,
   saveOfflineTrip,
 } from "@/lib/offline/trips";
+import { offlineSnapshotFromGenerated } from "@/lib/trips/offline-from-generated";
 import { formatTripDate } from "@/lib/format-date";
 import type { DayCityAssignment } from "@/lib/trips/legs";
 import { deleteTrip } from "@/lib/trips/delete-trip";
@@ -42,7 +44,6 @@ import { CityCard } from "./CityCard";
 import { DayWeatherBadge } from "./DayWeather";
 import { DistrictCard } from "./DistrictCard";
 import { StopBlurb } from "./StopBlurb";
-import { CityHotelField } from "./CityHotelField";
 import { AddStopSearch, PlaceCard, type SelectedPlace } from "./PlaceCard";
 import { PopularityBadge } from "./PopularityBadge";
 import { TripMap, type MapPin } from "./TripMap";
@@ -67,23 +68,11 @@ import {
 import { nightsBetween, nightsLabel } from "@/lib/trips/dates";
 import { TripPlanSidebar } from "@/components/trips/TripPlanSidebar";
 import { TripBookingsPanel } from "@/components/trips/TripBookingsPanel";
-
-const LEG_CARD_COLORS = [
-  { border: "border-[#0400FF]/35", bg: "bg-[#F5F7FF]", tag: "bg-[#0400FF]" },
-  { border: "border-[#0F766E]/35", bg: "bg-[#F0FDFA]", tag: "bg-[#0F766E]" },
-  { border: "border-[#B45309]/35", bg: "bg-[#FFF7ED]", tag: "bg-[#B45309]" },
-  { border: "border-[#6D28D9]/35", bg: "bg-[#F5F3FF]", tag: "bg-[#6D28D9]" },
-];
-
-const INTERCITY_MODE_OPTIONS: { value: LegTransitMode; label: string }[] = [
-  { value: "auto", label: "Auto (planner picks)" },
-  { value: "flight", label: "Flight" },
-  { value: "major_train", label: "Major train (book)" },
-  { value: "regional_rail", label: "Regional rail" },
-  { value: "coach", label: "Coach / bus" },
-  { value: "ferry", label: "Ferry / boat" },
-  { value: "car", label: "Car / road" },
-];
+import {
+  stopColorForIndex,
+  stopColorForKey,
+} from "@/lib/trips/stop-colors";
+import { useLanguage } from "@/components/i18n/LanguageProvider";
 
 function transitModeFromActivity(activity: ActivityRow): IntercityMode | "flight_arrive" | null {
   if (activity.place_id?.startsWith("flight:arrive:")) return "flight_arrive";
@@ -139,6 +128,8 @@ export function ItineraryEditor({
   interests = [],
   budgetPlan,
   initialExpenses = [],
+  initialStatus,
+  pendingBuild,
 }: {
   tripId: string;
   destination: string;
@@ -153,7 +144,10 @@ export function ItineraryEditor({
   interests?: string[];
   budgetPlan?: BudgetPlan;
   initialExpenses?: TripExpense[];
+  initialStatus?: string | null;
+  pendingBuild?: Record<string, unknown> | null;
 }) {
+  const { t } = useLanguage();
   const [days, setDays] = useState<DayGroup[]>(() =>
     initialDays
       .sort((a, b) => a.day_index - b.day_index)
@@ -168,7 +162,7 @@ export function ItineraryEditor({
   const [hydratedOffline, setHydratedOffline] = useState(false);
   const [expanded, setExpanded] = useState<Record<number, boolean>>(() =>
     Object.fromEntries(
-      initialDays.map((d) => [d.day_index, true] as const),
+      initialDays.map((d) => [d.day_index, d.day_index === 0] as const),
     ),
   );
   const [view, setView] = useState<"schedule" | "map" | "split" | "calendar">(
@@ -198,13 +192,165 @@ export function ItineraryEditor({
   const [selectedPlace, setSelectedPlace] = useState<SelectedPlace | null>(null);
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [selectedDistrict, setSelectedDistrict] = useState<MapPin | null>(null);
-  const [cityPins, setCityPins] = useState<MapPin[]>([]);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [expenses, setExpenses] = useState<TripExpense[]>(() =>
     normalizeExpenses(initialExpenses),
   );
   const [expensesHydrated, setExpensesHydrated] = useState(false);
+  const [buildStatus, setBuildStatus] = useState<
+    "idle" | "generating" | "ready" | "failed"
+  >(() => {
+    if (pendingBuild) return "generating";
+    if (initialStatus === "generating") return "generating";
+    if (initialStatus === "failed") return "failed";
+    return "idle";
+  });
+  const [buildError, setBuildError] = useState<string | null>(null);
+  const buildStarted = useRef(false);
+
+  function applyFetchedPlan(input: {
+    days: { id: string; day_index: number }[];
+    activities: ActivityRow[];
+  }) {
+    const sortedDays = [...input.days].sort((a, b) => a.day_index - b.day_index);
+    setDays(
+      sortedDays.map((d) => ({
+        dayId: d.id,
+        dayIndex: d.day_index,
+        activities: sortActivitiesChronologically(
+          input.activities.filter((a) => a.day_id === d.id),
+        ),
+      })),
+    );
+  }
+
+  // Cloud: ensure /build is running, then poll until days fill in.
+  useEffect(() => {
+    if (isDemoTripId(tripId) || tripId.startsWith("offline-")) return;
+    if (buildStatus !== "generating") return;
+
+    let cancelled = false;
+    if (!buildStarted.current) {
+      buildStarted.current = true;
+      void fetch(`/api/trips/${tripId}/build`, {
+        method: "POST",
+        credentials: "same-origin",
+      })
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (cancelled) return;
+          if (!res.ok) {
+            setBuildStatus("failed");
+            setBuildError(
+              typeof data.error === "string"
+                ? data.error
+                : "Could not build this itinerary",
+            );
+          }
+        })
+        .catch(() => {
+          /* polling below still observes status */
+        });
+    }
+
+    const poll = window.setInterval(() => {
+      void fetch(`/api/trips/${tripId}`, { credentials: "same-origin" })
+        .then(async (res) => {
+          if (!res.ok || cancelled) return;
+          const data = await res.json();
+          const status = data?.trip?.status as string | undefined;
+          const nextDays = (data?.days ?? []) as {
+            id: string;
+            day_index: number;
+          }[];
+          const nextActs = (data?.activities ?? []) as ActivityRow[];
+          if (nextDays.length) {
+            applyFetchedPlan({ days: nextDays, activities: nextActs });
+          }
+          if (status === "ready" || nextActs.length > 0) {
+            setBuildStatus("ready");
+            setBuildError(null);
+            window.clearInterval(poll);
+          } else if (status === "failed") {
+            setBuildStatus("failed");
+            setBuildError("Could not build this itinerary");
+            window.clearInterval(poll);
+          }
+        })
+        .catch(() => null);
+    }, 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(poll);
+    };
+  }, [tripId, buildStatus]);
+
+  // Offline / demo shell: run demo-create in the background, then fill the page.
+  useEffect(() => {
+    if (!pendingBuild || !tripId.startsWith("offline-")) return;
+    if (buildStarted.current) return;
+    buildStarted.current = true;
+    let cancelled = false;
+    setBuildStatus("generating");
+    void (async () => {
+      try {
+        const res = await fetch("/api/trips/demo-create", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(pendingBuild),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!res.ok || !Array.isArray(data.days)) {
+          setBuildStatus("failed");
+          setBuildError(
+            typeof data.error === "string"
+              ? data.error
+              : "Could not generate this trip",
+          );
+          return;
+        }
+        const snap = offlineSnapshotFromGenerated({
+          tripId,
+          destination: data.destination || destination,
+          startDate: startDate || new Date().toISOString().slice(0, 10),
+          endDate: endDate || startDate || new Date().toISOString().slice(0, 10),
+          days: data.days as GeneratedDay[],
+          legs: (data.legs as TripLeg[] | undefined) ?? initialLegs,
+          title: tripTitle,
+          budget: budgetPlan,
+        });
+        saveOfflineTrip({ ...snap, pendingBuild: undefined });
+        applyFetchedPlan({
+          days: snap.days,
+          activities: snap.activities,
+        });
+        if (snap.legs?.length) setLegs(snap.legs);
+        setBuildStatus("ready");
+      } catch (e) {
+        if (cancelled) return;
+        setBuildStatus("failed");
+        setBuildError(
+          e instanceof Error ? e.message : "Could not generate this trip",
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    pendingBuild,
+    tripId,
+    destination,
+    startDate,
+    endDate,
+    initialLegs,
+    tripTitle,
+    budgetPlan,
+  ]);
   const router = useRouter();
 
   async function removeTrip() {
@@ -816,69 +962,62 @@ export function ItineraryEditor({
   }
 
   const destName = destination.replace(/\s*\(Demo\)\s*/i, "").trim();
-  const areaKey = useMemo(() => {
-    const names = [
-      destName,
-      ...(initialLegs ?? []).map((leg) => leg.city),
-      ...(dayCities ?? []).map((day) => day.city),
-    ];
+  const cityLegend = useMemo(() => {
     const seen = new Set<string>();
-    const unique: string[] = [];
-    for (const name of names) {
-      const clean = name.replace(/\s*\(Demo\)\s*/i, "").split(",")[0]?.trim() ?? "";
-      const key = clean.toLowerCase();
-      if (!clean || seen.has(key)) continue;
+    const list: { city: string; color: string }[] = [];
+    for (const day of days) {
+      const city =
+        dayCities?.[day.dayIndex]?.city ||
+        legs.find((leg) => leg.city)?.city ||
+        destName;
+      const key = city.trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
       seen.add(key);
-      unique.push(clean);
+      list.push({ city, color: stopColorForKey(city).solid });
     }
-    return unique.join("|");
-  }, [destName, initialLegs, dayCities]);
+    if (!list.length && destName) {
+      list.push({ city: destName, color: stopColorForKey(destName).solid });
+    }
+    return list;
+  }, [days, dayCities, legs, destName]);
 
-  useEffect(() => {
-    const names = areaKey.split("|").filter(Boolean);
-    if (!names.length) {
-      setCityPins([]);
-      return;
-    }
-    let cancelled = false;
-    void Promise.all(
-      names.map(async (city) => {
-        const res = await fetch(`/api/places/districts?city=${encodeURIComponent(city)}`);
-        const data = (await res.json()) as {
-          cities?: {
-            id: number;
-            name: string;
-            lat: number;
-            lng: number;
-          }[];
-        };
-        return data.cities ?? [];
-      }),
-    )
-      .then((groups) => {
-        if (cancelled) return;
-        const seen = new Set<number>();
-        const pins: MapPin[] = [];
-        for (const city of groups.flat()) {
-          if (seen.has(city.id) || !Number.isFinite(city.lat) || !Number.isFinite(city.lng)) continue;
-          seen.add(city.id);
-          pins.push({
-            lat: city.lat,
-            lng: city.lng,
-            label: city.name,
-            order: 0,
-            kind: "city",
-          });
+  const stopPins = useMemo(() => {
+    const pins: MapPin[] = [];
+    let order = 1;
+    for (const day of days) {
+      const city = dayCities?.[day.dayIndex]?.city;
+      const color = city
+        ? stopColorForKey(city).solid
+        : stopColorForIndex(day.dayIndex).solid;
+      for (const activity of day.activities) {
+        if (
+          activity.place_id?.startsWith("transit:") ||
+          activity.place_id?.startsWith("flight:")
+        ) {
+          continue;
         }
-        setCityPins(pins.slice(0, 10));
-      })
-      .catch(() => {
-        if (!cancelled) setCityPins([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [areaKey]);
+        if (
+          !Number.isFinite(activity.lat) ||
+          !Number.isFinite(activity.lng) ||
+          activity.lat == null ||
+          activity.lng == null
+        ) {
+          continue;
+        }
+        pins.push({
+          lat: activity.lat,
+          lng: activity.lng,
+          label: activity.name,
+          order: order++,
+          kind: "stop",
+          activityId: activity.id,
+          address: activity.address,
+          color,
+        });
+      }
+    }
+    return pins;
+  }, [days, dayCities]);
 
   const tripNights =
     startDate && endDate
@@ -943,15 +1082,15 @@ export function ItineraryEditor({
             disabled={deleting}
             className="rounded-[10px] px-3 py-1.5 text-sm font-semibold text-[#B91C1C] hover:bg-[#FEF2F2] disabled:opacity-60"
           >
-            {deleting ? "Deleting…" : "Delete trip"}
+            {deleting ? "…" : t("itinerary.delete")}
           </button>
         <div className="flex flex-wrap rounded-[12px] border border-[#E1E5F0] bg-[#F5F7FF] p-1 text-sm">
           {(
             [
-              { id: "schedule", label: "Day by day" },
-              { id: "calendar", label: "View as calendar" },
-              { id: "map", label: "Map" },
-              { id: "split", label: "Split" },
+              { id: "schedule", labelKey: "itinerary.days" },
+              { id: "calendar", labelKey: "itinerary.calendar" },
+              { id: "map", labelKey: "itinerary.map" },
+              { id: "split", labelKey: "itinerary.split" },
             ] as const
           ).map((v) => (
             <button
@@ -964,12 +1103,42 @@ export function ItineraryEditor({
                   : "text-[#6B7280] hover:text-[#080B3A]"
               }`}
             >
-              {v.label}
+              {t(v.labelKey)}
             </button>
           ))}
         </div>
         </div>
       </section>
+      {buildStatus === "generating" ? (
+        <div className="rounded-[14px] border border-[#DDE1FF] bg-[#F5F7FF] px-4 py-3 text-sm text-[#080B3A]">
+          <p className="font-semibold">{t("itinerary.building")}</p>
+          <p className="mt-0.5 text-xs text-[#6B7280]">
+            {t("itinerary.buildingHint")}
+          </p>
+        </div>
+      ) : null}
+      {buildStatus === "failed" ? (
+        <div className="rounded-[14px] border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-sm text-[#991B1B]">
+          <p className="font-semibold">{t("itinerary.buildFailed")}</p>
+          <p className="mt-0.5 text-xs">
+            {buildError || t("itinerary.buildFailed")}
+          </p>
+          {!tripId.startsWith("offline-") && !isDemoTripId(tripId) ? (
+            <button
+              type="button"
+              className="mt-2 text-xs font-semibold underline"
+              onClick={() => {
+                buildStarted.current = false;
+                setBuildError(null);
+                setBuildStatus("generating");
+              }}
+            >
+              {t("itinerary.retry")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       <BudgetPanel
         plan={budgetPlan}
         expenses={expenses}
@@ -1047,100 +1216,24 @@ export function ItineraryEditor({
                 setSaveState("idle");
               }}
             />
-            {legs.length > 0 ? (
-              <section
-                id="hotels"
-                className="space-y-2 rounded-[14px] border border-[#E1E5F0] bg-white p-3 shadow-[0_2px_12px_rgba(8,11,58,0.04)]"
-              >
-                <div>
-                  <h2 className="text-sm font-semibold text-[#080B3A]">
-                    Cities & hotels
-                  </h2>
-                  <p className="text-[11px] text-[#6B7280]">
-                    Each card is a different city. Between cities, set how you
-                    travel hotel → hotel.
-                  </p>
-                </div>
-                {legs.map((leg, i) => {
-                  const palette = LEG_CARD_COLORS[i % LEG_CARD_COLORS.length];
-                  const prev = i > 0 ? legs[i - 1] : null;
-                  const fromLabel =
-                    prev?.hotel?.trim() ||
-                    (prev ? `${prev.city} hotel` : "");
-                  const toLabel =
-                    leg.hotel?.trim() || `${leg.city} hotel`;
-                  return (
-                    <div key={`${leg.city}-${i}`} className="space-y-2">
-                      {prev ? (
-                        <div className="rounded-[12px] border border-dashed border-[#C5CAD8] bg-[#FAFBFF] px-3 py-2.5">
-                          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#6B7280]">
-                            Place to place
-                          </p>
-                          <p className="mb-1 text-sm font-medium text-[#080B3A]">
-                            {fromLabel}
-                            <span className="mx-1.5 text-[#0400FF]">→</span>
-                            {toLabel}
-                          </p>
-                          <p className="mb-2 text-[11px] text-[#6B7280]">
-                            {prev.city} → {leg.city}
-                          </p>
-                          <label className="block text-[11px] font-medium text-[#080B3A]">
-                            Mode of transportation
-                            <select
-                              className="mt-1 w-full rounded-lg border border-[#D1D7E5] bg-white px-2.5 py-1.5 text-sm"
-                              value={leg.transitFromPrevious || "auto"}
-                              onChange={(e) =>
-                                updateLeg(i, {
-                                  transitFromPrevious: e.target
-                                    .value as LegTransitMode,
-                                })
-                              }
-                            >
-                              {INTERCITY_MODE_OPTIONS.map((m) => (
-                                <option key={m.value} value={m.value}>
-                                  {m.label}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        </div>
-                      ) : null}
-                      <div
-                        className={`rounded-[12px] border-2 ${palette.border} ${palette.bg} p-3`}
-                      >
-                        <div className="mb-2 flex items-center gap-2">
-                          <span
-                            className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-[11px] font-bold text-white ${palette.tag}`}
-                          >
-                            {i + 1}
-                          </span>
-                          <div>
-                            <p className="text-sm font-semibold text-[#080B3A]">
-                              {leg.city}
-                              <span className="ml-1.5 font-normal text-[#6B7280]">
-                                · {leg.days}d
-                              </span>
-                            </p>
-                            <p className="text-[11px] text-[#6B7280]">
-                              Separate city stay
-                            </p>
-                          </div>
-                        </div>
-                        <label className="block text-[11px] font-medium text-[#080B3A]">
-                          Hotel in {leg.city}
-                          <CityHotelField
-                            city={leg.city}
-                            value={leg.hotel ?? ""}
-                            lat={leg.lat}
-                            lng={leg.lng}
-                            onChange={(next) => updateLeg(i, next)}
-                          />
-                        </label>
-                      </div>
-                    </div>
-                  );
-                })}
-              </section>
+            {cityLegend.length ? (
+              <div className="flex flex-wrap items-center gap-2 px-0.5">
+                {cityLegend.map((item) => (
+                  <button
+                    key={item.city}
+                    type="button"
+                    onClick={() => setSelectedCity(item.city)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[#E1E5F0] bg-white px-2.5 py-1 text-xs font-medium text-[#080B3A]"
+                  >
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ background: item.color }}
+                      aria-hidden
+                    />
+                    {item.city}
+                  </button>
+                ))}
+              </div>
             ) : null}
             {selectedCity ? (
               <CityCard name={selectedCity} onClose={() => setSelectedCity(null)} />
@@ -1158,6 +1251,17 @@ export function ItineraryEditor({
               >
                 <div className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left">
                   <span className="text-[16px] font-semibold text-[#080B3A]">
+                    <span
+                      className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle"
+                      style={{
+                        background: (
+                          dayCities?.[day.dayIndex]?.city
+                            ? stopColorForKey(dayCities[day.dayIndex].city)
+                            : stopColorForIndex(dayIndex)
+                        ).solid,
+                      }}
+                      aria-hidden
+                    />
                     <button
                       type="button"
                       className="font-semibold"
@@ -1212,7 +1316,7 @@ export function ItineraryEditor({
                       </button>
                     ) : null}
                     <span className="ml-2 font-normal text-[#6B7280]">
-                      · {day.activities.length} stops
+                      · {day.activities.length} {t("itinerary.stops")}
                     </span>
                     <DayWeatherBadge
                       startDate={startDate}
@@ -1240,7 +1344,7 @@ export function ItineraryEditor({
                       }));
                     }}
                   >
-                    {isOpen ? "Hide" : "Show"}
+                    {isOpen ? t("itinerary.hide") : t("itinerary.show")}
                   </button>
                 </div>
                 {isOpen ? (
@@ -1272,6 +1376,15 @@ export function ItineraryEditor({
                                 activity={act}
                                 dayCount={days.length}
                                 dayIndex={dayIndex}
+                                accent={
+                                  (
+                                    dayCities?.[day.dayIndex]?.city
+                                      ? stopColorForKey(
+                                          dayCities[day.dayIndex].city,
+                                        )
+                                      : stopColorForIndex(dayIndex)
+                                  ).solid
+                                }
                                 onMoveDay={(to) =>
                                   moveToDay(dayIndex, act.id, to)
                                 }
@@ -1339,8 +1452,8 @@ export function ItineraryEditor({
           >
             <div className="h-full min-h-[280px] overflow-hidden rounded-[14px] border border-[#E1E5F0] bg-white lg:min-h-0">
               <TripMap
-                pins={cityPins}
-                connect={false}
+                pins={stopPins}
+                connect
                 onSelectPin={(pin) => {
                   setSelectedPlace(null);
                   setSelectedDistrict(pin);
@@ -1429,6 +1542,7 @@ function SortableActivity({
   activity,
   dayIndex,
   dayCount,
+  accent,
   onMoveDay,
   onUpdate,
   onDelete,
@@ -1436,6 +1550,7 @@ function SortableActivity({
   activity: ActivityRow;
   dayIndex: number;
   dayCount: number;
+  accent?: string;
   onMoveDay: (toDayIndex: number) => void;
   onUpdate: (patch: Partial<ActivityRow>) => void;
   onDelete: () => void;
@@ -1450,6 +1565,7 @@ function SortableActivity({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+    borderLeftColor: accent || "#0400FF",
   };
   const endsAt = displayEnd(activity);
 
@@ -1457,7 +1573,7 @@ function SortableActivity({
     <li
       ref={setNodeRef}
       style={style}
-      className={`overflow-hidden rounded-[16px] border bg-white shadow-[0_6px_18px_rgba(8,11,58,0.05)] ${
+      className={`overflow-hidden rounded-[16px] border border-l-4 bg-white shadow-[0_6px_18px_rgba(8,11,58,0.05)] ${
         activity.completed ? "border-[#E1E5F0] opacity-70" : "border-[#E1E5F0]"
       }`}
     >

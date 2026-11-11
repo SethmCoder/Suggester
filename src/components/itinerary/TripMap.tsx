@@ -22,6 +22,8 @@ export interface MapPin {
   activityId?: string;
   /** City pins are named population centers. Stop pins stay numbered. */
   kind?: "stop" | "city";
+  /** Hex color for the pin marker. */
+  color?: string;
 }
 
 export type HotelMapPin = {
@@ -106,7 +108,7 @@ export function TripMap({
   const pinKey = pins
     .map(
       (pin) =>
-        `${pin.kind ?? "stop"}:${pin.activityId ?? ""}:${pin.order}:${pin.lat.toFixed(5)}:${pin.lng.toFixed(5)}:${pin.label}:${pin.starred ? 1 : 0}`,
+        `${pin.kind ?? "stop"}:${pin.activityId ?? ""}:${pin.order}:${pin.lat.toFixed(5)}:${pin.lng.toFixed(5)}:${pin.label}:${pin.starred ? 1 : 0}:${pin.color ?? ""}`,
     )
     .join("|");
   const hotelLayerRef = useRef<any>(null);
@@ -201,17 +203,18 @@ export function TripMap({
 
       const bounds = L.latLngBounds([]);
       pins.forEach((p) => {
+        const pinColor = p.color || (p.starred ? "#C45F00" : "#1616C9");
         const icon =
           p.kind === "city"
             ? L.divIcon({
                 className: "waypoint-city-pin",
-                html: `<div style="display:flex;flex-direction:column;align-items:center"><div style="width:14px;height:14px;border-radius:999px;background:#0400FF;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div><div style="margin-top:2px;background:#080B3A;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:999px;white-space:nowrap">${escapeHtml(p.label)}</div></div>`,
+                html: `<div style="display:flex;flex-direction:column;align-items:center"><div style="width:14px;height:14px;border-radius:999px;background:${pinColor};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div><div style="margin-top:2px;background:#080B3A;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:999px;white-space:nowrap">${escapeHtml(p.label)}</div></div>`,
                 iconSize: [120, 36],
                 iconAnchor: [60, 8],
               })
             : L.divIcon({
                 className: "waypoint-pin",
-                html: `<div style="position:relative;background:${p.starred ? "#C45F00" : "#1616C9"};color:#fff;border-radius:999px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.25)">${p.order}${
+                html: `<div style="position:relative;background:${pinColor};color:#fff;border-radius:999px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.25)">${p.order}${
                   p.starred
                     ? `<span style="position:absolute;top:-8px;right:-6px;font-size:14px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35))">★</span>`
                     : ""
@@ -226,7 +229,7 @@ export function TripMap({
       if (connect && pins.length > 1 && pins.every((p) => p.kind !== "city")) {
         L.polyline(
           pins.map((p) => [p.lat, p.lng] as [number, number]),
-          { color: "#1616C9", weight: 4 },
+          { color: pins[0]?.color || "#1616C9", weight: 4 },
         ).addTo(map);
       }
       let framed = 0;

@@ -6,6 +6,9 @@ import { Input, Label } from "@/components/ui/Input";
 import { formatTripDate } from "@/lib/format-date";
 import { addCalendarDays } from "@/lib/trips/dates";
 import type { ActivityRow } from "@/lib/types/trip";
+import { stopColorForIndex, stopColorForKey } from "@/lib/trips/stop-colors";
+import { useLanguage } from "@/components/i18n/LanguageProvider";
+import { getPreferredLanguageClient } from "@/lib/i18n/preference";
 
 type ComposerMode = "find" | "manual";
 
@@ -17,14 +20,14 @@ type PlaceHit = {
   lng: number;
 };
 
-const HOUR_START = 6;
-const HOUR_END = 23;
+const HOUR_START = 8;
+const HOUR_END = 20;
 const HOURS = Array.from(
   { length: HOUR_END - HOUR_START + 1 },
   (_, i) => HOUR_START + i,
 );
-const HOUR_PX = 48;
-const MAX_VISIBLE_DAYS = 7;
+const HOUR_PX = 36;
+const MAX_VISIBLE_DAYS = 3;
 
 type DayColumn = {
   dayId: string;
@@ -122,6 +125,7 @@ export function WeekCalendarView({
   onAddStop: (stop: CalendarNewStop) => void | Promise<void>;
   onSelectActivity?: (dayIndex: number, activityId: string) => void;
 }) {
+  const { t, language } = useLanguage();
   const [weekStart, setWeekStart] = useState(0);
   const [draft, setDraft] = useState<DraftSlot | null>(null);
   const [dragging, setDragging] = useState<DraftSlot | null>(null);
@@ -252,34 +256,65 @@ export function WeekCalendarView({
       const city =
         dayCities?.[draft.dayIndex]?.city ||
         days[draft.dayIndex]?.city ||
-        "city";
-      const q = `${timeOfDayHint(draft.startMinutes)} ${city}`;
-      const params = new URLSearchParams({ q, limit: "5" });
+        "";
+      const params = new URLSearchParams({
+        limit: "6",
+        startMinutes: String(draft.startMinutes),
+        lang: language || getPreferredLanguageClient(),
+      });
+      if (city) params.set("city", city);
       if (draftNear) {
         params.set("lat", String(draftNear.lat));
         params.set("lng", String(draftNear.lng));
       }
-      const res = await fetch(`/api/places/search?${params}`);
-      const data = (await res.json()) as { results?: PlaceHit[] };
-      const hits = (data.results ?? []).filter((hit) => hit.name);
+      const res = await fetch(`/api/places/slot-suggest?${params}`);
+      const data = (await res.json()) as {
+        results?: PlaceHit[];
+        notice?: string;
+      };
+      let hits = (data.results ?? []).filter((hit) => hit.name);
+
+      // Fallback: plain place search around the slot if OSM returned nothing.
+      if (!hits.length && city) {
+        const fallback = new URLSearchParams({
+          q: `${timeOfDayHint(draft.startMinutes).split(" ")[0]} ${city}`,
+          limit: "6",
+          lang: language || getPreferredLanguageClient(),
+        });
+        if (draftNear) {
+          fallback.set("lat", String(draftNear.lat));
+          fallback.set("lng", String(draftNear.lng));
+        }
+        const fbRes = await fetch(`/api/places/search?${fallback}`);
+        const fbData = (await fbRes.json()) as { results?: PlaceHit[] };
+        hits = (fbData.results ?? []).filter((hit) => hit.name);
+      }
+
       setAiSuggestions(hits);
       if (hits[0]) {
         setPicked(hits[0]);
         setName(hits[0].name);
         setNote(
-          `Suggested for ${formatClock(draft.startMinutes)}–${formatClock(draft.endMinutes)} in ${city}`,
+          `${formatClock(draft.startMinutes)}–${formatClock(draft.endMinutes)}${
+            city ? ` · ${city}` : ""
+          }`,
         );
       } else {
-        setNote(
-          `No nearby match yet — switch to Manual input to search in ${city}.`,
-        );
+        setNote(data.notice || t("calendar.noMatch"));
       }
     } catch {
-      setNote("Could not find a place — try Manual input search.");
+      setNote(t("calendar.couldNotFind"));
     } finally {
       setAiBusy(false);
     }
   }
+
+  // Auto-suggest as soon as a slot is dragged open.
+  useEffect(() => {
+    if (!draft) return;
+    void runFindHere();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when a new draft opens
+  }, [draft?.dayIndex, draft?.startMinutes, draft?.endMinutes]);
 
   function pickPlace(hit: PlaceHit, fromAi: boolean) {
     setPicked(hit);
@@ -327,12 +362,9 @@ export function WeekCalendarView({
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E1E5F0] px-4 py-3">
         <div>
           <h2 className="text-sm font-semibold text-[#080B3A]">
-            Week calendar
+            {t("calendar.title")}
           </h2>
-          <p className="text-xs text-[#6B7280]">
-            Drag a time range on a day — then find a place nearby or search
-            manually.
-          </p>
+          <p className="text-xs text-[#6B7280]">{t("calendar.hint")}</p>
         </div>
         {days.length > MAX_VISIBLE_DAYS ? (
           <div className="flex items-center gap-2">
@@ -342,10 +374,10 @@ export function WeekCalendarView({
               onClick={() => setWeekStart((s) => Math.max(0, s - MAX_VISIBLE_DAYS))}
               className="rounded-[10px] border border-[#E1E5F0] px-2.5 py-1 text-xs font-semibold text-[#080B3A] disabled:opacity-40"
             >
-              Earlier
+              {t("calendar.earlier")}
             </button>
             <span className="text-xs text-[#6B7280]">
-              Days {weekStart + 1}–
+              {t("calendar.days")} {weekStart + 1}–
               {Math.min(days.length, weekStart + MAX_VISIBLE_DAYS)}
             </span>
             <button
@@ -361,7 +393,7 @@ export function WeekCalendarView({
               }
               className="rounded-[10px] border border-[#E1E5F0] px-2.5 py-1 text-xs font-semibold text-[#080B3A] disabled:opacity-40"
             >
-              Later
+              {t("calendar.later")}
             </button>
           </div>
         ) : null}
@@ -440,16 +472,22 @@ export function WeekCalendarView({
               {day.activities.map((activity) => {
                 const top = activityTop(activity);
                 if (top == null) return null;
+                const color = day.city
+                  ? stopColorForKey(day.city)
+                  : stopColorForIndex(day.dayIndex);
                 return (
                   <button
                     key={activity.id}
                     type="button"
                     data-activity
                     onClick={() => onSelectActivity?.(day.dayIndex, activity.id)}
-                    className="absolute left-1 right-1 z-[1] overflow-hidden rounded-[8px] border border-[#0400FF]/25 bg-[#0400FF] px-1.5 py-1 text-left text-[10px] font-medium text-white shadow-sm"
+                    className="absolute left-1 right-1 z-[1] overflow-hidden rounded-[8px] px-1.5 py-1 text-left text-[10px] font-medium shadow-sm"
                     style={{
                       top,
                       height: activityHeight(activity),
+                      background: color.solid,
+                      border: `1px solid ${color.border}`,
+                      color: color.text,
                     }}
                     title={activity.name}
                   >
@@ -538,7 +576,7 @@ export function WeekCalendarView({
                 className="text-xs font-semibold text-[#6B7280]"
                 onClick={closeComposer}
               >
-                Close
+                {t("calendar.close")}
               </button>
             </div>
 
@@ -551,7 +589,7 @@ export function WeekCalendarView({
                 void runFindHere();
               }}
             >
-              {aiBusy ? "Looking nearby…" : "Find me something here"}
+              {aiBusy ? t("calendar.looking") : t("calendar.findHere")}
             </Button>
 
             <div className="mt-4">
@@ -576,7 +614,7 @@ export function WeekCalendarView({
                   }`}
                   onClick={() => setMode("find")}
                 >
-                  Find for me
+                  {t("calendar.findForMe")}
                 </button>
                 <button
                   type="button"
@@ -587,17 +625,14 @@ export function WeekCalendarView({
                   }`}
                   onClick={() => setMode("manual")}
                 >
-                  Manual input
+                  {t("calendar.manual")}
                 </button>
               </div>
             </div>
 
             {mode === "find" ? (
               <div className="mt-4 space-y-3">
-                <p className="text-xs text-[#6B7280]">
-                  Tap Find me something here for a nearby suggestion that fits
-                  this time of day. Or slide to Manual input to search yourself.
-                </p>
+                <p className="text-xs text-[#6B7280]">{t("calendar.findHint")}</p>
                 {aiSuggestions.length ? (
                   <ul className="max-h-44 space-y-1 overflow-auto rounded-[12px] border border-[#E1E5F0]">
                     {aiSuggestions.map((hit) => (
@@ -622,7 +657,8 @@ export function WeekCalendarView({
                 ) : null}
                 {picked ? (
                   <p className="rounded-[10px] bg-[#F5F7FF] px-3 py-2 text-xs text-[#080B3A]">
-                    Selected: <span className="font-semibold">{picked.name}</span>
+                    {t("calendar.selected")}:{" "}
+                    <span className="font-semibold">{picked.name}</span>
                   </p>
                 ) : null}
                 {note && !aiSuggestions.length ? (
@@ -632,7 +668,7 @@ export function WeekCalendarView({
             ) : (
               <div className="mt-4 space-y-3">
                 <div className="relative">
-                  <Label>Search places</Label>
+                  <Label>{t("calendar.searchPlaces")}</Label>
                   <Input
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -662,7 +698,7 @@ export function WeekCalendarView({
                   ) : null}
                 </div>
                 <div>
-                  <Label>Place name</Label>
+                  <Label>{t("calendar.placeName")}</Label>
                   <Input
                     value={name}
                     onChange={(e) => {
@@ -675,7 +711,7 @@ export function WeekCalendarView({
                   />
                 </div>
                 <div>
-                  <Label>Note</Label>
+                  <Label>{t("calendar.note")}</Label>
                   <Input
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
@@ -691,7 +727,7 @@ export function WeekCalendarView({
                 disabled={busy || (!name.trim() && !picked)}
                 onClick={() => void saveDraft()}
               >
-                {busy ? "Saving…" : "Add stop"}
+                {busy ? "…" : t("calendar.addStop")}
               </Button>
               <Button type="button" variant="ghost" onClick={closeComposer}>
                 Cancel

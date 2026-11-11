@@ -91,6 +91,10 @@ export interface TripPreferencesPayload {
   /** Per-city intensity overrides keyed by city name. */
   cityIntensities?: Record<string, "relaxed" | "balanced" | "packed">;
   interestWeights?: Record<string, number>;
+  /** Interests the traveler asked to de-emphasize. */
+  downrankedInterests?: string[];
+  /** Preferred app / content language from settings (en, ja, …). */
+  language?: string;
   maxWalkMinutes?: number;
   indoorOutdoor?: "indoor" | "outdoor" | "either";
   budget?: number;
@@ -153,4 +157,5 @@ export interface TripListItem {
   created_at: string;
   day_count?: number;
   title?: string;
+  status?: string;
 }

@@ -8,6 +8,7 @@ import { HeaderSearch } from "./HeaderSearch";
 import { NotificationsMenu } from "./NotificationsMenu";
 import { UserAvatar } from "./UserAvatar";
 import { FirstRunTour } from "@/components/tutorial/FirstRunTour";
+import { LanguageProvider, useLanguage } from "@/components/i18n/LanguageProvider";
 import {
   IconCompass,
   IconHelp,
@@ -25,35 +26,37 @@ type NavIcon = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
 
 type NavItem = {
   href: string;
-  label: string;
+  labelKey: string;
   icon: NavIcon;
   tour?: string;
   match?: "exact" | "prefix";
 };
 
 const PRIMARY: NavItem[] = [
-  { href: "/dashboard", label: "Home", icon: IconHome, tour: "tour-nav-home", match: "exact" },
-  { href: "/discover", label: "Discover", icon: IconCompass },
-  { href: "/explore", label: "Explorer", icon: IconMap },
-  { href: "/things", label: "Things", icon: IconSpark },
-  { href: "/wishlist", label: "Wishlist", icon: IconPin, tour: "tour-nav-saved" },
-  { href: "/future-plans", label: "Future Plans", icon: IconPlane },
+  { href: "/dashboard", labelKey: "nav.home", icon: IconHome, tour: "tour-nav-home", match: "exact" },
+  { href: "/discover", labelKey: "nav.discover", icon: IconCompass },
+  { href: "/explore", labelKey: "nav.explore", icon: IconMap },
+  { href: "/things", labelKey: "nav.things", icon: IconSpark },
+  { href: "/wishlist", labelKey: "nav.wishlist", icon: IconPin, tour: "tour-nav-saved" },
+  { href: "/future-plans", labelKey: "nav.futurePlans", icon: IconPlane },
 ];
 
 const SECONDARY: NavItem[] = [
-  { href: "/profile", label: "Profile", icon: IconUser },
-  { href: "/help", label: "Help", icon: IconHelp, tour: "tour-nav-help" },
-  { href: "/settings", label: "Settings", icon: IconSettings },
+  { href: "/profile", labelKey: "nav.profile", icon: IconUser },
+  { href: "/help", labelKey: "nav.help", icon: IconHelp, tour: "tour-nav-help" },
+  { href: "/settings", labelKey: "nav.settings", icon: IconSettings },
 ];
 
 function NavLink({
   item,
   active,
   onNavigate,
+  label,
 }: {
   item: NavItem;
   active: boolean;
   onNavigate: () => void;
+  label: string;
 }) {
   const Icon = item.icon;
   return (
@@ -68,7 +71,7 @@ function NavLink({
       }`}
     >
       <Icon size={17} className={active ? "text-white" : "text-[#9299B5]"} />
-      {item.label}
+      {label}
     </Link>
   );
 }
@@ -78,11 +81,13 @@ function NavGroup({
   items,
   pathname,
   onNavigate,
+  t,
 }: {
   label?: string;
   items: NavItem[];
   pathname: string;
   onNavigate: () => void;
+  t: (key: string) => string;
 }) {
   return (
     <div className="space-y-0.5">
@@ -98,8 +103,9 @@ function NavGroup({
             : pathname === item.href || pathname.startsWith(`${item.href}/`);
         return (
           <NavLink
-            key={item.href + item.label}
+            key={item.href + item.labelKey}
             item={item}
+            label={t(item.labelKey)}
             active={active}
             onNavigate={onNavigate}
           />
@@ -118,7 +124,29 @@ export function AppShell({
   userEmail?: string | null;
   displayName?: string | null;
 }) {
+  return (
+    <LanguageProvider>
+      <AppShellInner
+        userEmail={userEmail}
+        displayName={displayName}
+      >
+        {children}
+      </AppShellInner>
+    </LanguageProvider>
+  );
+}
+
+function AppShellInner({
+  children,
+  userEmail,
+  displayName,
+}: {
+  children: React.ReactNode;
+  userEmail?: string | null;
+  displayName?: string | null;
+}) {
   const pathname = usePathname();
+  const { t } = useLanguage();
   const [mobileOpen, setMobileOpen] = useState(false);
   const closeMobile = () => setMobileOpen(false);
 
@@ -140,12 +168,18 @@ export function AppShell({
       </Link>
 
       <nav className="flex-1 overflow-y-auto px-2.5 pb-2">
-        <NavGroup items={PRIMARY} pathname={pathname} onNavigate={closeMobile} />
         <NavGroup
-          label="Account"
+          items={PRIMARY}
+          pathname={pathname}
+          onNavigate={closeMobile}
+          t={t}
+        />
+        <NavGroup
+          label={t("nav.account")}
           items={SECONDARY}
           pathname={pathname}
           onNavigate={closeMobile}
+          t={t}
         />
       </nav>
 
@@ -156,7 +190,7 @@ export function AppShell({
           className="inline-flex w-full items-center justify-center gap-2 rounded-[12px] bg-[#0400FF] px-3 py-2.5 text-sm font-semibold text-white shadow-sm shadow-[#0400FF]/25 transition hover:bg-[#0A0080]"
         >
           <IconPlane size={16} />
-          Plan a trip
+          {t("nav.planTrip")}
         </Link>
       </div>
     </aside>

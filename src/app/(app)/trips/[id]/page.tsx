@@ -122,6 +122,9 @@ export default async function TripItineraryPage({
         initialActivities={data.activities}
         startDate={data.trip.start_date}
         endDate={data.trip.end_date}
+        initialStatus={
+          typeof data.trip.status === "string" ? data.trip.status : null
+        }
         initialLegs={
           (
             data.preferences as

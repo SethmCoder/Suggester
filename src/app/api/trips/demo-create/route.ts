@@ -76,6 +76,7 @@ const bodySchema = z.object({
     .default("")
     .transform((value) => truncateText(value, IDEAL_TRIP_MAX) ?? ""),
   tripTitle: z.string().max(80).optional(),
+  language: z.string().max(16).optional(),
   preferredAirlines: z.string().optional(),
   flightPricePoint: z.enum(["any", "budget", "standard", "premium"]).optional(),
   chosenAirline: z.string().optional(),
@@ -314,6 +315,7 @@ export async function POST(req: Request) {
       inboundFlight: inboundFlight
         ? { ...inboundFlight, ...arrivalCoords }
         : undefined,
+      language: body.language,
     });
 
     const res = NextResponse.json({

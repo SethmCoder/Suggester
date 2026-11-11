@@ -21,6 +21,10 @@ import {
   assistantUserPrompt,
 } from "@/lib/ai/assistant-prompt";
 import { assistantPatchSchema } from "@/lib/ai/patch";
+import {
+  languageDisplayName,
+  normalizeLanguage,
+} from "@/lib/i18n/preference";
 import { getDemoTripPayload, isDemoTripId } from "@/lib/demo/data";
 import { DEMO_COOKIE, isDemoCookie } from "@/lib/demo/session";
 import { fetchTripFull } from "@/lib/db/trips";
@@ -244,7 +248,17 @@ export async function POST(
           },
         },
         messages: [
-          { role: "system", content: assistantSystemPrompt() },
+          {
+            role: "system",
+            content: assistantSystemPrompt(
+              languageDisplayName(
+                normalizeLanguage(
+                  (trip as { preferences?: { language?: string } }).preferences
+                    ?.language,
+                ),
+              ),
+            ),
+          },
           {
             role: "user",
             content: assistantUserPrompt({

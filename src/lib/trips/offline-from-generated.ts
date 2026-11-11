@@ -81,3 +81,42 @@ export function offlineSnapshotFromGenerated(input: {
     budget: input.budget,
   };
 }
+
+/** Open an empty itinerary immediately; fill stops after generation returns. */
+export function offlineSnapshotShell(input: {
+  tripId: string;
+  destination: string;
+  startDate: string;
+  endDate: string;
+  dayCount: number;
+  legs?: TripLeg[];
+  title?: string;
+  budget?: OfflineTripSnapshot["budget"];
+  pendingBuild?: Record<string, unknown>;
+}): OfflineTripSnapshot {
+  const count = Math.max(1, Math.min(60, Math.floor(input.dayCount)));
+  const days = Array.from({ length: count }, (_, day_index) => ({
+    id: `${input.tripId}-day-${day_index}`,
+    day_index,
+  }));
+  return {
+    trip: {
+      id: input.tripId,
+      destination: input.destination,
+      start_date: input.startDate,
+      end_date: input.endDate,
+      cover_image_url: null,
+      created_at: new Date().toISOString(),
+      day_count: count,
+      title: input.title,
+      status: "generating",
+    },
+    days,
+    activities: [],
+    updatedAt: new Date().toISOString(),
+    offlineOnly: true,
+    legs: input.legs,
+    budget: input.budget,
+    pendingBuild: input.pendingBuild,
+  };
+}

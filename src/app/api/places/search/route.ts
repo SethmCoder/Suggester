@@ -1,8 +1,13 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import {
   accountlessFetch,
   waypointUserAgent,
 } from "@/lib/http/accountless-fetch";
+import {
+  LANGUAGE_COOKIE,
+  normalizeLanguage,
+} from "@/lib/i18n/preference";
 
 /** Nominatim place search for adding a stop. */
 export async function GET(req: Request) {
@@ -11,11 +16,16 @@ export async function GET(req: Request) {
   if (q.length < 2) {
     return NextResponse.json({ results: [] });
   }
+  const jar = await cookies();
+  const lang = normalizeLanguage(
+    searchParams.get("lang") || jar.get(LANGUAGE_COOKIE)?.value,
+  );
   const params = new URLSearchParams({
     q,
     format: "jsonv2",
     limit: "6",
     addressdetails: "1",
+    "accept-language": lang,
   });
   const nearLat = Number(searchParams.get("lat"));
   const nearLng = Number(searchParams.get("lng"));
@@ -29,6 +39,7 @@ export async function GET(req: Request) {
       headers: {
         "User-Agent": waypointUserAgent(),
         Accept: "application/json",
+        "Accept-Language": lang,
       },
       timeoutMs: 10000,
     },

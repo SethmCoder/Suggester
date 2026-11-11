@@ -1,7 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { generateItinerary } from "@/lib/ai/generate-itinerary";
 import {
   PLAN_COOKIE,
   PLAN_LIMIT_MESSAGE,
@@ -11,9 +10,10 @@ import {
 } from "@/lib/billing/plans";
 import { anchorUnbookedLegs } from "@/lib/hotels/hotelrec";
 import {
+  createTripDayShells,
   createTripRecord,
   dbError,
-  saveGeneratedItinerary,
+  updateTripStatus,
 } from "@/lib/db/trips";
 import { filterAirlines, flightRestrictionNote } from "@/lib/flights/airline-class";
 import { estimateFlight } from "@/lib/flights/openflights";
@@ -34,6 +34,10 @@ import {
 } from "@/lib/trips/truncate-input";
 import { AnalyticsEvent } from "@/lib/analytics/events";
 import { trackServerEvent } from "@/lib/analytics/track";
+import {
+  LANGUAGE_COOKIE,
+  normalizeLanguage,
+} from "@/lib/i18n/preference";
 
 const hotelPlaceSchema = z.preprocess(
   (value) => (value === "" || value == null ? undefined : value),
@@ -156,6 +160,7 @@ const bodySchema = z.object({
   chosenAirline: z.string().optional(),
   idempotencyKey: z.string().max(120).optional(),
   futureTripId: z.string().min(1).max(120).optional(),
+  language: z.string().max(16).optional(),
   legs: z.array(legSchema).optional(),
 });
 
@@ -373,6 +378,10 @@ export async function POST(req: Request) {
         interestWeights:
           body.interestWeights ??
           constraintsFromConversation(body.idealTrip, body.interests).interestWeights,
+        downrankedInterests: body.downrankedInterests,
+        language: normalizeLanguage(
+          body.language || jar.get(LANGUAGE_COOKIE)?.value,
+        ),
         maxWalkMinutes:
           body.maxWalkMinutes ??
           constraintsFromConversation(body.idealTrip, body.interests).maxWalkMinutes,
@@ -417,119 +426,66 @@ export async function POST(req: Request) {
         .eq("owner_id", user.id);
     }
 
-    if (created.reused) {
-      return NextResponse.json({ tripId, reused: true, warnings: [] as string[] });
-    }
-
-    const generated = await generateItinerary({
-      destination: destinationLabel,
-      startDate: body.startDate,
-      endDate: body.endDate,
-      interests: body.interests,
-      intensity: body.intensity,
-      transport: body.transport,
-      mustSee: body.mustSee,
-      preferred: body.preferred,
-      avoid: body.avoid,
-      idealTrip: body.idealTrip,
-      prefersHiddenGems: body.prefersHiddenGems,
-      budget: body.budget ?? budgetFromConversation(body.idealTrip).total,
-      budgetAllocation:
-        body.budgetAllocation ?? budgetFromConversation(body.idealTrip).allocation,
-      restaurantStyle:
-        body.restaurantStyle ?? budgetFromConversation(body.idealTrip).restaurantStyle,
-      rejectedPlaceIds: body.rejectedPlaceIds,
-      keptPlaceIds: body.keptPlaceIds,
-      party: body.party ?? constraintsFromConversation(body.idealTrip, body.interests).party,
-      interestWeights:
-        body.interestWeights ??
-        constraintsFromConversation(body.idealTrip, body.interests).interestWeights,
-      downrankedInterests: body.downrankedInterests,
-      maxWalkMinutes:
-        body.maxWalkMinutes ??
-        constraintsFromConversation(body.idealTrip, body.interests).maxWalkMinutes,
-      indoorOutdoor:
-        body.indoorOutdoor ??
-        constraintsFromConversation(body.idealTrip, body.interests).indoorOutdoor,
-      dietary: body.dietary,
-      accessibility:
-        body.accessibility ||
-        constraintsFromConversation(body.idealTrip, body.interests).accessibility,
-      dayStart,
-      dayEnd: body.dayEnd,
-      hotel: body.hotel,
-      legs: resolvedLegs,
-      inboundFlight: inboundFlight
-        ? { ...inboundFlight, ...arrivalCoords }
-        : undefined,
-    });
-
-    try {
-      await saveGeneratedItinerary({
-        tripId,
-        days: generated.days,
-        warnings: generated.warnings,
-      });
-    } catch (saveErr) {
-      // Plan is ready — keep it on-device if cloud save fails.
-      const saveMessage = dbError(saveErr).message;
-      const res = NextResponse.json({
-        offline: true,
-        tripId,
-        destination: destinationLabel,
-        tripTitle: body.tripTitle,
-        days: generated.days,
-        warnings: [
-          ...generated.warnings,
-          `Saved on this device only — cloud save failed: ${saveMessage}`,
-        ],
-        legs: resolvedLegs,
-      });
-      const options = {
-        httpOnly: true,
-        sameSite: "lax" as const,
-        secure: process.env.NODE_ENV === "production",
-        path: "/",
-        maxAge: 60 * 60 * 24 * 365,
-      };
-      res.cookies.set(PLAN_COOKIE, billing.plan, options);
-      res.cookies.set(USED_COOKIE, String(billing.used + 1), options);
-      return res;
-    }
-
     const svc = createServiceClient();
-    if (svc) {
-      try {
-        await svc.from("ai_generations").insert({
-          trip_id: tripId,
-          kind: "full",
-          request: body,
-          response: {
-            warnings: generated.warnings,
-            popularityUsed: generated.popularityUsed,
-          },
+    if (created.reused && svc) {
+      const { data: existing } = await svc
+        .from("trips")
+        .select("status")
+        .eq("id", tripId)
+        .maybeSingle();
+      const { data: dayRows } = await svc
+        .from("itinerary_days")
+        .select("id")
+        .eq("trip_id", tripId);
+      const dayIds = (dayRows ?? []).map((d) => d.id);
+      let activityCount = 0;
+      if (dayIds.length) {
+        const { count } = await svc
+          .from("activities")
+          .select("id", { count: "exact", head: true })
+          .in("day_id", dayIds);
+        activityCount = count ?? 0;
+      }
+      if (existing?.status === "ready" && activityCount > 0) {
+        return NextResponse.json({
+          tripId,
+          status: "ready",
+          pending: false,
+          reused: true,
+          warnings: [] as string[],
         });
-      } catch {
-        /* analytics row is optional */
       }
     }
 
-    try {
-      await trackServerEvent({
-        event: AnalyticsEvent.TripPlanned,
-        userId: user.id,
-        properties: {
-          tripId,
-          destination: destinationLabel,
-          multiCity: (resolvedLegs?.length ?? 0) > 1,
-        },
-        path: "/trips/new",
-      });
-    } catch {
-      /* analytics must not fail trip create */
+    // Open the trip immediately with empty day shells; /build fills stops.
+    await updateTripStatus(tripId, "generating");
+    await createTripDayShells(tripId, defaultDays);
+
+    if (!created.reused) {
+      try {
+        await trackServerEvent({
+          event: AnalyticsEvent.TripPlanned,
+          userId: user.id,
+          properties: {
+            tripId,
+            destination: destinationLabel,
+            multiCity: (resolvedLegs?.length ?? 0) > 1,
+            pending: true,
+          },
+          path: "/trips/new",
+        });
+      } catch {
+        /* analytics must not fail trip create */
+      }
     }
 
-    const res = NextResponse.json({ tripId, warnings: generated.warnings });
+    const res = NextResponse.json({
+      tripId,
+      status: "generating",
+      pending: true,
+      reused: created.reused,
+      warnings: [] as string[],
+    });
     const options = {
       httpOnly: true,
       sameSite: "lax" as const,
@@ -538,13 +494,8 @@ export async function POST(req: Request) {
       maxAge: 60 * 60 * 24 * 365,
     };
     res.cookies.set(PLAN_COOKIE, billing.plan, options);
-    res.cookies.set(USED_COOKIE, String(billing.used + 1), options);
-    if (gate.consumes) {
-      const { AI_USED_COOKIE, AI_MONTH_COOKIE, currentMonthKey } = await import(
-        "@/lib/billing/entitlements"
-      );
-      res.cookies.set(AI_USED_COOKIE, String(gate.used + 1), options);
-      res.cookies.set(AI_MONTH_COOKIE, currentMonthKey(), options);
+    if (!created.reused) {
+      res.cookies.set(USED_COOKIE, String(billing.used + 1), options);
     }
     return res;
   } catch (err) {

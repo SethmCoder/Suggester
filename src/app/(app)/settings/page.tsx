@@ -20,10 +20,18 @@ import {
   writeStoredAvatar,
 } from "@/lib/avatar";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import { useLanguage } from "@/components/i18n/LanguageProvider";
+import {
+  getPreferredLanguageClient,
+  LANGUAGE_OPTIONS,
+  setPreferredLanguageClient,
+  type AppLanguageCode,
+} from "@/lib/i18n/preference";
 
 const USERNAME_KEY = "waypoint:username";
 
 export default function SettingsPage() {
+  const { t } = useLanguage();
   const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -33,6 +41,7 @@ export default function SettingsPage() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [mapsProvider, setMapsProvider] =
     useState<MapsProviderId>("openstreetmap");
+  const [language, setLanguage] = useState<AppLanguageCode>("en");
   const [isDemo, setIsDemo] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -42,6 +51,7 @@ export default function SettingsPage() {
   useEffect(() => {
     setMounted(true);
     setMapsProvider(getMapsProviderPreference());
+    setLanguage(getPreferredLanguageClient());
     try {
       setAvatarUrl(localStorage.getItem(AVATAR_STORAGE_KEY));
       setUsername(localStorage.getItem(USERNAME_KEY) ?? "");
@@ -225,15 +235,47 @@ export default function SettingsPage() {
     <div className="mx-auto max-w-2xl space-y-6">
       {isDemo ? <DemoBanner /> : null}
       <div>
-        <h1 className="text-2xl font-semibold">Settings</h1>
-        <p className="mt-1 text-sm text-[#6B7280]">
-          Account, billing, photo, and maps.
-        </p>
+        <h1 className="text-2xl font-semibold">{t("settings.title")}</h1>
+        <p className="mt-1 text-sm text-[#6B7280]">{t("settings.subtitle")}</p>
       </div>
 
       <BillingPlansPanel />
 
       <SignupToPlanFunnel />
+
+      <section className="rounded-2xl border border-[#E1E5F0] bg-white p-6 shadow-sm space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">{t("settings.language")}</h2>
+          <p className="mt-1 text-sm text-[#6B7280]">
+            {t("settings.languageHint")}
+          </p>
+        </div>
+        <div>
+          <Label htmlFor="preferred-language">{t("settings.language")}</Label>
+          <select
+            id="preferred-language"
+            className="mt-1 h-11 w-full rounded-[12px] border border-[#D1D7E5] bg-white px-3 text-sm text-[#080B3A]"
+            value={language}
+            onChange={(e) => setLanguage(e.target.value as AppLanguageCode)}
+          >
+            {LANGUAGE_OPTIONS.map((option) => (
+              <option key={option.code} value={option.code}>
+                {option.nativeLabel} ({option.label})
+              </option>
+            ))}
+          </select>
+        </div>
+        <Button
+          type="button"
+          onClick={() => {
+            setPreferredLanguageClient(language);
+            setStatus(t("settings.languageSaved"));
+            setError(null);
+          }}
+        >
+          {t("settings.saveLanguage")}
+        </Button>
+      </section>
 
       {/* Avatar */}
       <section className="rounded-2xl border border-[#E1E5F0] bg-white p-6 shadow-sm">

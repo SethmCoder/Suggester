@@ -11,7 +11,7 @@ import {
   saveOfflineTrip,
 } from "@/lib/offline/trips";
 import { PLAN_LIMIT_MESSAGE } from "@/lib/billing/plans";
-import { offlineSnapshotFromGenerated } from "@/lib/trips/offline-from-generated";
+import { offlineSnapshotShell } from "@/lib/trips/offline-from-generated";
 import { budgetFromConversation } from "@/lib/trips/budget";
 import { constraintsFromConversation } from "@/lib/ai/constraints";
 import { readPlaceFeedback } from "@/lib/trips/place-feedback";
@@ -21,7 +21,6 @@ import {
   truncateStringList,
   truncateText,
 } from "@/lib/trips/truncate-input";
-import type { GeneratedDay } from "@/lib/ai/generate-itinerary";
 import { CityHotelField } from "@/components/itinerary/CityHotelField";
 import { HotelChoice } from "@/components/trips/HotelChoice";
 import { TripAgentDesk } from "@/components/trips/TripAgentDesk";
@@ -57,6 +56,7 @@ import { AnalyticsEvent } from "@/lib/analytics/events";
 import { trackClientEvent } from "@/lib/analytics/client";
 import { parseBookingFromEmailText } from "@/lib/dreamer/parse-email";
 import { summarizeParsedBooking } from "@/lib/dreamer/summary";
+import { getPreferredLanguageClient } from "@/lib/i18n/preference";
 
 const INTERCITY_MODES: { value: LegTransitMode; label: string }[] = [
   { value: "auto", label: "Auto (planner picks)" },
@@ -1070,6 +1070,7 @@ export function CreateTripWizard({
       flightPricePoint: form.flightPricePoint,
       chosenAirline: form.chosenAirline || undefined,
       tripTitle: form.tripTitle.trim() || undefined,
+      language: getPreferredLanguageClient(),
       partyType: partyType || undefined,
       kidAges: partyType === "family" ? kidAges || undefined : undefined,
       kidEnergy: partyType === "family" ? kidEnergy || undefined : undefined,
@@ -1155,38 +1156,18 @@ export function CreateTripWizard({
     };
 
     async function finishDemoGenerate() {
-      setProgress("Generating itinerary…");
+      setProgress("Opening your trip…");
       await ensureDemoSession();
-      let res = await fetch("/api/trips/demo-create", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      let data = await res.json().catch(() => ({}));
-      if (res.status === 401) {
-        await ensureDemoSession();
-        res = await fetch("/api/trips/demo-create", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        data = await res.json().catch(() => ({}));
-      }
-      if (!res.ok) {
-        if (data.code === "plan_limit") setPlanLimited(true);
-        throw new Error(data.error ?? "Could not generate this trip");
-      }
       const tripId = createOfflineTripId();
+      const dayCount = Math.max(1, nightsBetween(startDate, endDate) + 1);
       saveOfflineTrip(
-        offlineSnapshotFromGenerated({
+        offlineSnapshotShell({
           tripId,
-          destination: data.destination || destination || "Untitled trip",
+          destination: destination || "Untitled trip",
           startDate,
           endDate,
-          days: (data.days ?? []) as GeneratedDay[],
-          legs: body.legs,
+          dayCount,
+          legs: body.legs as import("@/lib/types/trip").TripLeg[] | undefined,
           title: form.tripTitle.trim() || undefined,
           budget: {
             total: body.budget,
@@ -1194,12 +1175,13 @@ export function CreateTripWizard({
             allocation: body.budgetAllocation,
             restaurantStyle: body.restaurantStyle,
           },
+          pendingBuild: body as Record<string, unknown>,
         }),
       );
       if (futureTripId) {
         updateFutureTrip(futureTripId, {
           convertedTripId: tripId,
-          status: "ready",
+          status: "planning",
         });
       }
       router.push(`/trips/${tripId}`);
@@ -1223,7 +1205,7 @@ export function CreateTripWizard({
         setError("The planner needs a connection to look up real places.");
         return;
       }
-      setProgress("Generating itinerary…");
+      setProgress("Opening your trip…");
       const res = await fetch("/api/trips/create", {
         method: "POST",
         credentials: "same-origin",
@@ -1244,145 +1226,43 @@ export function CreateTripWizard({
             : Array.isArray(data.details)
               ? data.details.join("; ")
               : "";
-        // Cloud create failed — generate on-device without flipping into demo mode.
+        // Cloud shell failed — open a local shell and fill in the background.
         if (
           data.code !== "plan_limit" &&
           data.code !== "ai_limit" &&
           data.code !== "pro_required"
         ) {
           try {
-            setProgress("Cloud save failed — generating on this device…");
-            // Do not start demo mode here — signed-in users stay on personal.
-            // demo-create accepts either a demo cookie or an authenticated user.
-            const offlineRes = await fetch("/api/trips/demo-create", {
-              method: "POST",
-              credentials: "same-origin",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(body),
-            });
-            const offlineData = await offlineRes.json().catch(() => ({}));
-            if (offlineRes.ok && Array.isArray(offlineData.days)) {
-              const tripId = createOfflineTripId();
-              saveOfflineTrip(
-                offlineSnapshotFromGenerated({
-                  tripId,
-                  destination:
-                    offlineData.destination || destination || "Untitled trip",
-                  startDate,
-                  endDate,
-                  days: offlineData.days as GeneratedDay[],
-                  legs: body.legs,
-                  title: form.tripTitle.trim() || undefined,
-                  budget: {
-                    total: body.budget,
-                    currency: body.currency,
-                    allocation: body.budgetAllocation,
-                    restaurantStyle: body.restaurantStyle,
-                  },
-                }),
-              );
-              if (futureTripId) {
-                updateFutureTrip(futureTripId, {
-                  convertedTripId: tripId,
-                  status: "ready",
-                });
-              }
-              router.push(`/trips/${tripId}`);
-              router.refresh();
-              return;
-            }
+            await finishDemoGenerate();
+            return;
           } catch {
             /* fall through to the original error */
           }
         }
         throw new Error(
-          [data.error ?? "Could not generate this trip", detail]
+          [data.error ?? "Could not create this trip", detail]
             .filter(Boolean)
             .join(" — "),
         );
       }
-      // Cloud save failed after generation — keep the plan on this device.
-      if (data.offline && Array.isArray(data.days)) {
-        const tripId =
-          typeof data.tripId === "string" && data.tripId
-            ? data.tripId
-            : createOfflineTripId();
-        saveOfflineTrip(
-          offlineSnapshotFromGenerated({
-            tripId,
-            destination: data.destination || destination || "Untitled trip",
-            startDate,
-            endDate,
-            days: data.days as GeneratedDay[],
-            legs: body.legs,
-            title: form.tripTitle.trim() || undefined,
-            budget: {
-              total: body.budget,
-              currency: body.currency,
-              allocation: body.budgetAllocation,
-              restaurantStyle: body.restaurantStyle,
-            },
-          }),
-        );
-        if (futureTripId) {
-          updateFutureTrip(futureTripId, {
-            convertedTripId: tripId,
-            status: "ready",
-          });
-        }
-        router.push(`/trips/${tripId}`);
-        router.refresh();
-        return;
+      if (!data.tripId || typeof data.tripId !== "string") {
+        throw new Error("Could not create this trip");
       }
-      if (futureTripId && data.tripId) {
+      if (futureTripId) {
         updateFutureTrip(futureTripId, {
-          convertedTripId: data.tripId as string,
-          status: "ready",
+          convertedTripId: data.tripId,
+          status: "planning",
         });
         void fetch(`/api/future-trips/${futureTripId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             convertedTripId: data.tripId,
-            status: "ready",
+            status: "planning",
           }),
         });
       }
-      // Mirror server trip locally so later offline edits still work
-      try {
-        const tripId = data.tripId as string;
-        const detail = await fetch(`/api/trips/${tripId}`);
-        if (detail.ok) {
-          const full = await detail.json();
-          if (full?.trip && full?.days) {
-            saveOfflineTrip({
-              trip: {
-                id: tripId,
-                destination: full.trip.destination,
-                start_date: full.trip.start_date,
-                end_date: full.trip.end_date,
-                cover_image_url: full.trip.cover_image_url ?? null,
-                created_at: full.trip.created_at ?? new Date().toISOString(),
-                day_count: full.days.length,
-                title:
-                  (full.preferences as { title?: string } | undefined)?.title ||
-                  form.tripTitle.trim() ||
-                  undefined,
-              },
-              days: full.days.map(
-                (d: { id: string; day_index: number }) => ({
-                  id: d.id,
-                  day_index: d.day_index,
-                }),
-              ),
-              activities: full.activities ?? [],
-              updatedAt: new Date().toISOString(),
-            });
-          }
-        }
-      } catch {
-        /* optional mirror */
-      }
+      // Open the empty itinerary first; the trip page starts /build and polls.
       router.push(`/trips/${data.tripId}`);
       router.refresh();
     } catch (e) {

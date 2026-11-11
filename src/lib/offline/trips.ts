@@ -30,6 +30,8 @@ export type OfflineTripSnapshot = {
   };
   /** Purchases logged against the trip budget. */
   expenses?: TripExpense[];
+  /** Request body for background demo-create while the empty shell is open. */
+  pendingBuild?: Record<string, unknown>;
 };
 
 function readIndex(): string[] {

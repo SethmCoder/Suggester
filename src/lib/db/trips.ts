@@ -193,6 +193,44 @@ export async function createTripRecord(input: {
   return { tripId: trip.id, reused: false };
 }
 
+/** Empty day rows so the itinerary page can open before generation finishes. */
+export async function createTripDayShells(tripId: string, dayCount: number) {
+  const supabase = createServiceClient();
+  if (!supabase) throw new Error("Database not configured");
+  const count = Math.max(1, Math.min(60, Math.floor(dayCount)));
+
+  const { data: existing } = await supabase
+    .from("itinerary_days")
+    .select("id, day_index")
+    .eq("trip_id", tripId)
+    .order("day_index");
+  if (existing?.length) return existing;
+
+  const rows = Array.from({ length: count }, (_, day_index) => ({
+    trip_id: tripId,
+    day_index,
+  }));
+  const { data, error } = await supabase
+    .from("itinerary_days")
+    .insert(rows)
+    .select("id, day_index");
+  if (error) throw dbError(error, "Could not create itinerary days");
+  return data ?? [];
+}
+
+export async function updateTripStatus(
+  tripId: string,
+  status: "generating" | "ready" | "failed",
+) {
+  const supabase = createServiceClient();
+  if (!supabase) throw new Error("Database not configured");
+  const { error } = await supabase
+    .from("trips")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", tripId);
+  if (error) throw dbError(error, "Could not update trip status");
+}
+
 export async function updateTripPreferences(
   tripId: string,
   ownerId: string,
