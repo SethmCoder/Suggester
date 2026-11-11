@@ -541,7 +541,94 @@ function acknowledge(message: string, summary: string): string {
 }
 
 function hotelMark(city: string): string {
-  return `hotel in ${city}`;
+  return `hotel booked in ${city}`;
+}
+
+function hotelWhereMark(city: string): string {
+  return `hotel name or address in ${city}`;
+}
+
+function hotelAreaMark(city: string): string {
+  return `hotel area in ${city}`;
+}
+
+function lastUserAfterNeedle(
+  history: ChatLine[],
+  needle: string,
+): string | null {
+  const lower = needle.toLowerCase();
+  for (let i = history.length - 1; i >= 0; i--) {
+    const line = history[i];
+    if (line.role !== "assistant") continue;
+    if (!line.text.toLowerCase().includes(lower)) continue;
+    for (let j = i + 1; j < history.length; j++) {
+      if (history[j].role === "user") return history[j].text;
+    }
+    return null;
+  }
+  return null;
+}
+
+function isHotelBookedAnswer(text: string): boolean {
+  return /\b(hotel booked|already booked|i(?:'| a)?m booked|we(?:'| a)?re booked|have a (?:hotel|reservation)|reservation in|staying at)\b/i.test(
+    text,
+  );
+}
+
+function isHotelSuggestAnswer(text: string): boolean {
+  return /\b(suggest (?:a |an )?(?:hotel|neighborhood)|find (?:me )?(?:a )?hotel|pick (?:a )?hotel|recommend (?:a )?hotel)\b/i.test(
+    text,
+  );
+}
+
+function isHotelFlexibleAnswer(text: string): boolean {
+  return /\b(flexible|decide later|not sure yet|no hotel yet|skip hotel|decide (?:later|after))\b/i.test(
+    text,
+  );
+}
+
+function isHotelNamePlaceholder(text: string): boolean {
+  return /^i'?ll type the hotel name$/i.test(text.trim());
+}
+
+/** Where we are in the hotel thread for one city. */
+export function hotelPhaseForCity(
+  history: ChatLine[],
+  city: string,
+): "ask" | "where" | "area" | "done" {
+  if (!asked(history, hotelMark(city))) return "ask";
+
+  const choice = lastUserAfterNeedle(history, hotelMark(city));
+  if (!choice) return "ask";
+
+  if (isHotelFlexibleAnswer(choice)) return "done";
+
+  if (isHotelBookedAnswer(choice)) {
+    if (!asked(history, hotelWhereMark(city))) return "where";
+    const named = lastUserAfterNeedle(history, hotelWhereMark(city));
+    if (!named?.trim() || isHotelNamePlaceholder(named)) return "where";
+    return "done";
+  }
+
+  if (isHotelSuggestAnswer(choice)) {
+    if (!asked(history, hotelAreaMark(city))) return "area";
+    const area = lastUserAfterNeedle(history, hotelAreaMark(city));
+    return area?.trim() ? "done" : "area";
+  }
+
+  // Freeform hotel name after the first hotel question counts as answered.
+  if (choice.trim().length >= 2) return "done";
+  return "done";
+}
+
+function hotelAreaChoices(city: string): ClarifyChoice[] {
+  return [
+    { id: `hotel-area-center-${city}`, label: `${city} center` },
+    { id: `hotel-area-sights-${city}`, label: `Near ${city} sights` },
+    { id: `hotel-area-transit-${city}`, label: `Near ${city} transit` },
+    { id: `hotel-area-beach-${city}`, label: `Near the beach` },
+    { id: `hotel-area-any-${city}`, label: `Anywhere solid in ${city}` },
+  ];
 }
 
 function morningsMark(city: string): string {
@@ -577,8 +664,19 @@ function continueAgentReply(input: {
   }
 
   for (const city of cities) {
-    if (!asked(input.history, hotelMark(city))) {
-      return `${lead}Do you already have a hotel in ${city}, or should we plan from a neighborhood feel there?`;
+    const phase = hotelPhaseForCity(input.history, city);
+    if (phase === "ask") {
+      return `${lead}Do you already have a hotel booked in ${city}, or should I suggest one?`;
+    }
+    if (phase === "where") {
+      const pending = lastUserAfterNeedle(input.history, hotelWhereMark(city));
+      if (pending && isHotelNamePlaceholder(pending)) {
+        return `${lead}Go ahead — type the hotel name or address in ${city}.`;
+      }
+      return `${lead}Got it — what's the hotel name or address in ${city}?`;
+    }
+    if (phase === "area") {
+      return `${lead}I'll suggest a hotel in ${city}. Which hotel area in ${city} should it lean toward?`;
     }
   }
   for (const city of cities) {
@@ -615,12 +713,24 @@ function continueAgentChoices(
   }
   const cityList = cities.length ? cities : ["this trip"];
   for (const city of cityList) {
-    if (!asked(history, hotelMark(city))) {
+    const phase = hotelPhaseForCity(history, city);
+    if (phase === "ask") {
       return [
         { id: `hotel-booked-${city}`, label: `Hotel booked in ${city}` },
-        { id: `hotel-suggest-${city}`, label: `Suggest a ${city} neighborhood` },
+        { id: `hotel-suggest-${city}`, label: `Suggest a hotel in ${city}` },
         { id: `hotel-flexible-${city}`, label: "Flexible — decide later" },
       ];
+    }
+    if (phase === "where") {
+      return [
+        {
+          id: `hotel-type-${city}`,
+          label: "I'll type the hotel name",
+        },
+      ];
+    }
+    if (phase === "area") {
+      return hotelAreaChoices(city);
     }
   }
   for (const city of cityList) {

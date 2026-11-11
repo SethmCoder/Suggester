@@ -263,21 +263,54 @@ describe("clarify conversation", () => {
       coveredHistory,
       "family; interests in food; balanced pace",
     );
-    expect(first.reply.toLowerCase()).toMatch(/hotel in tokyo/);
-    expect(first.reply.toLowerCase()).not.toMatch(/hotel in tokyo and izu/);
+    expect(first.reply.toLowerCase()).toMatch(/hotel booked in tokyo/);
+    expect(first.reply.toLowerCase()).not.toMatch(/hotel booked in tokyo and izu/);
     expect(first.reply.toLowerCase()).not.toMatch(/sendai and chiba/);
 
-    const second = localClarifyReply(
+    const afterSuggest = localClarifyReply(
       multi,
       [
         ...coveredHistory,
         { role: "assistant", text: first.reply },
-        { role: "user", text: "Suggest a Tokyo neighborhood" },
+        { role: "user", text: "Suggest a hotel in Tokyo" },
       ],
-      "Suggest a Tokyo neighborhood",
+      "Suggest a hotel in Tokyo",
     );
-    expect(second.reply.toLowerCase()).toMatch(/hotel in izu/);
-    expect(second.reply.toLowerCase()).not.toMatch(/hotel in tokyo/);
+    expect(afterSuggest.reply.toLowerCase()).toMatch(/hotel area in tokyo/);
+    expect(afterSuggest.reply.toLowerCase()).not.toMatch(/hotel booked in izu/);
+    expect(afterSuggest.choices.map((c) => c.label.toLowerCase())).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/tokyo center/),
+        expect.stringMatching(/near tokyo transit/),
+      ]),
+    );
+
+    const afterArea = localClarifyReply(
+      multi,
+      [
+        ...coveredHistory,
+        { role: "assistant", text: first.reply },
+        { role: "user", text: "Suggest a hotel in Tokyo" },
+        { role: "assistant", text: afterSuggest.reply },
+        { role: "user", text: "Tokyo center" },
+      ],
+      "Tokyo center",
+    );
+    expect(afterArea.reply.toLowerCase()).toMatch(/hotel booked in izu/);
+
+    const afterBooked = localClarifyReply(
+      multi,
+      [
+        ...coveredHistory,
+        { role: "assistant", text: first.reply },
+        { role: "user", text: "Hotel booked in Tokyo" },
+      ],
+      "Hotel booked in Tokyo",
+    );
+    expect(afterBooked.reply.toLowerCase()).toMatch(
+      /hotel name or address in tokyo/,
+    );
+    expect(afterBooked.reply.toLowerCase()).not.toMatch(/hotel booked in izu/);
   });
 
   it("does not treat a short reply as a finished brief", () => {

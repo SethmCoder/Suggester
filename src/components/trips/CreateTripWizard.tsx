@@ -867,6 +867,37 @@ export function CreateTripWizard({
     setClarifyPrompts((prev) => ({ ...prev, [id]: asked || "Trip notes" }));
     setClarifyAnswers((prev) => ({ ...prev, [id]: userText }));
     noteFromChat(userText);
+
+    const askedLower = (asked || "").toLowerCase();
+    const cityFromAsked =
+      legs.find((leg) => {
+        const city = leg.city.trim();
+        if (!city) return false;
+        const needle = city.toLowerCase();
+        return (
+          askedLower.includes(`hotel booked in ${needle}`) ||
+          askedLower.includes(`hotel name or address in ${needle}`) ||
+          askedLower.includes(`hotel area in ${needle}`) ||
+          askedLower.includes(`suggest a hotel in ${needle}`)
+        );
+      })?.city.trim() ||
+      legs[0]?.city.trim() ||
+      "";
+
+    const legIndex = Math.max(
+      0,
+      legs.findIndex(
+        (leg) =>
+          leg.city.trim().toLowerCase() === cityFromAsked.toLowerCase(),
+      ),
+    );
+
+    const patchLeg = (patch: Partial<(typeof legs)[number]>) => {
+      setLegs((prev) =>
+        prev.map((leg, index) => (index === legIndex ? { ...leg, ...patch } : leg)),
+      );
+    };
+
     const knownBrand = userText.match(
       /\b(westin|marriott|hilton|hyatt|sheraton|holiday inn|four seasons|ritz(?:-carlton)?|intercontinental|novotel|ibis|kimpton|waldorf|accor|radisson|sofitel|pullman|mercure)\b/i,
     );
@@ -874,16 +905,43 @@ export function CreateTripWizard({
       /\b(?:brand|prefer|like)\s+(?:the\s+)?([A-Za-z][A-Za-z'&.\- ]{1,40})/i,
     );
     const brand = (knownBrand?.[1] || named?.[1] || "").trim();
-    if (/\b(already booked|i booked|we booked|have a reservation)\b/i.test(userText)) {
-      setLegs((prev) =>
-        prev.map((leg, index) => (index === 0 ? { ...leg, hotelBooked: true } : leg)),
-      );
-    } else if (brand) {
-      setLegs((prev) =>
-        prev.map((leg, index) =>
-          index === 0 ? { ...leg, hotelBrand: brand, hotelBooked: false } : leg,
-        ),
-      );
+
+    if (
+      /\b(hotel booked|already booked|i booked|we booked|have a reservation)\b/i.test(
+        userText,
+      )
+    ) {
+      patchLeg({ hotelBooked: true });
+      return;
+    }
+
+    if (askedLower.includes("hotel name or address in")) {
+      const hotelName = userText
+        .replace(/^(i'?ll type the hotel name|hotel(?: name)?[:\s-]*)/i, "")
+        .trim();
+      if (hotelName.length >= 2) {
+        patchLeg({ hotel: hotelName, hotelBooked: true });
+      }
+      return;
+    }
+
+    if (askedLower.includes("hotel area in")) {
+      const place: HotelPlacePreference =
+        /\bcenter\b/i.test(userText)
+          ? "center"
+          : /\bbeach\b/i.test(userText)
+            ? "beach"
+            : /\bsights?\b/i.test(userText)
+              ? "sights"
+              : /\btransit\b/i.test(userText)
+                ? "transit"
+                : "any";
+      patchLeg({ hotelBooked: false, hotelPlace: place });
+      return;
+    }
+
+    if (brand) {
+      patchLeg({ hotelBrand: brand, hotelBooked: false });
     }
   }
 
