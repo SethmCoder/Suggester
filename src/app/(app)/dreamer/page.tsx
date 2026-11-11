@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
-export default function DreamerPage() {
-  redirect("/dashboard");
+export default function DreamerRedirectPage() {
+  redirect("/future-plans");
 }

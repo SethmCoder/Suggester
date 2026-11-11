@@ -1239,10 +1239,14 @@ function AgentThread({
 
   return (
     <div className="flex min-h-[420px] flex-col">
-      <div className="mb-3">
-        <p className="text-sm font-semibold text-[#080B3A]">Travel agent</p>
-        <p className="mt-0.5 text-xs text-[#6B7280]">
-          Answer a few questions, or paste a trip brief.
+      <div className="mb-3 rounded-[14px] border border-[#E8ECF6] bg-[#FAFBFF] px-3.5 py-2.5">
+        <p className="text-sm font-semibold text-[#080B3A]">
+          Travel agent chat
+        </p>
+        <p className="mt-0.5 text-xs leading-relaxed text-[#6B7280]">
+          Ask anything about this trip — pace, hotels, must-sees, deal-breakers.
+          Freeform requests are followed, not only the suggested buttons. Paste a
+          long brief anytime to fill the sheet.
         </p>
       </div>
       <div className="flex-1 space-y-3">

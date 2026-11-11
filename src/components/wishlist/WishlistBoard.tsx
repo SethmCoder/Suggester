@@ -314,10 +314,10 @@ export function WishlistBoard() {
               </div>
               <p className="text-lg font-semibold text-[#1F2937]">No wishlist items yet</p>
               <p className="mx-auto mt-2 max-w-md text-sm text-[#6B7280]">
-                Save a place from a trip, or add a custom idea above.
+                Save a place from a trip card, Local Explorer, Discover, or add a custom idea above.
               </p>
-              <Link href="/trips/new" className="mt-4 inline-flex">
-                <Button variant="secondary">Plan a trip</Button>
+              <Link href="/discover" className="mt-4 inline-flex">
+                <Button variant="secondary">Discover destinations</Button>
               </Link>
             </div>
           ) : (

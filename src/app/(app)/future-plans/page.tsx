@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { DreamerBoard } from "@/components/dreamer/DreamerBoard";
 
 export default function FuturePlansPage() {
-  redirect("/dashboard");
+  return <DreamerBoard />;
 }

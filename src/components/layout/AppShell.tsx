@@ -5,14 +5,20 @@ import { usePathname } from "next/navigation";
 import { useState, type ComponentType, type SVGProps } from "react";
 import { AvatarMenu } from "./AvatarMenu";
 import { HeaderSearch } from "./HeaderSearch";
+import { NotificationsMenu } from "./NotificationsMenu";
 import { UserAvatar } from "./UserAvatar";
+import { FirstRunTour } from "@/components/tutorial/FirstRunTour";
 import {
+  IconCompass,
   IconHelp,
   IconHome,
+  IconMap,
   IconMenu,
   IconPin,
   IconPlane,
   IconSettings,
+  IconSpark,
+  IconUser,
 } from "@/components/ui/Icons";
 
 type NavIcon = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
@@ -21,18 +27,23 @@ type NavItem = {
   href: string;
   label: string;
   icon: NavIcon;
+  tour?: string;
   match?: "exact" | "prefix";
 };
 
-/** Keep the product focused: trips, saves, account. */
 const PRIMARY: NavItem[] = [
-  { href: "/dashboard", label: "Trips", icon: IconHome, match: "exact" },
-  { href: "/wishlist", label: "Saved", icon: IconPin },
+  { href: "/dashboard", label: "Home", icon: IconHome, tour: "tour-nav-home", match: "exact" },
+  { href: "/discover", label: "Discover", icon: IconCompass },
+  { href: "/explore", label: "Explorer", icon: IconMap },
+  { href: "/things", label: "Things", icon: IconSpark },
+  { href: "/wishlist", label: "Wishlist", icon: IconPin, tour: "tour-nav-saved" },
+  { href: "/future-plans", label: "Future Plans", icon: IconPlane },
 ];
 
 const SECONDARY: NavItem[] = [
+  { href: "/profile", label: "Profile", icon: IconUser },
+  { href: "/help", label: "Help", icon: IconHelp, tour: "tour-nav-help" },
   { href: "/settings", label: "Settings", icon: IconSettings },
-  { href: "/help", label: "Help", icon: IconHelp },
 ];
 
 function NavLink({
@@ -49,9 +60,10 @@ function NavLink({
     <Link
       href={item.href}
       onClick={onNavigate}
+      data-tour={item.tour}
       className={`flex items-center gap-3 rounded-[10px] px-3 py-2 text-sm font-medium transition-colors ${
         active
-          ? "bg-[#0400FF] text-white"
+          ? "bg-[#0400FF] text-white shadow-md shadow-[#0400FF]/20"
           : "text-[#C5CAE5] hover:bg-[#20276D] hover:text-white"
       }`}
     >
@@ -111,10 +123,10 @@ export function AppShell({
   const closeMobile = () => setMobileOpen(false);
 
   const sidebar = (
-    <aside className="flex h-full w-[220px] flex-col bg-[#080B3A] text-white">
+    <aside className="flex h-full w-[232px] flex-col bg-[#080B3A] text-white">
       <Link
         href="/dashboard"
-        className="mx-3 mt-4 mb-2 flex items-center gap-2.5 rounded-[12px] px-2.5 py-2 transition hover:bg-[#11165A]"
+        className="mx-3 mt-4 mb-1 flex items-center gap-2.5 rounded-[12px] px-2.5 py-2 transition hover:bg-[#11165A]"
         onClick={closeMobile}
         aria-label="Waypoint home"
       >
@@ -129,14 +141,19 @@ export function AppShell({
 
       <nav className="flex-1 overflow-y-auto px-2.5 pb-2">
         <NavGroup items={PRIMARY} pathname={pathname} onNavigate={closeMobile} />
-        <NavGroup items={SECONDARY} pathname={pathname} onNavigate={closeMobile} />
+        <NavGroup
+          label="Account"
+          items={SECONDARY}
+          pathname={pathname}
+          onNavigate={closeMobile}
+        />
       </nav>
 
-      <div className="border-t border-[#292F68] p-3">
+      <div className="border-t border-[#292F68] p-3" data-tour="tour-create-trip">
         <Link
           href="/trips/new"
           onClick={closeMobile}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-[12px] bg-[#0400FF] px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0A0080]"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-[12px] bg-[#0400FF] px-3 py-2.5 text-sm font-semibold text-white shadow-sm shadow-[#0400FF]/25 transition hover:bg-[#0A0080]"
         >
           <IconPlane size={16} />
           Plan a trip
@@ -146,7 +163,7 @@ export function AppShell({
   );
 
   return (
-    <div className="flex min-h-screen bg-[#F7F8FC]">
+    <div className="flex min-h-screen bg-[#F5F7FF]">
       <div className="sticky top-0 hidden h-screen shrink-0 md:block">
         {sidebar}
       </div>
@@ -164,11 +181,11 @@ export function AppShell({
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 border-b border-[#E8ECF6] bg-white/95 backdrop-blur">
+        <header className="sticky top-0 z-30 border-b border-[#E1E5F0] bg-white/95 backdrop-blur">
           <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
             <button
               type="button"
-              className="rounded-lg p-2 text-[#080B3A] hover:bg-[#EEF0F8] md:hidden"
+              className="rounded-lg p-2 text-[#080B3A] hover:bg-[#DDE1FF] md:hidden"
               onClick={() => setMobileOpen(true)}
               aria-label="Open menu"
             >
@@ -176,12 +193,23 @@ export function AppShell({
             </button>
 
             <HeaderSearch />
+            <NotificationsMenu />
 
-            <div className="flex items-center gap-2">
+            <div className="hidden items-center gap-2 sm:flex">
               <UserAvatar
                 displayName={displayName}
                 email={userEmail}
                 size="sm"
+                listenForStorage
+              />
+              <AvatarMenu email={userEmail} displayName={displayName} />
+            </div>
+            <div className="sm:hidden">
+              <UserAvatar
+                displayName={displayName}
+                email={userEmail}
+                size="sm"
+                className="mr-1"
                 listenForStorage
               />
               <AvatarMenu email={userEmail} displayName={displayName} />
@@ -191,6 +219,7 @@ export function AppShell({
 
         <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
       </div>
+      <FirstRunTour />
     </div>
   );
 }

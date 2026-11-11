@@ -58,18 +58,25 @@ export function AvatarMenu({
             </p>
           ) : null}
           <Link
-            href="/dashboard"
-            className="block px-3 py-2.5 text-sm text-[#1F2937] hover:bg-[#F5F7FF]"
-            onClick={() => setOpen(false)}
-          >
-            My trips
-          </Link>
-          <Link
             href="/settings"
             className="block px-3 py-2.5 text-sm text-[#1F2937] hover:bg-[#F5F7FF]"
             onClick={() => setOpen(false)}
           >
             Settings
+          </Link>
+          <Link
+            href="/profile"
+            className="block px-3 py-2.5 text-sm text-[#1F2937] hover:bg-[#F5F7FF]"
+            onClick={() => setOpen(false)}
+          >
+            Profile
+          </Link>
+          <Link
+            href="/dashboard"
+            className="block px-3 py-2.5 text-sm text-[#1F2937] hover:bg-[#F5F7FF]"
+            onClick={() => setOpen(false)}
+          >
+            My Trips
           </Link>
           <button
             type="button"

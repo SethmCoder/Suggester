@@ -48,6 +48,7 @@ import { PopularityBadge } from "./PopularityBadge";
 import { TripMap, type MapPin } from "./TripMap";
 import { AssistantPanel } from "./AssistantPanel";
 import { BudgetPanel } from "./BudgetPanel";
+import { TripIntelligence } from "./TripIntelligence";
 import {
   WeekCalendarView,
   type CalendarNewStop,
@@ -64,6 +65,7 @@ import {
   sortActivitiesChronologically,
 } from "@/lib/trips/activity-order";
 import { nightsBetween, nightsLabel } from "@/lib/trips/dates";
+import { TripPlanSidebar } from "@/components/trips/TripPlanSidebar";
 import { TripBookingsPanel } from "@/components/trips/TripBookingsPanel";
 
 const LEG_CARD_COLORS = [
@@ -169,7 +171,9 @@ export function ItineraryEditor({
       initialDays.map((d) => [d.day_index, true] as const),
     ),
   );
-  const [view, setView] = useState<"schedule" | "map" | "calendar">("schedule");
+  const [view, setView] = useState<"schedule" | "map" | "split" | "calendar">(
+    "schedule",
+  );
   const [selectedDay, setSelectedDay] = useState(0);
 
   // Keep day-by-day open by default as days hydrate or grow.
@@ -888,30 +892,34 @@ export function ItineraryEditor({
       : 0;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5" data-tour="tour-itinerary">
-      <section
-        id="itinerary"
-        className="flex flex-col gap-3 border-b border-[#E8ECF6] pb-4 sm:flex-row sm:items-end sm:justify-between"
-      >
+    <div className="flex flex-col gap-5 lg:flex-row lg:items-start" data-tour="tour-itinerary">
+      <TripPlanSidebar
+        tripId={tripId}
+        destination={destName}
+        startDate={startDate}
+        endDate={endDate}
+        cities={legs.map((l) => l.city).filter(Boolean)}
+      />
+      <div className="min-w-0 flex-1 space-y-5">
+      <section id="itinerary" className="flex flex-col gap-3 rounded-[16px] border border-[#E1E5F0] bg-white px-5 py-5 shadow-[0_6px_18px_rgba(8,11,58,0.05)] sm:flex-row sm:items-end sm:justify-between sm:px-7">
         <div>
           <h1 className="text-[28px] font-bold tracking-tight text-[#080B3A]">
             {destName}
             {tripTitle ? (
-              <span className="ml-3 text-[18px] font-semibold text-[#6B7280]">
+              <span className="ml-3 text-[20px] font-semibold text-[#0400FF]">
                 {tripTitle}
+              </span>
+            ) : null}
+            {startDate ? (
+              <span className="ml-3 text-[16px] font-medium text-[#6B7280]">
+                {formatTripDate(startDate, "short")}
+                {endDate ? ` – ${formatTripDate(endDate, "long")}` : ""}
               </span>
             ) : null}
           </h1>
           <p className="mt-1 text-sm text-[#6B7280]">
-            {startDate ? (
-              <>
-                {formatTripDate(startDate, "short")}
-                {endDate ? ` – ${formatTripDate(endDate, "long")}` : ""}
-                {" · "}
-              </>
-            ) : null}
             {tripNights > 0 ? `${nightsLabel(tripNights)} · ` : ""}
-            {days.length} days · {flatActivities.length} stops ·{" "}
+            {days.length} days · {flatActivities.length} activities ·{" "}
             {saveState === "saving"
               ? "Saving…"
               : saveState === "saved"
@@ -935,33 +943,33 @@ export function ItineraryEditor({
             disabled={deleting}
             className="rounded-[10px] px-3 py-1.5 text-sm font-semibold text-[#B91C1C] hover:bg-[#FEF2F2] disabled:opacity-60"
           >
-            {deleting ? "Deleting…" : "Delete"}
+            {deleting ? "Deleting…" : "Delete trip"}
           </button>
-          <div className="flex rounded-[12px] border border-[#E1E5F0] bg-white p-1 text-sm">
-            {(
-              [
-                { id: "schedule", label: "Days" },
-                { id: "calendar", label: "Calendar" },
-                { id: "map", label: "Map" },
-              ] as const
-            ).map((v) => (
-              <button
-                key={v.id}
-                type="button"
-                onClick={() => setView(v.id)}
-                className={`rounded-[10px] px-3 py-1.5 ${
-                  view === v.id
-                    ? "bg-[#0400FF] text-white"
-                    : "text-[#6B7280] hover:text-[#080B3A]"
-                }`}
-              >
-                {v.label}
-              </button>
-            ))}
-          </div>
+        <div className="flex flex-wrap rounded-[12px] border border-[#E1E5F0] bg-[#F5F7FF] p-1 text-sm">
+          {(
+            [
+              { id: "schedule", label: "Day by day" },
+              { id: "calendar", label: "View as calendar" },
+              { id: "map", label: "Map" },
+              { id: "split", label: "Split" },
+            ] as const
+          ).map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              onClick={() => setView(v.id)}
+              className={`rounded-[10px] px-3.5 py-1.5 ${
+                view === v.id
+                  ? "bg-[#0400FF] text-white"
+                  : "text-[#6B7280] hover:text-[#080B3A]"
+              }`}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
         </div>
       </section>
-
       <BudgetPanel
         plan={budgetPlan}
         expenses={expenses}
@@ -971,6 +979,12 @@ export function ItineraryEditor({
           name: activity.name,
           note: activity.planning_note,
         }))}
+      />
+      <TripIntelligence
+        activities={days[selectedDay]?.activities ?? []}
+        onApplyStart={(activityId, start) =>
+          updateActivity(selectedDay, activityId, { start_time: start })
+        }
       />
 
       {view === "calendar" ? (
@@ -994,8 +1008,10 @@ export function ItineraryEditor({
         />
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4">
-        {view === "schedule" ? (
+      <div
+        className={`grid gap-4 ${view === "split" ? "lg:grid-cols-2 lg:items-start" : "grid-cols-1"}`}
+      >
+        {(view === "schedule" || view === "split") && (
           <div className="min-w-0 space-y-2">
             <TripBookingsPanel
               legs={legs}
@@ -1041,7 +1057,8 @@ export function ItineraryEditor({
                     Cities & hotels
                   </h2>
                   <p className="text-[11px] text-[#6B7280]">
-                    Hotel and how you travel between cities.
+                    Each card is a different city. Between cities, set how you
+                    travel hotel → hotel.
                   </p>
                 </div>
                 {legs.map((leg, i) => {
@@ -1288,7 +1305,9 @@ export function ItineraryEditor({
                           address: hit.address,
                           dayIndex,
                         });
-                        setView("map");
+                        setView((current) =>
+                          current === "schedule" ? "split" : current,
+                        );
                       }}
                     />
                     {!isDemo ? (
@@ -1308,10 +1327,16 @@ export function ItineraryEditor({
             );
             })}
           </div>
-        ) : null}
+        )}
 
-        {view === "map" ? (
-          <div className="min-h-[320px] lg:min-h-[480px]">
+        {(view === "map" || view === "split") && (
+          <div
+            className={
+              view === "split"
+                ? "lg:sticky lg:top-[4.5rem] lg:self-start lg:h-[calc(100vh-5.5rem)]"
+                : "min-h-[320px] lg:min-h-[480px]"
+            }
+          >
             <div className="h-full min-h-[280px] overflow-hidden rounded-[14px] border border-[#E1E5F0] bg-white lg:min-h-0">
               <TripMap
                 pins={cityPins}
@@ -1348,7 +1373,7 @@ export function ItineraryEditor({
               />
             </div>
           </div>
-        ) : null}
+        )}
       </div>
 
       <AssistantPanel
@@ -1356,6 +1381,7 @@ export function ItineraryEditor({
         isDemo={isDemo}
         onDemoApply={isDemo ? applyAssistantPatch : undefined}
       />
+      </div>
     </div>
   );
 }

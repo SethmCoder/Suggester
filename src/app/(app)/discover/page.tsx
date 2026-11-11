@@ -1,6 +1,5 @@
-import { redirect } from "next/navigation";
+import { DiscoverBoard } from "@/components/discover/DiscoverBoard";
 
-/** Discover is folded into the simpler Trips home. */
 export default function DiscoverPage() {
-  redirect("/dashboard");
+  return <DiscoverBoard />;
 }
