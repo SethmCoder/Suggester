@@ -56,9 +56,9 @@ export async function GET(req: Request) {
       hotels: result.hotels.map(toPublicHotel),
       total: result.total,
       offset: query.offset ?? 0,
-      attribution: "© OpenStreetMap contributors",
-      license: "Open Database License (ODbL)",
-      wikidata: "Wikidata facts, when shown, are CC0 and only added from an OpenStreetMap Wikidata id.",
+      attribution: "Public map data",
+      license: "Open data license",
+      wikidata: "Extra hotel facts from open data when available.",
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Hotel search failed";

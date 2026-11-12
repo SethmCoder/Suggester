@@ -71,8 +71,8 @@ export async function searchExplorerPlaces(input: {
     if (found.length) {
       source = "openstreetmap";
       notice = googlePlacesConfigured()
-        ? "Google Places returned nothing, so these are OpenStreetMap places. Map data © OpenStreetMap contributors."
-        : "Google Places is not configured. These are OpenStreetMap places. Map data © OpenStreetMap contributors.";
+        ? "Showing places from our standard places database."
+        : "Showing places from our standard places database.";
     }
   }
 

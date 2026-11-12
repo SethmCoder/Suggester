@@ -143,10 +143,10 @@ export function PlaceCard({
                   null,
                 externalPlaceId: place.activityId || null,
                 priority: "medium",
-              }).then(() => setSavedNote("Saved to Wishlist"));
+              }).then(() => setSavedNote("Saved to Collections"));
             }}
           >
-            Save to Wishlist
+            Save to Collections
           </button>
           {savedNote ? (
             <p className="mt-1 text-[11px] text-[#059669]">{savedNote}</p>

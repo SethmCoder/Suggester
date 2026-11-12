@@ -4,10 +4,8 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import type { DreamerBooking } from "@/lib/dreamer/types";
 
-type EmailPayload = {
+type EmailMeta = {
   subject: string | null;
-  textBody: string | null;
-  htmlBody: string | null;
   fromAddress: string | null;
   receivedAt: string | null;
 };
@@ -25,32 +23,49 @@ export function BookingEmailModal({
   onClose: () => void;
   onShowEmail: () => void;
 }) {
-  const [email, setEmail] = useState<EmailPayload | null>(null);
+  const [meta, setMeta] = useState<EmailMeta | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [localFallback, setLocalFallback] = useState<string | null>(null);
+  const [localRaw, setLocalRaw] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !booking) return;
     setError(null);
-    setEmail(null);
-    setLocalFallback(null);
+    setMeta(null);
+    setLocalRaw(null);
 
-    if (booking.id.startsWith("local-")) {
-      const raw = sessionStorage.getItem(`waypoint:dreamer-email:${booking.id}`);
-      setLocalFallback(raw);
-      return;
+    try {
+      const raw = sessionStorage.getItem(
+        `waypoint:dreamer-email:${booking.id}`,
+      );
+      setLocalRaw(raw);
+    } catch {
+      setLocalRaw(null);
     }
+
+    if (booking.id.startsWith("local-")) return;
 
     setLoading(true);
     void fetch(`/api/dreamer/bookings/${booking.id}`)
       .then(async (res) => {
         const data = (await res.json()) as {
-          email?: EmailPayload | null;
+          email?: {
+            subject: string | null;
+            fromAddress: string | null;
+            receivedAt: string | null;
+            textBody?: string | null;
+            htmlBody?: string | null;
+          } | null;
           error?: string;
         };
         if (!res.ok) throw new Error(data.error ?? "Could not load email");
-        setEmail(data.email ?? null);
+        if (data.email) {
+          setMeta({
+            subject: data.email.subject,
+            fromAddress: data.email.fromAddress,
+            receivedAt: data.email.receivedAt,
+          });
+        }
       })
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : "Failed");
@@ -59,13 +74,6 @@ export function BookingEmailModal({
   }, [open, booking]);
 
   if (!open || !booking) return null;
-
-  const bodyText =
-    email?.textBody ||
-    localFallback ||
-    (email?.htmlBody
-      ? email.htmlBody.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
-      : null);
 
   return (
     <div
@@ -109,6 +117,20 @@ export function BookingEmailModal({
             <dt className="text-xs uppercase text-[#9CA3AF]">Source</dt>
             <dd className="text-[#080B3A]">{booking.source}</dd>
           </div>
+          {meta?.fromAddress || booking.parsed.vendor ? (
+            <div>
+              <dt className="text-xs uppercase text-[#9CA3AF]">From</dt>
+              <dd className="text-[#080B3A]">
+                {meta?.fromAddress ?? booking.parsed.vendor}
+              </dd>
+            </div>
+          ) : null}
+          {meta?.subject ? (
+            <div className="col-span-2">
+              <dt className="text-xs uppercase text-[#9CA3AF]">Subject</dt>
+              <dd className="text-[#080B3A]">{meta.subject}</dd>
+            </div>
+          ) : null}
           {booking.parsed.fromIata || booking.parsed.toIata ? (
             <div>
               <dt className="text-xs uppercase text-[#9CA3AF]">Route</dt>
@@ -135,29 +157,36 @@ export function BookingEmailModal({
               <dd className="text-[#080B3A]">{booking.parsed.hotelName}</dd>
             </div>
           ) : null}
+          {booking.parsed.confirmation ? (
+            <div>
+              <dt className="text-xs uppercase text-[#9CA3AF]">Confirmation</dt>
+              <dd className="text-[#080B3A]">{booking.parsed.confirmation}</dd>
+            </div>
+          ) : null}
         </dl>
 
         {!showFullEmail ? (
           <Button type="button" className="mt-5" onClick={onShowEmail}>
-            Show email
+            Show original email
           </Button>
         ) : (
           <div className="mt-5">
             <p className="text-xs font-semibold uppercase text-[#6B7280]">
-              Full email
+              Original email (this device)
             </p>
             {loading ? (
               <p className="mt-2 text-sm text-[#6B7280]">Loading…</p>
-            ) : error ? (
+            ) : error && !localRaw ? (
               <p className="mt-2 text-sm text-[#B91C1C]">{error}</p>
-            ) : bodyText ? (
+            ) : localRaw ? (
               <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-[10px] bg-[#F5F7FF] p-3 text-xs text-[#080B3A]">
-                {email?.subject ? `Subject: ${email.subject}\n\n` : ""}
-                {bodyText}
+                {meta?.subject ? `Subject: ${meta.subject}\n\n` : ""}
+                {localRaw}
               </pre>
             ) : (
               <p className="mt-2 text-sm text-[#6B7280]">
-                No stored email body for this booking.
+                Raw email isn’t stored in the cloud. Open this booking on the
+                device where you pasted it to see the original.
               </p>
             )}
           </div>

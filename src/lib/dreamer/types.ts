@@ -1,4 +1,9 @@
-export type DreamerBookingKind = "flight" | "hotel" | "rail" | "other";
+export type DreamerBookingKind =
+  | "flight"
+  | "hotel"
+  | "rail"
+  | "restaurant"
+  | "other";
 export type DreamerBookingSource = "email_forward" | "manual" | "paste";
 export type InboundEmailStatus =
   | "received"
@@ -17,6 +22,10 @@ export type ParsedBooking = {
   startDate?: string | null;
   endDate?: string | null;
   hotelName?: string | null;
+  /** Restaurant / dining reservation name when kind is restaurant. */
+  restaurantName?: string | null;
+  /** Local reservation time HH:MM when stated. */
+  reservationLocal?: string | null;
   vendor?: string | null;
   nights?: number | null;
   /** Explicit flight number from the confirmation, e.g. NH118. */

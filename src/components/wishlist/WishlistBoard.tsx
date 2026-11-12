@@ -155,7 +155,7 @@ export function WishlistBoard() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-[28px] font-semibold tracking-tight text-[#080B3A]">
-            Wishlist
+            Collections
           </h1>
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-[#6B7280]">
             Save places from Reels or type them in. They attach to Future Trips
@@ -350,16 +350,16 @@ export function WishlistBoard() {
 
           {loading ? (
             <div className="rounded-[16px] border border-[#E1E5F0] bg-white px-6 py-12 text-center text-sm text-[#6B7280]">
-              Loading wishlist…
+              Loading Collections…
             </div>
           ) : visible.length === 0 ? (
             <div className="rounded-[16px] border border-[#E1E5F0] bg-white px-8 py-16 text-center shadow-[0_4px_20px_rgba(8,11,58,0.04)]">
               <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#DDE1FF] text-[#0400FF]">
                 <IconPin size={22} />
               </div>
-              <p className="text-lg font-semibold text-[#1F2937]">No wishlist items yet</p>
+              <p className="text-lg font-semibold text-[#1F2937]">No saved ideas yet</p>
               <p className="mx-auto mt-2 max-w-md text-sm text-[#6B7280]">
-                Save a place from a trip card, Local Explorer, Discover, or add a custom idea above.
+                Save a place from a trip, Discover, or add a custom idea above.
               </p>
               <Link href="/discover" className="mt-4 inline-flex">
                 <Button variant="secondary">Discover destinations</Button>

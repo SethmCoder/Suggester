@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { CreateAccountLink } from "@/components/auth/CreateAccountLink";
 import { DemoBanner } from "@/components/demo/DemoBanner";
-import { Button } from "@/components/ui/Button";
 import { IconArrowRight, IconExternalLink, IconPlane, IconSearch } from "@/components/ui/Icons";
 import { LeavePageLink } from "@/components/ui/LeavePageLink";
 import { PlanSummary } from "@/components/billing/PlanSummary";
@@ -138,79 +137,156 @@ export default function DashboardPage() {
     return trips.filter((t) => t.destination.toLowerCase().includes(q));
   }, [trips, search]);
 
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const upcomingTrips = useMemo(
+    () =>
+      trips
+        .filter((t) => (t.end_date || "").slice(0, 10) >= today)
+        .sort((a, b) =>
+          (a.start_date || "").localeCompare(b.start_date || ""),
+        ),
+    [trips, today],
+  );
+  const nextTrip = upcomingTrips[0] ?? null;
+
+  const countdownLabel = useMemo(() => {
+    if (!nextTrip?.start_date) return null;
+    const start = nextTrip.start_date.slice(0, 10);
+    const startMs = Date.parse(`${start}T12:00:00Z`);
+    if (!Number.isFinite(startMs)) return null;
+    if (start <= today && (nextTrip.end_date || "").slice(0, 10) >= today) {
+      return "Trip in progress";
+    }
+    const days = Math.ceil((startMs - Date.now()) / 86_400_000);
+    if (days <= 0) return "Starting soon";
+    if (days === 1) return "1 day to go";
+    return `${days} days to go`;
+  }, [nextTrip, today]);
+
+  const yearRoundCards = [
+    {
+      href: "/wishlist",
+      title: "Collections",
+      body: "Save places from Reels or notes — they attach to Future Trips.",
+    },
+    {
+      href: "/inspiration",
+      title: "Inspiration",
+      body: "Browse destinations from the Discover catalog.",
+    },
+    {
+      href: "/archive",
+      title: "Archive",
+      body: "Revisit past trips after their end date.",
+    },
+    {
+      href: "/future-plans",
+      title: "Future Trips",
+      body: "Hold destinations before tickets exist.",
+    },
+  ];
+
   return (
     <div className="space-y-8">
       {isDemo ? <DemoBanner /> : null}
 
-      {/* Hero */}
+      {/* Hero — countdown when an upcoming trip exists; otherwise year-round entry */}
       <section className="rounded-[16px] border border-[#E1E5F0] bg-white px-6 py-8 shadow-[0_6px_18px_rgba(8,11,58,0.05)] sm:px-8">
-        <h1 className="text-[28px] font-semibold tracking-tight text-[#080B3A]">
-          Where next?
-        </h1>
-        <p className="mt-1 text-sm text-[#6B7280]">
-          Start with a Future Trip — dates can come later when you book.
-        </p>
-        <div className="mt-3">
-          <PlanSummary />
-        </div>
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <LeavePageLink href="/future-plans" variant="primary">
-            <span className="inline-flex items-center gap-2">
-              <IconPlane size={16} />
-              Future Trips
-            </span>
-          </LeavePageLink>
-          <LeavePageLink href="/trips/new" variant="secondary">
-            Already have a date and time?
-          </LeavePageLink>
-          {isDemo ? (
-            <CreateAccountLink className="inline-flex items-center justify-center gap-1.5 rounded-[12px] border border-[#E1E5F0] bg-white px-4 py-2.5 text-sm font-semibold text-[#1F2937] shadow-sm transition-colors hover:bg-[#DDE1FF]/60">
-              Sign up to save trips
-            </CreateAccountLink>
-          ) : null}
-        </div>
+        {nextTrip ? (
+          <>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#0400FF]">
+              Upcoming trip
+            </p>
+            <h1 className="mt-1 text-[28px] font-semibold tracking-tight text-[#080B3A]">
+              {nextTrip.destination.split(",")[0]}
+            </h1>
+            <p className="mt-1 text-sm text-[#6B7280]">
+              {formatTripDate(nextTrip.start_date, "short")} –{" "}
+              {formatTripDate(nextTrip.end_date, "long")}
+              {countdownLabel ? ` · ${countdownLabel}` : null}
+            </p>
+            <div className="mt-3">
+              <PlanSummary />
+            </div>
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <LeavePageLink href={`/trips/${nextTrip.id}`} variant="primary">
+                Open itinerary
+              </LeavePageLink>
+              <LeavePageLink href="/future-plans" variant="secondary">
+                <span className="inline-flex items-center gap-2">
+                  <IconPlane size={16} />
+                  Start another Future Trip
+                </span>
+              </LeavePageLink>
+              <LeavePageLink href="/trips/new" variant="secondary">
+                Already have a date and time?
+              </LeavePageLink>
+              {upcomingTrips.length > 1 ? (
+                <Link
+                  href="#trips"
+                  className="text-sm font-semibold text-[#0400FF] underline-offset-2 hover:underline"
+                >
+                  {upcomingTrips.length} upcoming trips
+                </Link>
+              ) : null}
+              {isDemo ? (
+                <CreateAccountLink className="inline-flex items-center justify-center gap-1.5 rounded-[12px] border border-[#E1E5F0] bg-white px-4 py-2.5 text-sm font-semibold text-[#1F2937] shadow-sm transition-colors hover:bg-[#DDE1FF]/60">
+                  Sign up to save trips
+                </CreateAccountLink>
+              ) : null}
+            </div>
+          </>
+        ) : (
+          <>
+            <h1 className="text-[28px] font-semibold tracking-tight text-[#080B3A]">
+              {trips.length >= 1 ? "Plan your next trip" : "Where next?"}
+            </h1>
+            <p className="mt-1 text-sm text-[#6B7280]">
+              {trips.length >= 1
+                ? "No upcoming dated trip right now — start another Future Trip whenever inspiration hits. Dates can wait until you book."
+                : "Start with a Future Trip — dates can come later when you book."}
+            </p>
+            <div className="mt-3">
+              <PlanSummary />
+            </div>
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <LeavePageLink href="/future-plans" variant="primary">
+                <span className="inline-flex items-center gap-2">
+                  <IconPlane size={16} />
+                  {trips.length >= 1 ? "Start another Future Trip" : "Future Trips"}
+                </span>
+              </LeavePageLink>
+              <LeavePageLink href="/trips/new" variant="secondary">
+                Already have a date and time?
+              </LeavePageLink>
+              {trips.length >= 1 ? (
+                <LeavePageLink href="/archive" variant="secondary">
+                  Travel archive
+                </LeavePageLink>
+              ) : null}
+              {isDemo ? (
+                <CreateAccountLink className="inline-flex items-center justify-center gap-1.5 rounded-[12px] border border-[#E1E5F0] bg-white px-4 py-2.5 text-sm font-semibold text-[#1F2937] shadow-sm transition-colors hover:bg-[#DDE1FF]/60">
+                  Sign up to save trips
+                </CreateAccountLink>
+              ) : null}
+            </div>
+          </>
+        )}
       </section>
 
       <section className="rounded-[16px] border border-[#E1E5F0] bg-white px-6 py-6 shadow-[0_4px_20px_rgba(8,11,58,0.04)]">
         <h2 className="text-[20px] font-semibold text-[#1F2937]">
-          Keep researching year-round
+          {nextTrip
+            ? "Also useful while you plan"
+            : "Keep researching year-round"}
         </h2>
         <p className="mt-1 text-sm text-[#6B7280]">
-          Useful when you are not packing for a trip yet — discover, compare, and organize ideas that stick.
+          {nextTrip
+            ? "Collections, inspiration, and past trips stay available alongside your countdown."
+            : "Useful when you are not packing for a trip yet — collect ideas, browse inspiration, and revisit past trips."}
         </p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {[
-            {
-              href: "/future-plans",
-              title: "Future Trips",
-              body: "The main place to hold destinations before tickets exist.",
-            },
-            {
-              href: "/wishlist",
-              title: "Wishlist",
-              body: "Save places from Reels or notes — they attach to Future Trips.",
-            },
-            {
-              href: "/discover",
-              title: "Discover destinations",
-              body: "Personalized ideas from your interests and saves.",
-            },
-            {
-              href: "/discover/compare",
-              title: "Compare vacations",
-              body: "Side-by-side trade-offs for shortlisted destinations.",
-            },
-            {
-              href: "/profile",
-              title: "Travel preferences",
-              body: "See why recommendations appear and edit what Waypoint learns.",
-            },
-            {
-              href: "/trips/new",
-              title: "Already have a date and time?",
-              body: "Open the calendar itinerary builder when flights are booked.",
-            },
-          ].map((entry) => (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {yearRoundCards.map((entry) => (
             <Link
               key={entry.href}
               href={entry.href}
@@ -283,7 +359,7 @@ export default function DashboardPage() {
               {deleteError}
             </p>
           ) : null}
-          {isDemo ? <CreateTripPreviewCard /> : null}
+          {isDemo || trips.length >= 1 ? <CreateTripPreviewCard /> : null}
           {filtered.map((trip) => (
             <TripCard key={trip.id} trip={trip} onDelete={() => removeTrip(trip)} />
           ))}
@@ -296,7 +372,7 @@ export default function DashboardPage() {
 function CreateTripPreviewCard() {
   return (
     <Link
-      href="/trips/new"
+      href="/future-plans"
       className="group flex flex-col overflow-hidden rounded-[14px] border border-dashed border-[#0400FF]/35 bg-white shadow-[0_4px_20px_rgba(8,11,58,0.05)] transition hover:-translate-y-0.5 hover:border-[#0400FF] hover:shadow-[0_12px_32px_rgba(8,11,58,0.1)]"
     >
       <div className="relative flex h-40 items-center justify-center bg-gradient-to-br from-[#DDE1FF] via-[#F5F7FF] to-white">
@@ -304,18 +380,18 @@ function CreateTripPreviewCard() {
           <IconPlane size={26} />
         </div>
         <span className="absolute right-3 top-3 rounded-md bg-[#080B3A] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-          New trip
+          Next trip
         </span>
       </div>
       <div className="flex flex-1 flex-col space-y-1.5 p-4">
         <h3 className="text-[16px] font-semibold text-[#1F2937]">
-          Already have a date and time?
+          Start another Future Trip
         </h3>
         <p className="text-sm text-[#6B7280]">
-          Build a day-by-day itinerary when your trip is booked.
+          Hold the next destination before tickets exist — dates can come later.
         </p>
         <span className="inline-flex items-center gap-1 pt-2 text-sm font-semibold text-[#0400FF] group-hover:gap-2">
-          Open builder <IconArrowRight size={14} />
+          Open Future Trips <IconArrowRight size={14} />
         </span>
       </div>
     </Link>

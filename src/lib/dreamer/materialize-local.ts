@@ -46,10 +46,40 @@ export function materializeFutureTripLocally(input: {
 
   const city =
     input.trip.destination.split("→")[0]?.trim() || input.trip.destination;
+  const prefs = (input.trip.preferences ?? {}) as Record<string, unknown>;
+  const dreamer = (prefs.dreamer ?? {}) as Record<string, unknown>;
+  const vibe =
+    typeof dreamer.vibe === "string" ? dreamer.vibe : undefined;
+  const prefersHiddenGems =
+    Boolean(prefs.prefersHiddenGems) || vibe === "local";
+  const intensity =
+    prefs.intensity === "relaxed" ||
+    prefs.intensity === "packed" ||
+    prefs.intensity === "balanced"
+      ? prefs.intensity
+      : "balanced";
+  const budgetAllocation =
+    vibe === "local" || prefersHiddenGems
+      ? ("mostly-free" as const)
+      : vibe === "sights"
+        ? ("sights" as const)
+        : ("balanced" as const);
   const provenance = evidence.provenance.length
     ? `Evidence: ${evidence.provenance.join(" · ")}.`
     : "";
-  const idealTrip = [input.trip.notes?.trim() || "", provenance]
+  const dreamNote =
+    typeof dreamer.idealTripNote === "string"
+      ? dreamer.idealTripNote
+      : vibe === "local"
+        ? "Dream: small local places, not tourist traps."
+        : vibe === "sights"
+          ? "Dream: the well-known sights."
+          : "";
+  const idealTrip = [
+    dreamNote,
+    input.trip.notes?.trim() || "",
+    provenance,
+  ]
     .filter(Boolean)
     .join(" ")
     .trim();
@@ -83,13 +113,16 @@ export function materializeFutureTripLocally(input: {
     travelers: input.trip.travelers ?? 2,
     budget: budgetTotal,
     currency,
-    budgetAllocation: "sights" as const,
+    budgetAllocation,
     interests: input.trip.interests?.length
       ? input.trip.interests
-      : ["food", "culture"],
-    intensity: "balanced",
+      : prefersHiddenGems
+        ? ["food", "neighborhoods", "markets"]
+        : ["food", "culture", "landmarks"],
+    intensity,
     transport: input.trip.transport || "transit",
     idealTrip,
+    prefersHiddenGems,
     tripTitle: input.trip.title || undefined,
     hotel: evidence.hotelName,
     flightNumber: evidence.flightNumber,
@@ -98,10 +131,11 @@ export function materializeFutureTripLocally(input: {
     dayStart: "09:00",
     dayEnd: "21:00",
     language,
-    mustSee: [] as string[],
+    mustSee: evidence.restaurants.map((r) => r.name).slice(0, 6),
     preferred: [] as string[],
     avoid: [] as string[],
     optional: [] as string[],
+    bookedRestaurants: evidence.restaurants,
     futureTripId: input.trip.id,
     legs,
   };

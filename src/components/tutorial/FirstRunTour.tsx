@@ -59,8 +59,8 @@ const STEPS: TourStep[] = [
     placement: "left",
   },
   {
-    title: "Wishlist & help",
-    body: "Save travel ideas under Wishlist, sketch Future Trips before dates are set, tweak maps in Settings, and open Help anytime.",
+    title: "Collections & help",
+    body: "Save travel ideas in Collections, sketch Future Trips before dates are set, tweak maps in Settings, and open Help anytime.",
     href: "/wishlist",
     target: "tour-nav-saved",
     placement: "right",

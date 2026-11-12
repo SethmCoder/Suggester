@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
+import { TripPassBanner } from "@/components/billing/TripPassBanner";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { ItineraryEditor } from "@/components/itinerary/ItineraryEditor";
 import type { BudgetPlan } from "@/lib/trips/budget";
@@ -128,40 +129,43 @@ export default async function TripItineraryPage({
     }
 
     return (
-      <ItineraryEditor
-        tripId={id}
-        destination={data.trip.destination}
-        initialDays={data.days}
-        initialActivities={data.activities}
-        startDate={data.trip.start_date}
-        endDate={data.trip.end_date}
-        initialStatus={
-          typeof data.trip.status === "string" ? data.trip.status : null
-        }
-        initialLegs={
-          (
-            data.preferences as
-              | { legs?: import("@/lib/types/trip").TripLeg[]; title?: string }
-              | undefined
-          )?.legs
-        }
-        tripTitle={
-          (
-            data.preferences as { title?: string } | undefined
-          )?.title
-        }
-        interests={
-          (
-            data.preferences as { interests?: string[] } | undefined
-          )?.interests
-        }
-        budgetPlan={budgetPlanFrom(data.preferences)}
-        initialExpenses={expensesFrom(data.preferences)}
-        initialCategorySplit={categorySplitFrom(
-          data.preferences,
-          budgetPlanFrom(data.preferences)?.allocation,
-        )}
-      />
+      <>
+        <TripPassBanner tripId={id} />
+        <ItineraryEditor
+          tripId={id}
+          destination={data.trip.destination}
+          initialDays={data.days}
+          initialActivities={data.activities}
+          startDate={data.trip.start_date}
+          endDate={data.trip.end_date}
+          initialStatus={
+            typeof data.trip.status === "string" ? data.trip.status : null
+          }
+          initialLegs={
+            (
+              data.preferences as
+                | { legs?: import("@/lib/types/trip").TripLeg[]; title?: string }
+                | undefined
+            )?.legs
+          }
+          tripTitle={
+            (
+              data.preferences as { title?: string } | undefined
+            )?.title
+          }
+          interests={
+            (
+              data.preferences as { interests?: string[] } | undefined
+            )?.interests
+          }
+          budgetPlan={budgetPlanFrom(data.preferences)}
+          initialExpenses={expensesFrom(data.preferences)}
+          initialCategorySplit={categorySplitFrom(
+            data.preferences,
+            budgetPlanFrom(data.preferences)?.allocation,
+          )}
+        />
+      </>
     );
   } catch {
     return <OfflineTripLoader tripId={id} />;

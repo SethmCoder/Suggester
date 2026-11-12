@@ -3,6 +3,7 @@ import {
   PRO_AI_LIMIT,
   PRO_PRICE_ANNUAL_USD,
   PRO_PRICE_USD,
+  TRIP_PASS_PRICE_USD,
 } from "@/lib/billing/entitlements";
 import { FREE_TRIP_LIMIT } from "@/lib/billing/plans";
 
@@ -35,19 +36,20 @@ export const PLAN_LIMITS = {
 export const LIST_PRICES = {
   proMonthlyUsd: PRO_PRICE_USD,
   proAnnualUsd: PRO_PRICE_ANNUAL_USD,
+  tripPassUsd: TRIP_PASS_PRICE_USD,
 } as const;
 
 export function planCopy(pro: boolean) {
   if (pro) {
     return {
-      title: "Pro",
+      title: "Plus",
       priceMonthly: LIST_PRICES.proMonthlyUsd,
       priceAnnual: LIST_PRICES.proAnnualUsd,
       bullets: [
-        "Advanced personalized discovery and comparisons",
-        "Expanded Wishlist and Future Trip tools",
-        "Unlimited generated trips and Trip Wizard",
-        "Constraint-aware planning and multi-city trips",
+        "Unlimited active trips",
+        "Advanced AI assistant and itinerary optimization",
+        "Faster booking import (paste & forward)",
+        "Advanced Discover filters and planning",
         `${PLAN_LIMITS.pro.aiRequestsPerMonth} AI requests / month`,
       ],
     };
@@ -57,11 +59,24 @@ export function planCopy(pro: boolean) {
     priceMonthly: 0,
     priceAnnual: 0,
     bullets: [
-      `${PLAN_LIMITS.free.trips} generated trips`,
-      "Basic Discover, Wishlist, and Future Trips",
+      `${PLAN_LIMITS.free.trips} active trips`,
+      "Collections, Inspiration, and Future Trips",
       "Basic traveler preferences",
       `${PLAN_LIMITS.free.aiRequestsPerMonth} AI requests / month`,
       "Map and manual editing",
+    ],
+  };
+}
+
+export function tripPassCopy() {
+  return {
+    title: "Trip Pass",
+    priceUsd: LIST_PRICES.tripPassUsd,
+    bullets: [
+      "Premium tools for one trip",
+      "Booking paste/forward and advanced AI on that trip",
+      "Does not auto-renew",
+      "Stays active through the trip + 7 days after",
     ],
   };
 }

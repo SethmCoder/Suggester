@@ -10,7 +10,11 @@ export const PRO_AI_LIMIT = 80;
 
 /** Monthly list price. Prefer LIST_PRICES / PLAN_LIMITS for UI copy. */
 export const PRO_PRICE_USD = 5.99;
-export const PRO_PRICE_ANNUAL_USD = 49.99;
+export const PRO_PRICE_ANNUAL_USD = 39.99;
+/** One-time Trip Pass unlocks premium for a single trip. */
+export const TRIP_PASS_PRICE_USD = 8.99;
+/** Days after trip end_date that a Trip Pass remains active. */
+export const TRIP_PASS_GRACE_DAYS = 7;
 
 export type ProFeature =
   | "generate"
@@ -75,4 +79,4 @@ export function isAdvancedRequest(message: string): boolean {
 }
 
 export const PRO_REQUIRED_MESSAGE =
-  "Advanced Trip Wizard, optimize, what-if, and import are part of Pro. Free includes up to 3 generated trips. Subscribe from Plans for more.";
+  "Advanced Trip Wizard, optimize, what-if, and import are part of Waypoint Plus. Free includes up to 2 active trips — or unlock one trip with a Trip Pass.";

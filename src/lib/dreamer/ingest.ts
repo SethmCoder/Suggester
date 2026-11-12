@@ -16,9 +16,17 @@ export type IngestParseResult = {
 };
 
 function titleFor(parsed: ParsedBooking, subject?: string | null) {
-  return parsed.kind === "flight" && parsed.fromIata && parsed.toIata
-    ? `${parsed.fromIata} → ${parsed.toIata}`
-    : parsed.hotelName || subject || "Confirmation";
+  if (parsed.kind === "flight" && parsed.fromIata && parsed.toIata) {
+    return `${parsed.fromIata} → ${parsed.toIata}`;
+  }
+  if (parsed.hotelName) return parsed.hotelName;
+  if (parsed.restaurantName) return parsed.restaurantName;
+  if (parsed.kind === "hotel") return subject || "Hotel booking";
+  if (parsed.kind === "restaurant") return subject || "Restaurant reservation";
+  if (parsed.kind === "rail") return subject || "Rail booking";
+  return subject && !/^pasted booking$/i.test(subject.trim())
+    ? subject
+    : "Confirmation";
 }
 
 export function parseAndSummarize(input: {
@@ -92,11 +100,15 @@ export function resolveMatch(input: {
 
 export function bookingHasConcreteEvidence(parsed: ParsedBooking): boolean {
   return Boolean(
-    parsed.startDate &&
+    (parsed.startDate &&
       (parsed.kind === "flight" ||
         parsed.kind === "hotel" ||
         parsed.kind === "rail" ||
-        parsed.confirmation),
+        parsed.kind === "restaurant" ||
+        parsed.confirmation)) ||
+      parsed.hotelName ||
+      parsed.restaurantName ||
+      (parsed.fromIata && parsed.toIata),
   );
 }
 
@@ -123,7 +135,7 @@ export function mapBookingRow(row: {
     futureTripId: row.future_trip_id,
     tripId: row.trip_id,
     inboundEmailId: row.inbound_email_id,
-    kind: row.kind as "flight" | "hotel" | "rail" | "other",
+    kind: row.kind as "flight" | "hotel" | "rail" | "restaurant" | "other",
     title: row.title,
     summary: summarizeParsedBooking(parsed),
     parsed,

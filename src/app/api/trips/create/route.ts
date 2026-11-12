@@ -133,6 +133,16 @@ const bodySchema = z.object({
     .optional()
     .transform((value) => truncateText(value, TRAVELER_NOTES_MAX)),
   prefersHiddenGems: z.boolean().optional(),
+  bookedRestaurants: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(120),
+        date: z.string().nullable().optional(),
+        time: z.string().nullable().optional(),
+        city: z.string().nullable().optional(),
+      }),
+    )
+    .optional(),
   // Soft-truncate oversized pastes — never reject the whole create for length.
   mustSee: z
     .array(z.string())
@@ -206,7 +216,7 @@ export async function POST(req: Request) {
         {
           error:
             gate.used >= gate.limit
-              ? `Free includes ${gate.limit} AI requests this month. Upgrade to Pro for more generation.`
+              ? `Free includes ${gate.limit} AI requests this month. Upgrade to Plus for more AI planning this month.`
               : PRO_REQUIRED_MESSAGE,
           code: gate.used >= gate.limit ? "ai_limit" : "pro_required",
         },
@@ -403,6 +413,7 @@ export async function POST(req: Request) {
         dayStart,
         dayEnd: body.dayEnd,
         prefersHiddenGems: body.prefersHiddenGems,
+        bookedRestaurants: body.bookedRestaurants,
         idealTrip: body.idealTrip,
         title: body.tripTitle,
       },

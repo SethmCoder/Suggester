@@ -23,7 +23,7 @@ export function demoCheckoutAmount(interval: DemoCheckoutInterval): {
 }
 
 export function demoCheckoutProductName(interval: DemoCheckoutInterval): string {
-  return interval === "year" ? "Waypoint Pro (annual)" : "Waypoint Pro";
+  return interval === "year" ? "Waypoint Plus (annual)" : "Waypoint Plus";
 }
 
 /** Masked sample PAN shown in the demo form — never charged. */

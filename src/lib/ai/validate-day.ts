@@ -42,19 +42,38 @@ export function dropRepeatedExperiences<
   const kept: T[] = [];
   const dropped: T[] = [];
   let previous = "";
+  const bucketCounts = new Map<string, number>();
+  const seenNames = new Set<string>();
   for (const item of items) {
-    if (item.placeId.startsWith("flight:") || item.placeId.startsWith("transit:")) {
+    if (
+      item.placeId.startsWith("flight:") ||
+      item.placeId.startsWith("transit:") ||
+      item.placeId.startsWith("hotel:") ||
+      item.placeId.startsWith("restaurant:booked:")
+    ) {
       kept.push(item);
       previous = "";
       continue;
     }
+    const nameKey = item.name.trim().toLowerCase();
+    if (nameKey && seenNames.has(nameKey) && item.priority !== "must_see") {
+      dropped.push(item);
+      continue;
+    }
     const bucket = experienceBucket(item.types ?? [], item.name);
-    if (bucket !== "other" && bucket === previous && item.priority !== "must_see") {
+    const count = bucketCounts.get(bucket) ?? 0;
+    if (
+      bucket !== "other" &&
+      item.priority !== "must_see" &&
+      (bucket === previous || count >= 2)
+    ) {
       dropped.push(item);
       continue;
     }
     kept.push(item);
     previous = bucket;
+    bucketCounts.set(bucket, count + 1);
+    if (nameKey) seenNames.add(nameKey);
   }
 
   // Don't gut a day when the candidate pool is mostly one experience type.

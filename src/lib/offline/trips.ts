@@ -34,6 +34,12 @@ export type OfflineTripSnapshot = {
   expenseCategorySplit?: ExpenseCategorySplit;
   /** Request body for background demo-create while the empty shell is open. */
   pendingBuild?: Record<string, unknown>;
+  /** Optional day-grouped activities used by booking apply / offline hydrate. */
+  dayGroups?: Array<{
+    dayId: string;
+    dayIndex: number;
+    activities: ActivityRow[];
+  }>;
 };
 
 function readIndex(): string[] {

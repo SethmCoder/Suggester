@@ -217,6 +217,23 @@ describe("Dreamer paste / stay / summary", () => {
     expect(merged.cities).toContain("Tokyo");
   });
 
+  it("classifies lodging and restaurant confirmations", () => {
+    const hotel = parseBookingFromEmailText({
+      subject: "Your Booking.com confirmation",
+      text: "Check-in: 2026-11-24\nProperty: Shibuya Stream Excel Hotel Tokyu\nTokyo, Japan\nConfirmation: HT99881",
+    });
+    expect(hotel.kind).toBe("hotel");
+    expect(hotel.hotelName).toMatch(/Shibuya Stream/i);
+    expect(hotel.startDate).toBe("2026-11-24");
+
+    const meal = parseBookingFromEmailText({
+      subject: "OpenTable reservation",
+      text: "Reservation at Ichiran Shibuya on 2026-11-25\nTable time: 19:30\nParty of 2",
+    });
+    expect(meal.kind).toBe("restaurant");
+    expect(meal.restaurantName).toMatch(/Ichiran/i);
+  });
+
   it("summary is fact-only and evidence gate works", () => {
     const parsed = parseBookingFromEmailText({
       subject: "Pasted booking",

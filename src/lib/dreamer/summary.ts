@@ -5,11 +5,14 @@ export function summarizeParsedBooking(parsed: ParsedBooking): string {
   const parts: string[] = [];
   if (parsed.kind === "flight" && parsed.fromIata && parsed.toIata) {
     parts.push(`${parsed.fromIata} → ${parsed.toIata}`);
-  } else if (parsed.kind === "hotel" && parsed.hotelName) {
+  } else if (parsed.hotelName) {
     parts.push(parsed.hotelName);
+  } else if (parsed.restaurantName) {
+    parts.push(parsed.restaurantName);
   } else if (parsed.kind) {
     parts.push(parsed.kind);
   }
+  if (parsed.reservationLocal) parts.push(`at ${parsed.reservationLocal}`);
   if (parsed.flightNumber) parts.push(parsed.flightNumber);
   if (parsed.startDate) parts.push(parsed.startDate);
   if (parsed.endDate && parsed.endDate !== parsed.startDate) {

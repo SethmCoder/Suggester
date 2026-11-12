@@ -43,16 +43,17 @@ export async function GET(
   } | null = null;
 
   if (row.inbound_email_id) {
+    // Metadata only — raw text_body/html_body are intentionally not stored.
     const { data: inbound } = await svc
       .from("inbound_emails")
-      .select("subject, text_body, html_body, from_address, received_at")
+      .select("subject, from_address, received_at")
       .eq("id", row.inbound_email_id)
       .maybeSingle();
     if (inbound) {
       email = {
         subject: inbound.subject,
-        textBody: inbound.text_body,
-        htmlBody: inbound.html_body,
+        textBody: null,
+        htmlBody: null,
         fromAddress: inbound.from_address,
         receivedAt: inbound.received_at,
       };

@@ -6,7 +6,8 @@
 --   • policies are dropped then recreated
 --   • constraints are dropped then re-added
 -- Does not delete data. Does not drop tables.
--- Covers migrations 001–009.
+-- Covers migrations 001–013 (profiles through user_stays / analytics).
+-- After this file, also run: supabase/migrations/014_friends_social.sql
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
@@ -691,7 +692,8 @@ create policy user_stays_select_authenticated on user_stays
   using (auth.uid() is not null);
 
 -- =============================================================================
--- Done. Verify Dreamer tables exist:
+-- Done. Next: run supabase/migrations/014_friends_social.sql for Friends.
+-- Verify core tables exist:
 --   select to_regclass('public.inbound_emails'),
 --          to_regclass('public.dreamer_bookings'),
 --          to_regclass('public.future_trips'),

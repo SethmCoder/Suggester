@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { IconExternalLink } from "@/components/ui/Icons";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 type Props = {
@@ -52,14 +51,7 @@ export function CreateAccountLink({ children, className, next }: Props) {
       onClick={openSignup}
       aria-disabled={busy}
     >
-      {busy ? (
-        "Opening…"
-      ) : (
-        <span className="inline-flex items-center gap-1.5">
-          {children}
-          <IconExternalLink size={12} className="shrink-0 opacity-80" aria-hidden />
-        </span>
-      )}
+      {busy ? "Opening…" : children}
     </Link>
   );
 }

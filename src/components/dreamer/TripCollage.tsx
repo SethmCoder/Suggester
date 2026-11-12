@@ -26,8 +26,9 @@ function Cell({
   className?: string;
 }) {
   const { trip, bookingCount, wishlistCount } = meta;
+  const place = trip.destination?.trim() || trip.title || "Trip";
   const name = titleCasePlace(trip.title || trip.destination);
-  const cities = splitDestinationCities(trip.destination);
+  const cities = splitDestinationCities(place);
   const badge = statusLabel(trip, bookingCount);
   const metaLine = [
     cities.length > 1 ? `${cities.length} stops` : null,
@@ -44,26 +45,26 @@ function Cell({
   return (
     <Link
       href={`/future-plans/${trip.id}`}
-      className={`group relative block min-h-[140px] overflow-hidden bg-[#080B3A] ${className}`}
+      className={`group relative block min-h-[140px] overflow-hidden bg-[#11165A] ${className}`}
     >
       <SegmentedCityHero
-        destination={trip.destination}
+        destination={place}
         heightClass="absolute inset-0 h-full"
         className="rounded-none"
         showLabel={false}
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-[#080B3A]/90 via-[#080B3A]/25 to-transparent transition duration-300 group-hover:from-[#080B3A]" />
+      <div className="absolute inset-0 bg-gradient-to-t from-[#080B3A]/72 via-[#080B3A]/18 to-transparent transition duration-300 group-hover:from-[#080B3A]/88 group-hover:via-[#080B3A]/32" />
       <div className="absolute inset-x-0 bottom-0 p-4 sm:p-5">
-        <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-white/70">
+        <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-white/80">
           {badge}
         </p>
-        <p className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl">
+        <p className="mt-1 text-xl font-semibold tracking-tight text-white drop-shadow-sm sm:text-2xl">
           {name}
         </p>
         {metaLine ? (
-          <p className="mt-1 text-xs text-white/75">{metaLine}</p>
+          <p className="mt-1 text-xs text-white/80">{metaLine}</p>
         ) : (
-          <p className="mt-1 text-xs text-white/60">Add a confirmation to start</p>
+          <p className="mt-1 text-xs text-white/70">Add a confirmation to start</p>
         )}
       </div>
     </Link>

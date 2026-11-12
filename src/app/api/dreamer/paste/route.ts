@@ -224,6 +224,7 @@ export async function POST(req: Request) {
     primaryContext: primary,
   });
 
+  // Raw email bodies stay local-only (sessionStorage); parse uses in-memory text/html.
   const { data: emailRow, error: emailErr } = await svc
     .from("inbound_emails")
     .insert({
@@ -232,8 +233,8 @@ export async function POST(req: Request) {
       from_address: user.email ?? null,
       to_addresses: ["paste"],
       subject,
-      text_body: text.slice(0, 50_000) || null,
-      html_body: html,
+      text_body: null,
+      html_body: null,
       status: "received",
     })
     .select("id")
@@ -422,5 +423,7 @@ export async function POST(req: Request) {
     planShift,
     parsed,
     summary,
+    // Client may stash raw body in sessionStorage; not persisted to inbound_emails.
+    text: confirmationPlainText({ text, html }) || text || undefined,
   });
 }

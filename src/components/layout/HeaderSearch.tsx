@@ -26,18 +26,6 @@ export function HeaderSearch() {
       router.push("/plan");
       return;
     }
-    if (
-      /\b(museums?|parks?|restaurants?|markets?|things? to do|activit(?:y|ies))\b/.test(
-        lower,
-      )
-    ) {
-      router.push(`/things?q=${encodeURIComponent(q)}`);
-      return;
-    }
-    if (/\bexplor/.test(lower)) {
-      router.push(`/explore?q=${encodeURIComponent(q)}`);
-      return;
-    }
     router.push(`/discover?q=${encodeURIComponent(q)}`);
   }
 

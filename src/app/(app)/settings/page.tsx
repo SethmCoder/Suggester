@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { BillingPlansPanel } from "@/components/billing/BillingPlansPanel";
 import { DemoBanner } from "@/components/demo/DemoBanner";
-import { SignupToPlanFunnel } from "@/components/settings/SignupToPlanFunnel";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import {
@@ -253,7 +252,7 @@ export default function SettingsPage() {
 
       <BillingPlansPanel />
 
-      <SignupToPlanFunnel />
+      <EmailImportSettings />
 
       <section className="rounded-2xl border border-[#E1E5F0] bg-white p-6 shadow-sm space-y-4">
         <div>
@@ -459,5 +458,27 @@ export default function SettingsPage() {
       {status ? <p className="text-sm text-[#15803D]">{status}</p> : null}
       {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
     </div>
+  );
+}
+
+function EmailImportSettings() {
+  return (
+    <section className="space-y-3 rounded-2xl border border-[#E1E5F0] bg-white p-6 shadow-sm">
+      <div>
+        <h2 className="text-lg font-semibold">Email import</h2>
+        <p className="mt-1 text-sm text-[#6B7280]">
+          Paste booking confirmations or forward them into Future Trips and
+          Bookings. Original email text stays on this device; only the parsed
+          booking details sync to your account. Direct Gmail connection is not
+          available yet.
+        </p>
+      </div>
+      <a
+        href="/future-plans"
+        className="inline-flex items-center rounded-[12px] border border-[#E1E5F0] px-4 py-2 text-sm font-semibold text-[#080B3A]"
+      >
+        Open Future Trips
+      </a>
+    </section>
   );
 }

@@ -117,7 +117,7 @@ export async function GET(req: Request) {
   return NextResponse.json({
     results,
     notice: results.length
-      ? "Suggestions from OpenStreetMap near this slot."
+      ? "Suggestions near this time slot."
       : "No nearby places matched this slot yet — try Manual input.",
   });
 }

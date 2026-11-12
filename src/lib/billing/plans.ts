@@ -1,8 +1,8 @@
 export const PLAN_COOKIE = "waypoint_plan";
 export const USED_COOKIE = "waypoint_trips_used";
 
-/** Trips a free plan can create. Sample trips are not counted. */
-export const FREE_TRIP_LIMIT = 3;
+/** Active trips a free plan can create. Sample trips are not counted. */
+export const FREE_TRIP_LIMIT = 2;
 
 /** Monthly Pro price in euros. Frankfurter converts this into the local currency. */
 export const PRO_PRICE_EUR = 9;
@@ -37,7 +37,7 @@ export function canCreateTrip(state: Pick<BillingSnapshot, "plan" | "used">): bo
 }
 
 export const PLAN_LIMIT_MESSAGE =
-  "Free includes 3 generated trips. Upgrade to Pro for unlimited trips and advanced Trip Wizard.";
+  "Free includes 2 active trips. Upgrade to Waypoint Plus for unlimited trips, or buy a Trip Pass for one trip.";
 
 const EUROZONE = new Set([
   "AD", "AT", "BE", "CY", "DE", "EE", "ES", "FI", "FR", "GR", "HR", "IE",

@@ -11,6 +11,9 @@ Every activity must use an exact placeId from the candidate list (a real named p
 Return one day object for EVERY dayIndex in the day plan. Each day MUST hit the requested stop target exactly (real sightseeing/food stops — not transit placeholders). Mix variety: at least one sight (museum, attraction, historic, park, viewpoint), at least one food stop when the target is 3+, and a walk-friendly outdoor or neighborhood stop when candidates exist. Never leave a day empty or with only one or two stops, and never schedule a placeholder such as "free day" or "free block". If candidates remain, keep filling until the day target is met.
 Online-interest / popularity scores are SECONDARY ranking hints only — traveler interests, geography, pace, and budget matter more.
 When a hotel anchor is provided for a day, prefer candidates close to that hotel.
+Keep each day inside ONE neighborhood / district — minimize same-day transit. Do not bounce across the city (e.g. Shibuya then Tokyo Tower then west again on the same day). Put distant landmarks on different days.
+Candidates include lat/lng — use them to cluster stops for that day.
+If the dream asks for local / non-tourist places, prefer neighborhood food, markets, parks, and lesser-known OSM places — skip famous postcard landmarks unless they are must-sees. If the dream asks for well-known sights, prefer recognizable major attractions.
 Never invent hotel names or review quotes. Use only the hotel anchor name that was provided.
 For multi-city trips, only schedule places that belong to that day's city (candidates are tagged with city=).
 The system inserts intercity transit blocks (flight, major train, ferry, coach, car) with departure windows — do not invent generic "transfer" stops.
@@ -69,7 +72,11 @@ export function buildItineraryUserPrompt(input: {
       "openingHours" in c && (c as { openingHours?: string }).openingHours
         ? ` hours=${(c as { openingHours?: string }).openingHours}`
         : "";
-    return `- placeId=${c.placeId} name=${c.displayName} types=${c.types.join(",")}${cityPart} rank=${c.combinedRank.toFixed(3)}${popPart}${hoursPart}`;
+    const geoPart =
+      Number.isFinite(c.lat) && Number.isFinite(c.lng)
+        ? ` lat=${c.lat.toFixed(5)} lng=${c.lng.toFixed(5)}`
+        : "";
+    return `- placeId=${c.placeId} name=${c.displayName} types=${c.types.join(",")}${cityPart}${geoPart} rank=${c.combinedRank.toFixed(3)}${popPart}${hoursPart}`;
   });
 
   const destCtx = input.destinationContextBlock
@@ -120,8 +127,9 @@ ${candidateLines.join("\n")}
 Rules:
 - Include every dayIndex from the day plan above — not only day 0.
 - Schedule major stops first (priority must_see). Then fill until each day has exactly ${stopTarget} sightseeing stops (mix sight + food + walk; do not stack duplicate types back-to-back).
+- ONE neighborhood per day: every stop on a day should be within roughly a short transit/walk of each other (use lat/lng). Spread far-apart landmarks across different days.
 - On wet forecast days, fill with indoor candidates; skip outdoor parks/beaches/viewpoints unless they are hard must-sees with no indoor substitute.
-- Online-interest hints are SECONDARY. Prefer traveler interests, hotel proximity, weather fit, and a realistic schedule.
+- Online-interest hints are SECONDARY. Prefer traveler interests, same-area geography, weather fit, and a realistic schedule.
 - Never invent social-media virality or vague "near hotel" fillers.
 - Intercity transit blocks may already be inserted by the system (labeled Flight / Major train / Ferry / etc.); schedule sightseeing after the transit arrival window. Do not invent stations unless their placeId is listed.
 Popularity data present: ${input.popularityEnabled ? "yes" : "no"}.`;

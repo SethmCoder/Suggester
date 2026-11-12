@@ -104,22 +104,29 @@ function CallbackInner() {
       } = await supabase.auth.getUser();
       if (user?.id) clearMismatchedAvatarKeys(user.id);
       if (cancelled) return;
-      // New email confirmations land on welcome; returning sessions skip it.
-      const intro = await fetch("/api/profile/intro")
-        .then((res) => res.json())
-        .catch(() => null);
-      if (cancelled) return;
-      if (!intro?.skipIntro) {
+      // Track real account creation without gating on intro skip (returning
+      // sessions older than ~1h still skip). Funnel also uses auth cohort.
+      const createdMs = user?.created_at ? Date.parse(user.created_at) : NaN;
+      const freshAccount =
+        Number.isFinite(createdMs) && Date.now() - createdMs < 60 * 60 * 1000;
+      const signupType =
+        type === "signup" || type === "invite" || type === "email";
+      if (user?.id && (signupType || freshAccount)) {
         void fetch("/api/analytics/event", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             event: "signup_completed",
-            properties: { type: type ?? "session" },
+            properties: { type: type ?? "session", freshAccount },
             path: "/auth/callback",
           }),
         }).catch(() => null);
       }
+      // New email confirmations land on welcome; returning sessions skip it.
+      const intro = await fetch("/api/profile/intro")
+        .then((res) => res.json())
+        .catch(() => null);
+      if (cancelled) return;
       if (intro?.skipIntro) {
         window.location.assign(next);
         return;

@@ -83,8 +83,8 @@ export async function GET(req: Request) {
     citation: null,
     note: hotels.length
       ? brand
-        ? `${hotels.length} ${brand} hotels in ${city}. Pick one and the days are built around it. © OpenStreetMap contributors.`
-        : `Hotels in ${city}. Pick one and the days are built around it. © OpenStreetMap contributors.`
+        ? `${hotels.length} ${brand} hotels in ${city}. Pick one and the days are built around it. from public map listings.`
+        : `Hotels in ${city}. Pick one and the days are built around it. from public map listings.`
       : brand
         ? `No hotels in ${city} match “${brand}”. Try another brand, or enter one you already booked.`
         : `No hotels found in ${city}. Enter one you already booked, or try another city.`,

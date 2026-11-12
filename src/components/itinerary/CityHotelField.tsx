@@ -197,11 +197,11 @@ export function CityHotelField({
             </p>
           ) : null}
           <p className="mt-2 text-[10px] text-[#6B7280]">
-            © OpenStreetMap contributors · ODbL · checked {picked.lastVerifiedAt.slice(0, 10)}
+            Public map listing · checked {picked.lastVerifiedAt.slice(0, 10)}
           </p>
         </div>
       ) : matches.length ? (
-        <p className="mt-1 text-[10px] text-[#6B7280]">© OpenStreetMap contributors · ODbL</p>
+        <p className="mt-1 text-[10px] text-[#6B7280]">Public map listing</p>
       ) : null}
     </div>
   );

@@ -1578,6 +1578,7 @@ export function CreateTripWizard({
             idealTrip: current.idealTrip
               ? `${current.idealTrip}\nDream: ${label}`
               : `Dream: ${label}`,
+            prefersHiddenGems: value === "small",
           }));
         }
       }}

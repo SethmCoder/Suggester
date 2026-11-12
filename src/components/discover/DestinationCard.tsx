@@ -42,7 +42,7 @@ export function DestinationCard({
           }),
         )
         .catch(() => undefined);
-      setNote("Saved to Wishlist");
+      setNote("Saved to Collections");
     } finally {
       setBusy(false);
     }
@@ -128,11 +128,11 @@ export function DestinationCard({
           {destination.populationNote ? <li>{destination.populationNote}</li> : null}
         </ul>
         <p className="text-[11px] text-[#9CA3AF]">
-          Sources: {destination.sources.join(", ")}
+          Based on: {destination.sources.join(", ")}
         </p>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="secondary" disabled={busy} onClick={() => void saveWish()}>
-            Save to Wishlist
+            Save to Collections
           </Button>
           {onToggleCompare ? (
             <Button
@@ -147,10 +147,10 @@ export function DestinationCard({
             Create Future Trip
           </Button>
           <LeavePageLink
-            href={`/explore?city=${encodeURIComponent(destination.name)}`}
+            href={`/discover?q=${encodeURIComponent(destination.name)}`}
             variant="ghost"
           >
-            Explore
+            Discover
           </LeavePageLink>
           <LeavePageLink
             href={`/trips/new?destination=${encodeURIComponent(destination.name)}&days=${destination.durationNote.match(/\d+/)?.[0] || 5}`}

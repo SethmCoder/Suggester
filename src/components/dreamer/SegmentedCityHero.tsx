@@ -1,9 +1,7 @@
 "use client";
 
-import {
-  destinationImageUrl,
-  hasCuratedCityImage,
-} from "@/lib/destination-image";
+import { useState } from "react";
+import { destinationImageUrl } from "@/lib/destination-image";
 
 /** Split "Tokyo → Kyoto" / "Tokyo, Kyoto" / "Tokyo and Kyoto" into city parts. */
 export function splitDestinationCities(destination: string): string[] {
@@ -20,6 +18,29 @@ export function splitDestinationCities(destination: string): string[] {
     unique.push(part);
   }
   return unique.length ? unique.slice(0, 4) : [destination.trim() || "Trip"];
+}
+
+function CityPhoto({ city }: { city: string }) {
+  const [failed, setFailed] = useState(false);
+  const src = destinationImageUrl(city);
+
+  if (failed) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-[#11165A] text-2xl font-bold text-white">
+        {city.slice(0, 1).toUpperCase()}
+      </div>
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      className="h-full w-full object-cover"
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 export function SegmentedCityHero({
@@ -41,9 +62,7 @@ export function SegmentedCityHero({
   const label = title || cities.join(" · ");
 
   return (
-    <div
-      className={`relative overflow-hidden ${heightClass} ${className}`}
-    >
+    <div className={`relative overflow-hidden ${heightClass} ${className}`}>
       <div
         className={`absolute inset-0 grid ${
           cities.length === 1
@@ -55,29 +74,13 @@ export function SegmentedCityHero({
                 : "grid-cols-2 grid-rows-2"
         }`}
       >
-        {cities.map((city) => {
-          const photo = hasCuratedCityImage(city);
-          return photo ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              key={city}
-              src={destinationImageUrl(city)}
-              alt=""
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div
-              key={city}
-              className="flex h-full w-full items-center justify-center bg-[#080B3A] text-2xl font-bold text-white"
-            >
-              {city.slice(0, 1).toUpperCase()}
-            </div>
-          );
-        })}
+        {cities.map((city) => (
+          <CityPhoto key={city} city={city} />
+        ))}
       </div>
       {showLabel ? (
         <>
-          <div className="absolute inset-0 bg-gradient-to-t from-[#080B3A]/80 via-[#080B3A]/20 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#080B3A]/75 via-[#080B3A]/15 to-transparent" />
           <div className="absolute bottom-4 left-5 right-5">
             <p className="text-2xl font-bold text-white sm:text-3xl">{label}</p>
             {subtitle ? (

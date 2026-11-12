@@ -52,7 +52,7 @@ export async function POST(
       {
         error:
           gate.used >= gate.limit
-            ? `Free includes ${gate.limit} AI requests this month. Upgrade to Pro for more generation.`
+            ? `Free includes ${gate.limit} AI requests this month. Upgrade to Plus for more AI planning this month.`
             : PRO_REQUIRED_MESSAGE,
         code: gate.used >= gate.limit ? "ai_limit" : "pro_required",
       },
@@ -186,6 +186,9 @@ export async function POST(
             },
           ],
       inboundFlight: inbound,
+      bookedRestaurants: Array.isArray(prefs.bookedRestaurants)
+        ? prefs.bookedRestaurants
+        : undefined,
       language: normalizeLanguage(
         prefs.language || jar.get(LANGUAGE_COOKIE)?.value,
       ),

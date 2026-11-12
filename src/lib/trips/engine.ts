@@ -215,7 +215,7 @@ export function verificationFor(stop: EngineStop): {
   if (stop.openingHours && hourWindow(stop.openingHours)) {
     return {
       status: "verified",
-      text: `Hours from OpenStreetMap: ${stop.openingHours}.`,
+      text: `Listed hours: ${stop.openingHours}.`,
       price: "unavailable",
     };
   }

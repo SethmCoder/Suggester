@@ -79,8 +79,11 @@ import {
   reindexByChronology,
   sortActivitiesChronologically,
 } from "@/lib/trips/activity-order";
-import { nightsBetween, nightsLabel } from "@/lib/trips/dates";
-import { TripPlanSidebar } from "@/components/trips/TripPlanSidebar";
+import { addCalendarDays, nightsBetween, nightsLabel } from "@/lib/trips/dates";
+import {
+  TripPlanSidebar,
+  type TripDashTab,
+} from "@/components/trips/TripPlanSidebar";
 import { TripBookingsPanel } from "@/components/trips/TripBookingsPanel";
 import {
   stopColorForIndex,
@@ -185,7 +188,65 @@ export function ItineraryEditor({
   const [view, setView] = useState<"schedule" | "map" | "split" | "calendar">(
     "schedule",
   );
+  const [dashTab, setDashTab] = useState<TripDashTab>("itinerary");
+  const [assistantForceOpen, setAssistantForceOpen] = useState(false);
   const [selectedDay, setSelectedDay] = useState(0);
+
+  useEffect(() => {
+    function onSection(e: Event) {
+      const section = (e as CustomEvent<{ section?: string }>).detail?.section;
+      if (!section) return;
+      const tab = section as TripDashTab;
+      if (
+        !(
+          [
+            "overview",
+            "itinerary",
+            "discover",
+            "bookings",
+            "map",
+            "assistant",
+          ] as TripDashTab[]
+        ).includes(tab)
+      ) {
+        return;
+      }
+      setDashTab(tab);
+      if (tab === "map") setView("map");
+      if (tab === "itinerary") setView("schedule");
+      if (tab === "assistant") setAssistantForceOpen(true);
+      if (tab === "bookings") {
+        window.setTimeout(() => {
+          document.getElementById("bookings")?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        }, 50);
+      }
+    }
+    window.addEventListener("waypoint:trip-section", onSection);
+    const raw = typeof window !== "undefined"
+      ? (window.location.hash.replace(/^#/, "") as TripDashTab)
+      : null;
+    if (
+      raw &&
+      (
+        [
+          "overview",
+          "itinerary",
+          "discover",
+          "bookings",
+          "map",
+          "assistant",
+        ] as TripDashTab[]
+      ).includes(raw)
+    ) {
+      setDashTab(raw);
+      if (raw === "map") setView("map");
+      if (raw === "assistant") setAssistantForceOpen(true);
+    }
+    return () => window.removeEventListener("waypoint:trip-section", onSection);
+  }, []);
 
   // Keep day-by-day open by default as days hydrate or grow.
   useEffect(() => {
@@ -222,7 +283,38 @@ export function ItineraryEditor({
   const [liveBudget, setLiveBudget] = useState<BudgetPlan | undefined>(budgetPlan);
   const [wetWeather, setWetWeather] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+  const [toolsOpen, setToolsOpen] = useState<"budget" | "packing" | "intel" | null>(
+    null,
+  );
   const [packing, setPacking] = useState<PackingItem[]>([]);
+
+  useEffect(() => {
+    function openToolFromSection(section: string) {
+      if (section === "budget" || section === "packing") {
+        setToolsOpen(section);
+        window.requestAnimationFrame(() => {
+          document.getElementById("trip-tools")?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        });
+      }
+    }
+    function onSection(e: Event) {
+      const detail = (e as CustomEvent<{ section?: string }>).detail;
+      if (detail?.section) openToolFromSection(detail.section);
+    }
+    function onHash() {
+      openToolFromSection(window.location.hash.replace(/^#/, ""));
+    }
+    onHash();
+    window.addEventListener("waypoint:trip-section", onSection);
+    window.addEventListener("hashchange", onHash);
+    return () => {
+      window.removeEventListener("waypoint:trip-section", onSection);
+      window.removeEventListener("hashchange", onHash);
+    };
+  }, []);
 
   // Wet-weather signal for packing reseed (Open-Meteo via /api/weather).
   useEffect(() => {
@@ -1163,8 +1255,12 @@ export function ItineraryEditor({
 
   const stopPins = useMemo(() => {
     const pins: MapPin[] = [];
-    let order = 1;
-    for (const day of days) {
+    // Map shows the selected day so the path is one neighborhood walk,
+    // not a zig-zag stitching every day together.
+    const daysToShow = days.filter((d) => d.dayIndex === selectedDay);
+    const source = daysToShow.length ? daysToShow : days;
+    for (const day of source) {
+      let order = 1;
       const city = dayCities?.[day.dayIndex]?.city;
       const color = city
         ? stopColorForKey(city).solid
@@ -1193,11 +1289,12 @@ export function ItineraryEditor({
           activityId: activity.id,
           address: activity.address,
           color,
+          dayIndex: day.dayIndex,
         });
       }
     }
     return pins;
-  }, [days, dayCities]);
+  }, [days, dayCities, selectedDay]);
 
   const tripNights =
     startDate && endDate
@@ -1218,6 +1315,21 @@ export function ItineraryEditor({
         startDate={startDate}
         endDate={endDate}
         cities={legs.map((l) => l.city).filter(Boolean)}
+        activeTab={dashTab}
+        onTabChange={(tab) => {
+          setDashTab(tab);
+          if (tab === "map") setView("map");
+          if (tab === "itinerary") setView("schedule");
+          if (tab === "assistant") setAssistantForceOpen(true);
+          if (tab === "bookings") {
+            window.setTimeout(() => {
+              document.getElementById("bookings")?.scrollIntoView({
+                behavior: "smooth",
+                block: "start",
+              });
+            }, 50);
+          }
+        }}
       />
       <div className="min-w-0 flex-1 space-y-5">
       <section id="itinerary" className="flex flex-col gap-3 rounded-[16px] border border-[#E1E5F0] bg-white px-5 py-5 shadow-[0_6px_18px_rgba(8,11,58,0.05)] sm:flex-row sm:items-end sm:justify-between sm:px-7">
@@ -1370,66 +1482,103 @@ export function ItineraryEditor({
         </div>
       ) : null}
 
-      <BudgetPanel
-        tripId={tripId}
-        isDemo={isDemo}
-        plan={liveBudget ?? budgetPlan}
-        onPlanChange={(next) => {
-          setLiveBudget(next);
-          const snap = loadOfflineTrip(tripId);
-          if (snap) {
-            saveOfflineTrip({
-              ...snap,
-              budget: {
-                total: next.total,
-                currency: next.currency,
-                allocation: next.allocation,
-                restaurantStyle: next.restaurantStyle,
-              },
-            });
-          }
-          if (!isDemo && !tripId.startsWith("offline-") && navigator.onLine) {
-            void fetch(`/api/trips/${tripId}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                preferences: {
-                  budget: next.total,
+      <div
+        id="trip-tools"
+        className="flex flex-wrap gap-2 rounded-[14px] border border-[#E1E5F0] bg-white p-2 shadow-[0_4px_16px_rgba(8,11,58,0.04)]"
+      >
+        {(
+          [
+            { id: "budget" as const, label: "Budget" },
+            { id: "packing" as const, label: "Packing" },
+            { id: "intel" as const, label: "Day check" },
+          ] as const
+        ).map((tool) => (
+          <button
+            key={tool.id}
+            type="button"
+            onClick={() =>
+              setToolsOpen((cur) => (cur === tool.id ? null : tool.id))
+            }
+            className={`rounded-[10px] px-3.5 py-2 text-sm font-semibold transition ${
+              toolsOpen === tool.id
+                ? "bg-[#0400FF] text-white"
+                : "text-[#6B7280] hover:bg-[#F5F7FF] hover:text-[#080B3A]"
+            }`}
+          >
+            {tool.label}
+          </button>
+        ))}
+        <p className="ml-auto self-center px-2 text-[11px] text-[#9299B5]">
+          Tools stay tucked away until you need them
+        </p>
+      </div>
+
+      {toolsOpen === "budget" ? (
+        <BudgetPanel
+          tripId={tripId}
+          isDemo={isDemo}
+          plan={liveBudget ?? budgetPlan}
+          onPlanChange={(next) => {
+            setLiveBudget(next);
+            const snap = loadOfflineTrip(tripId);
+            if (snap) {
+              saveOfflineTrip({
+                ...snap,
+                budget: {
+                  total: next.total,
                   currency: next.currency,
-                  budgetAllocation: next.allocation,
+                  allocation: next.allocation,
                   restaurantStyle: next.restaurantStyle,
                 },
-              }),
-            }).catch(() => null);
+              });
+            }
+            if (!isDemo && !tripId.startsWith("offline-") && navigator.onLine) {
+              void fetch(`/api/trips/${tripId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  preferences: {
+                    budget: next.total,
+                    currency: next.currency,
+                    budgetAllocation: next.allocation,
+                    restaurantStyle: next.restaurantStyle,
+                  },
+                }),
+              }).catch(() => null);
+            }
+          }}
+          expenses={expenses}
+          categorySplit={categorySplit}
+          onCategorySplitChange={persistCategorySplit}
+          onExpensesChange={persistExpenses}
+          stops={(days[selectedDay]?.activities ?? []).map((activity) => ({
+            id: activity.id,
+            name: activity.name,
+            note: activity.planning_note,
+          }))}
+        />
+      ) : null}
+      {toolsOpen === "packing" ? (
+        <PackingChecklist
+          items={packing}
+          onChange={persistPacking}
+          party={liveBudget?.party ?? budgetPlan?.party}
+          wetWeather={wetWeather}
+          durationDays={
+            startDate && endDate
+              ? nightsBetween(startDate, endDate) + 1
+              : days.length
           }
-        }}
-        expenses={expenses}
-        categorySplit={categorySplit}
-        onCategorySplitChange={persistCategorySplit}
-        onExpensesChange={persistExpenses}
-        stops={(days[selectedDay]?.activities ?? []).map((activity) => ({
-          id: activity.id,
-          name: activity.name,
-          note: activity.planning_note,
-        }))}
-      />
-      <PackingChecklist
-        items={packing}
-        onChange={persistPacking}
-        party={liveBudget?.party ?? budgetPlan?.party}
-        wetWeather={wetWeather}
-        durationDays={
-          startDate && endDate
-            ? nightsBetween(startDate, endDate) + 1
-            : days.length
-        }
-      />
-      <TripIntelligence
-        activities={days[selectedDay]?.activities ?? []}
-        onApplyStart={(activityId, start) =>
-          updateActivity(selectedDay, activityId, { start_time: start })
-        }
-      />
+        />
+      ) : null}
+      {toolsOpen === "intel" ? (
+        <TripIntelligence
+          activities={days[selectedDay]?.activities ?? []}
+          onApplyStart={(activityId, start) =>
+            updateActivity(selectedDay, activityId, { start_time: start })
+          }
+        />
+      ) : null}
 
       {view === "calendar" ? (
         <WeekCalendarView
@@ -1454,15 +1603,144 @@ export function ItineraryEditor({
         />
       ) : null}
 
+      {dashTab === "overview" ? (
+        <section
+          id="overview-panel"
+          className="space-y-3 rounded-[14px] border border-[#E1E5F0] bg-white p-5 shadow-[0_2px_12px_rgba(8,11,58,0.04)]"
+        >
+          <h2 className="text-lg font-semibold text-[#080B3A]">Trip overview</h2>
+          <dl className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <dt className="text-[11px] font-semibold uppercase tracking-wide text-[#9299B5]">
+                Destination
+              </dt>
+              <dd className="mt-0.5 text-sm font-medium text-[#080B3A]">
+                {destName}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[11px] font-semibold uppercase tracking-wide text-[#9299B5]">
+                Dates
+              </dt>
+              <dd className="mt-0.5 text-sm font-medium text-[#080B3A]">
+                {startDate
+                  ? `${formatTripDate(startDate, "short")}${
+                      endDate ? ` – ${formatTripDate(endDate, "long")}` : ""
+                    }`
+                  : "Not set"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[11px] font-semibold uppercase tracking-wide text-[#9299B5]">
+                Schedule
+              </dt>
+              <dd className="mt-0.5 text-sm font-medium text-[#080B3A]">
+                {days.length} days · {flatActivities.length} stops
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[11px] font-semibold uppercase tracking-wide text-[#9299B5]">
+                Cities
+              </dt>
+              <dd className="mt-0.5 text-sm font-medium text-[#080B3A]">
+                {legs.map((l) => l.city).filter(Boolean).join(" → ") || destName}
+              </dd>
+            </div>
+          </dl>
+          <div className="flex flex-wrap gap-2 pt-1">
+            {(
+              [
+                ["itinerary", "View itinerary"],
+                ["bookings", "Bookings"],
+                ["map", "Map"],
+                ["discover", "Discover places"],
+                ["assistant", "Ask assistant"],
+              ] as const
+            ).map(([tab, label]) => (
+              <button
+                key={tab}
+                type="button"
+                className="rounded-full bg-[#F5F7FF] px-3 py-1.5 text-xs font-semibold text-[#0400FF]"
+                onClick={() => {
+                  setDashTab(tab);
+                  window.history.replaceState(null, "", `/trips/${tripId}#${tab}`);
+                  if (tab === "map") setView("map");
+                  if (tab === "assistant") setAssistantForceOpen(true);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {dashTab === "discover" ? (
+        <section className="space-y-3 rounded-[14px] border border-[#E1E5F0] bg-white p-5 shadow-[0_2px_12px_rgba(8,11,58,0.04)]">
+          <h2 className="text-lg font-semibold text-[#080B3A]">
+            Discover near this trip
+          </h2>
+          <p className="text-sm text-[#6B7280]">
+            Search real places and add them to a day.
+          </p>
+          <AddStopSearch
+            near={(() => {
+              const anchored = flatActivities.find(
+                (a) => a.lat != null && a.lng != null,
+              );
+              return anchored
+                ? { lat: anchored.lat!, lng: anchored.lng! }
+                : null;
+            })()}
+            onPick={(hit) => {
+              setSelectedPlace({
+                name: hit.name,
+                lat: hit.lat,
+                lng: hit.lng,
+                address: hit.address,
+                dayIndex: selectedDay,
+              });
+              setDashTab("itinerary");
+              setView("split");
+            }}
+          />
+          <a
+            href={`/discover?q=${encodeURIComponent(destName)}`}
+            className="inline-block text-sm font-semibold text-[#0400FF]"
+          >
+            Browse destination Discover →
+          </a>
+        </section>
+      ) : null}
+
       <div
-        className={`grid gap-4 ${view === "split" ? "lg:grid-cols-2 lg:items-start" : "grid-cols-1"}`}
+        className={`grid gap-4 ${view === "split" ? "lg:grid-cols-2 lg:items-start" : "grid-cols-1"} ${
+          dashTab === "overview" || dashTab === "discover" ? "hidden" : ""
+        }`}
       >
-        {(view === "schedule" || view === "split") && (
+        {(view === "schedule" || view === "split" || dashTab === "bookings") &&
+          dashTab !== "map" && (
           <div className="min-w-0 space-y-2">
             <TripBookingsPanel
+              tripId={tripId}
+              destination={destination}
               legs={legs}
               activities={days.flatMap((d) => d.activities)}
               flightDate={startDate}
+              onBookingAdded={() => {
+                const snap = loadOfflineTrip(tripId);
+                if (snap?.dayGroups?.length) {
+                  setDays(
+                    snap.dayGroups.map((group, index) => ({
+                      dayId: group.dayId,
+                      dayIndex: group.dayIndex ?? index,
+                      activities: group.activities ?? [],
+                    })),
+                  );
+                }
+                if (snap?.legs?.length) setLegs(snap.legs);
+                setSaveState("saved");
+              }}
               onApplyDelay={(minutes) => {
                 setDays((prev) => {
                   if (!prev[0]) return prev;
@@ -1515,128 +1793,107 @@ export function ItineraryEditor({
             {selectedCity ? (
               <CityCard name={selectedCity} onClose={() => setSelectedCity(null)} />
             ) : null}
-            {days.map((day, dayIndex) => {
-              const isOpen = Boolean(expanded[dayIndex]);
-              const bookedHotel = bookedHotelForDay({
-                dayIndex: day.dayIndex,
-                dayCities,
-                legs,
-                activities: day.activities,
-              });
-              return (
-              <section
-                key={day.dayId}
-                className={`overflow-hidden rounded-[12px] border bg-white shadow-[0_2px_12px_rgba(8,11,58,0.04)] ${
-                  selectedDay === dayIndex
-                    ? "border-[#0400FF]/40"
-                    : "border-[#E1E5F0]"
-                }`}
-              >
-                <div className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left">
-                  <span className="text-[16px] font-semibold text-[#080B3A]">
-                    <span
-                      className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle"
-                      style={{
-                        background: (
-                          dayCities?.[day.dayIndex]?.city
-                            ? stopColorForKey(dayCities[day.dayIndex].city)
-                            : stopColorForIndex(dayIndex)
-                        ).solid,
-                      }}
-                      aria-hidden
-                    />
-                    <button
-                      type="button"
-                      className="font-semibold"
-                      onClick={() => {
-                        setSelectedDay(dayIndex);
-                        setExpanded((e) => ({
-                          ...e,
-                          [dayIndex]: !e[dayIndex],
-                        }));
-                      }}
-                    >
-                      Day {day.dayIndex + 1}
-                    </button>
-                    {dayCities?.[day.dayIndex] ? (
+            <div
+              className={`rounded-[14px] border border-[#E1E5F0] bg-white px-3 py-2 shadow-[0_2px_12px_rgba(8,11,58,0.04)] sm:px-4 ${
+                dashTab === "bookings" ? "hidden" : ""
+              }`}
+            >
+              {days.map((day, dayIndex) => {
+                const isOpen = Boolean(expanded[dayIndex]);
+                const bookedHotel = bookedHotelForDay({
+                  dayIndex: day.dayIndex,
+                  dayCities,
+                  legs,
+                  activities: day.activities,
+                });
+                const dayIso =
+                  startDate && /^\d{4}-\d{2}-\d{2}/.test(startDate)
+                    ? addCalendarDays(startDate.slice(0, 10), day.dayIndex)
+                    : null;
+                const dateLabel = dayIso
+                  ? formatTripDate(dayIso, "long")
+                  : `Day ${day.dayIndex + 1}`;
+                const cityLabel = dayCities?.[day.dayIndex]?.city;
+                const accent = (
+                  cityLabel
+                    ? stopColorForKey(cityLabel)
+                    : stopColorForIndex(dayIndex)
+                ).solid;
+
+                return (
+                  <section
+                    key={day.dayId}
+                    className={`border-b border-[#E8EBF5] last:border-b-0 ${
+                      selectedDay === dayIndex ? "bg-[#F8F9FF]" : ""
+                    }`}
+                  >
+                    <div className="flex items-baseline justify-between gap-3 py-3">
                       <button
                         type="button"
-                        className="ml-2 font-normal text-[#0400FF]"
-                        onClick={() => setSelectedCity(dayCities[day.dayIndex].city)}
+                        className="min-w-0 text-left"
+                        onClick={() => {
+                          setSelectedDay(dayIndex);
+                          setExpanded((e) => ({
+                            ...e,
+                            [dayIndex]: !e[dayIndex],
+                          }));
+                        }}
                       >
-                        · {dayCities[day.dayIndex].city}
-                        {dayCities[day.dayIndex].isArrivalTransitDay ? (
-                          <>
-                            {" "}
-                            <span className="text-[#6B7280]">
-                              · arrive from{" "}
-                              {dayCities[day.dayIndex].previousCity}
-                              {(() => {
-                                const legIdx = legs.findIndex(
-                                  (l) =>
-                                    l.city === dayCities[day.dayIndex].city,
-                                );
-                                const to = legIdx >= 0 ? legs[legIdx] : null;
-                                const from =
-                                  legIdx > 0 ? legs[legIdx - 1] : null;
-                                if (!from?.hotel && !to?.hotel) return null;
-                                return (
-                                  <>
-                                    {" "}
-                                    (
-                                    {from?.hotel?.trim() ||
-                                      `${from?.city ?? "prev"} hotel`}
-                                    {" → "}
-                                    {to?.hotel?.trim() ||
-                                      `${to?.city ?? "next"} hotel`}
-                                    )
-                                  </>
-                                );
-                              })()}
+                        <p className="text-[13px] font-semibold tracking-wide text-[#080B3A]">
+                          <span
+                            className="mr-2 inline-block h-2 w-2 rounded-full align-middle"
+                            style={{ background: accent }}
+                            aria-hidden
+                          />
+                          {dateLabel}
+                          {cityLabel ? (
+                            <span className="font-normal text-[#6B7280]">
+                              {" "}
+                              · {cityLabel}
                             </span>
-                          </>
-                        ) : null}
+                          ) : null}
+                        </p>
+                        <p className="mt-0.5 pl-4 text-[11px] text-[#9299B5]">
+                          Day {day.dayIndex + 1} · {day.activities.length}{" "}
+                          {t("itinerary.stops")}
+                        </p>
                       </button>
-                    ) : null}
-                    <span className="ml-2 font-normal text-[#6B7280]">
-                      · {day.activities.length} {t("itinerary.stops")}
-                    </span>
-                    <DayWeatherBadge
-                      startDate={startDate}
-                      dayIndex={day.dayIndex}
-                      city={
-                        dayCities?.[day.dayIndex]?.city ||
-                        destination.split(",")[0]
-                      }
-                      lat={
-                        day.activities.find((a) => a.lat != null)?.lat ?? null
-                      }
-                      lng={
-                        day.activities.find((a) => a.lng != null)?.lng ?? null
-                      }
-                    />
-                  </span>
-                  <button
-                    type="button"
-                    className="rounded-full bg-[#F5F7FF] px-2.5 py-1 text-[11px] font-semibold text-[#0400FF]"
-                    onClick={() => {
-                      setSelectedDay(dayIndex);
-                      setExpanded((e) => ({
-                        ...e,
-                        [dayIndex]: !e[dayIndex],
-                      }));
-                    }}
-                  >
-                    {isOpen ? t("itinerary.hide") : t("itinerary.show")}
-                  </button>
-                </div>
-                {isOpen ? (
-                  <div className="border-t border-[#E1E5F0] bg-[#FAFBFF] px-3 pb-3">
+                      <div className="flex shrink-0 items-center gap-2">
+                        <DayWeatherBadge
+                          startDate={startDate}
+                          dayIndex={day.dayIndex}
+                          city={cityLabel || destination.split(",")[0]}
+                          lat={
+                            day.activities.find((a) => a.lat != null)?.lat ??
+                            null
+                          }
+                          lng={
+                            day.activities.find((a) => a.lng != null)?.lng ??
+                            null
+                          }
+                        />
+                        <button
+                          type="button"
+                          className="text-[11px] font-semibold text-[#0400FF]"
+                          onClick={() => {
+                            setSelectedDay(dayIndex);
+                            setExpanded((e) => ({
+                              ...e,
+                              [dayIndex]: !e[dayIndex],
+                            }));
+                          }}
+                        >
+                          {isOpen ? t("itinerary.hide") : t("itinerary.show")}
+                        </button>
+                      </div>
+                    </div>
+
                     {bookedHotel ? (
-                      <p className="mt-2 rounded-[8px] bg-[#080B3A] px-3 py-1.5 text-center text-[11px] font-semibold text-white">
-                        {bookedHotel.name}
+                      <p className="mb-2 rounded-[6px] bg-[#080B3A] px-2.5 py-1 text-[10px] font-semibold text-white">
+                        Stay · {bookedHotel.name}
                       </p>
                     ) : null}
+
                     <DndContext
                       sensors={sensors}
                       collisionDetection={closestCenter}
@@ -1646,33 +1903,21 @@ export function ItineraryEditor({
                         items={day.activities.map((a) => a.id)}
                         strategy={verticalListSortingStrategy}
                       >
-                        <ul className="space-y-3 pt-3">
+                        <ul className="relative ml-1 border-l border-[#DDE1FF] pl-3 pb-2">
                           {day.activities.map((act, actIndex) => (
                             <Fragment key={act.id}>
-                              {actIndex > 0 ? (
-                                <li className="list-none">
-                                  <TransitBlock
-                                    minutes={
-                                      (act.travel_minutes_from_prev ?? 0) > 0
-                                        ? act.travel_minutes_from_prev
-                                        : null
-                                    }
-                                  />
+                              {actIndex > 0 &&
+                              (act.travel_minutes_from_prev ?? 0) > 0 ? (
+                                <li className="list-none py-0.5 pl-1 text-[10px] text-[#9299B5]">
+                                  ↓ {act.travel_minutes_from_prev} min
                                 </li>
                               ) : null}
                               <SortableActivity
                                 activity={act}
                                 dayCount={days.length}
                                 dayIndex={dayIndex}
-                                accent={
-                                  (
-                                    dayCities?.[day.dayIndex]?.city
-                                      ? stopColorForKey(
-                                          dayCities[day.dayIndex].city,
-                                        )
-                                      : stopColorForIndex(dayIndex)
-                                  ).solid
-                                }
+                                accent={accent}
+                                compact
                                 onMoveDay={(to) =>
                                   moveToDay(dayIndex, act.id, to)
                                 }
@@ -1685,66 +1930,69 @@ export function ItineraryEditor({
                               />
                             </Fragment>
                           ))}
+                          {!day.activities.length ? (
+                            <li className="list-none py-2 text-[12px] text-[#9299B5]">
+                              No stops yet
+                            </li>
+                          ) : null}
                         </ul>
                       </SortableContext>
                     </DndContext>
-                    <AddStopSearch
-                      near={(() => {
-                        const anchored = day.activities.find(
-                          (a) => a.lat != null && a.lng != null,
-                        );
-                        return anchored
-                          ? { lat: anchored.lat!, lng: anchored.lng! }
-                          : null;
-                      })()}
-                      onPick={(hit) => {
-                        setSelectedDay(dayIndex);
-                        setSelectedPlace({
-                          name: hit.name,
-                          lat: hit.lat,
-                          lng: hit.lng,
-                          address: hit.address,
-                          dayIndex,
-                        });
-                        setView((current) =>
-                          current === "schedule" ? "split" : current,
-                        );
-                      }}
-                    />
-                    <div className="mt-3 border-t border-[#E1E5F0] pt-3">
-                      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
-                        Before AI refill
-                      </p>
-                      <LockedTimedStopForm
-                        dayLabel={`Day ${day.dayIndex + 1}`}
-                        onSubmit={(input) =>
-                          addTimedStop(calendarStopFromLockedInput(dayIndex, input))
-                        }
-                      />
-                    </div>
-                    {!isDemo ? (
-                      <RegenerateDayButton
-                        tripId={tripId}
-                        dayIndex={day.dayIndex}
-                      />
-                    ) : (
-                      <p className="mt-2 border-t border-[#E1E5F0] pt-2 text-[11px] text-[#6B7280]">
-                        Regenerating a day is available once the trip is saved to
-                        your account.
-                      </p>
-                    )}
-                  </div>
-                ) : null}
-              </section>
-            );
-            })}
+
+                    {isOpen ? (
+                      <div className="pb-3 pl-1">
+                        <AddStopSearch
+                          near={(() => {
+                            const anchored = day.activities.find(
+                              (a) => a.lat != null && a.lng != null,
+                            );
+                            return anchored
+                              ? { lat: anchored.lat!, lng: anchored.lng! }
+                              : null;
+                          })()}
+                          onPick={(hit) => {
+                            setSelectedDay(dayIndex);
+                            setSelectedPlace({
+                              name: hit.name,
+                              lat: hit.lat,
+                              lng: hit.lng,
+                              address: hit.address,
+                              dayIndex,
+                            });
+                            setView((current) =>
+                              current === "schedule" ? "split" : current,
+                            );
+                          }}
+                        />
+                        <div className="mt-2 border-t border-[#E1E5F0] pt-2">
+                          <LockedTimedStopForm
+                            dayLabel={dateLabel}
+                            onSubmit={(input) =>
+                              addTimedStop(
+                                calendarStopFromLockedInput(dayIndex, input),
+                              )
+                            }
+                          />
+                        </div>
+                        {!isDemo ? (
+                          <RegenerateDayButton
+                            tripId={tripId}
+                            dayIndex={day.dayIndex}
+                          />
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </section>
+                );
+              })}
+            </div>
           </div>
         )}
 
-        {(view === "map" || view === "split") && (
+        {(view === "map" || view === "split" || dashTab === "map") && (
           <div
             className={
-              view === "split"
+              view === "split" && dashTab !== "map"
                 ? "lg:sticky lg:top-[4.5rem] lg:self-start lg:h-[calc(100vh-5.5rem)]"
                 : "min-h-[320px] lg:min-h-[480px]"
             }
@@ -1791,6 +2039,7 @@ export function ItineraryEditor({
       <AssistantPanel
         tripId={tripId}
         isDemo={isDemo}
+        forceOpen={assistantForceOpen || dashTab === "assistant"}
         onDemoApply={isDemo ? applyAssistantPatch : undefined}
       />
       </div>
@@ -1842,6 +2091,7 @@ function SortableActivity({
   dayIndex,
   dayCount,
   accent,
+  compact = false,
   onMoveDay,
   onUpdate,
   onDelete,
@@ -1850,6 +2100,7 @@ function SortableActivity({
   dayIndex: number;
   dayCount: number;
   accent?: string;
+  compact?: boolean;
   onMoveDay: (toDayIndex: number) => void;
   onUpdate: (patch: Partial<ActivityRow>) => void;
   onDelete: () => void;
@@ -1857,6 +2108,7 @@ function SortableActivity({
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({ id: activity.id });
   const [dragReady, setDragReady] = useState(false);
+  const [open, setOpen] = useState(false);
   useEffect(() => {
     setDragReady(true);
   }, []);
@@ -1867,6 +2119,121 @@ function SortableActivity({
     borderLeftColor: accent || "#0400FF",
   };
   const endsAt = displayEnd(activity);
+  const transitMode = transitModeFromActivity(activity);
+  const timeLabel = activity.start_time?.slice(0, 5) || "—";
+  const placeCue = activity.address?.split(",")[0]?.trim();
+
+  if (compact) {
+    return (
+      <li ref={setNodeRef} style={style} className="list-none">
+        <div
+          className={`group flex items-center gap-2 py-1.5 ${
+            activity.completed ? "opacity-60" : ""
+          }`}
+        >
+          <button
+            type="button"
+            className="cursor-grab shrink-0 text-[10px] tracking-widest text-[#C5CAE5] hover:text-[#9299B5]"
+            {...(dragReady ? attributes : {})}
+            {...(dragReady ? listeners : {})}
+            aria-label="Drag to reorder"
+          >
+            ⋮⋮
+          </button>
+          <span
+            className="h-1.5 w-1.5 shrink-0 rounded-full"
+            style={{ background: accent || "#0400FF" }}
+            aria-hidden
+          />
+          <button
+            type="button"
+            className="min-w-0 flex-1 text-left"
+            onClick={() => setOpen((v) => !v)}
+          >
+            <p
+              className={`truncate text-[13px] leading-snug text-[#080B3A] ${
+                activity.completed ? "line-through" : ""
+              }`}
+            >
+              <span className="tabular-nums font-medium text-[#6B7280]">
+                {timeLabel}
+              </span>
+              <span className="mx-1.5 text-[#C5CAE5]">·</span>
+              <span className="font-semibold">{activity.name}</span>
+              {placeCue ? (
+                <>
+                  <span className="mx-1.5 text-[#C5CAE5]">·</span>
+                  <span className="font-normal text-[#9299B5]">{placeCue}</span>
+                </>
+              ) : null}
+            </p>
+          </button>
+          {transitMode ? <TransitModeChip mode={transitMode} /> : null}
+        </div>
+        {open ? (
+          <div className="mb-2 ml-6 rounded-[10px] border border-[#E1E5F0] bg-[#FAFBFF] px-3 py-2">
+            {endsAt ? (
+              <p className="text-[11px] text-[#6B7280]">Until {endsAt}</p>
+            ) : null}
+            {activity.planning_note ? (
+              <p className="mt-1 text-[11px] text-[#6B7280]">
+                {activity.planning_note}
+              </p>
+            ) : null}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <input
+                type="time"
+                aria-label="Start time"
+                className="rounded-[8px] border border-[#D1D7E5] bg-white px-2 py-1 text-xs"
+                value={activity.start_time?.slice(0, 5) ?? ""}
+                onChange={(e) =>
+                  onUpdate({ start_time: `${e.target.value}:00` })
+                }
+              />
+              <input
+                type="number"
+                min={15}
+                aria-label="Duration in minutes"
+                className="w-16 rounded-[8px] border border-[#D1D7E5] bg-white px-2 py-1 text-xs"
+                value={activity.duration_minutes ?? 60}
+                onChange={(e) =>
+                  onUpdate({ duration_minutes: Number(e.target.value) })
+                }
+              />
+              <button
+                type="button"
+                className="rounded-full bg-[#F5F7FF] px-2.5 py-1 text-[11px] font-semibold text-[#0400FF]"
+                onClick={() => onUpdate({ completed: !activity.completed })}
+              >
+                {activity.completed ? "Undo" : "Done"}
+              </button>
+              <button
+                type="button"
+                className="rounded-full px-2.5 py-1 text-[11px] font-semibold text-[#DC2626]"
+                onClick={onDelete}
+              >
+                Remove
+              </button>
+              {dayCount > 1 ? (
+                <select
+                  aria-label="Move to day"
+                  className="rounded-[8px] border border-[#D1D7E5] bg-white px-2 py-1 text-[11px]"
+                  value={dayIndex}
+                  onChange={(e) => onMoveDay(Number(e.target.value))}
+                >
+                  {Array.from({ length: dayCount }, (_, i) => (
+                    <option key={i} value={i}>
+                      Day {i + 1}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+      </li>
+    );
+  }
 
   return (
     <li
@@ -1888,21 +2255,18 @@ function SortableActivity({
             ⋮⋮
           </button>
           <span className="text-[15px] font-semibold leading-none text-[#080B3A]">
-            {activity.start_time?.slice(0, 5) || "—"}
+            {timeLabel}
           </span>
           <span className="text-[10px] text-[#6B7280]">
             {activity.duration_minutes ?? 60} min
           </span>
         </div>
         <div className="min-w-0 flex-1 px-3.5 py-3">
-          {(() => {
-            const transitMode = transitModeFromActivity(activity);
-            return transitMode ? (
-              <div className="mb-1.5">
-                <TransitModeChip mode={transitMode} />
-              </div>
-            ) : null;
-          })()}
+          {transitMode ? (
+            <div className="mb-1.5">
+              <TransitModeChip mode={transitMode} />
+            </div>
+          ) : null}
           <div className="flex items-start justify-between gap-2">
             <p
               className={`text-[15px] font-semibold leading-snug text-[#080B3A] ${

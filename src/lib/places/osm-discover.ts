@@ -32,7 +32,7 @@ const CATEGORY_FILTERS: Record<
     key: "amenity",
     values: ["theatre", "cinema", "nightclub", "arts_centre"],
   },
-  other: { key: "tourism", values: ["yes"] },
+  other: { key: "tourism", values: ["yes", "theme_park"] },
 };
 
 function metersToDeg(lat: number, meters: number) {
@@ -58,8 +58,28 @@ function categorize(tags: Record<string, string>): PlaceCategory {
     const v = tags[spec.key];
     if (v && spec.values.includes(v)) return cat;
   }
+  if (tags.tourism === "theme_park" || tags.attraction === "theme_park") {
+    return "attraction";
+  }
   if (tags.tourism) return "attraction";
   return "other";
+}
+
+function isLowValueOsmName(name: string, tags: Record<string, string>): boolean {
+  if (/^(区|市|町|村)$/.test(name) || /区$/.test(name) && name.length <= 4) {
+    return true;
+  }
+  if (
+    tags.boundary === "administrative" ||
+    tags.place === "suburb" ||
+    tags.place === "neighbourhood" ||
+    tags.office === "government" ||
+    tags.amenity === "townhall"
+  ) {
+    return true;
+  }
+  if (/省$|庁$|ministry|prefectur|ward office/i.test(name)) return true;
+  return false;
 }
 
 function buildAddress(tags: Record<string, string>): string | null {
@@ -96,6 +116,7 @@ function buildQuery(input: {
           "viewpoint",
           "restaurant",
           "cafe",
+          "other",
         ] as PlaceCategory[]);
 
   const selectors: string[] = [];
@@ -105,8 +126,13 @@ function buildQuery(input: {
     for (const val of spec.values) {
       selectors.push(`node["${spec.key}"="${val}"](${bbox});`);
       selectors.push(`way["${spec.key}"="${val}"](${bbox});`);
+      selectors.push(`relation["${spec.key}"="${val}"](${bbox});`);
     }
   }
+  // Theme parks are often tagged only as tourism=theme_park.
+  selectors.push(`node["tourism"="theme_park"](${bbox});`);
+  selectors.push(`way["tourism"="theme_park"](${bbox});`);
+  selectors.push(`relation["tourism"="theme_park"](${bbox});`);
 
   // Cap Overpass work — prototype-scale only
   const body = `
@@ -178,6 +204,7 @@ export async function discoverPlacesFromOsm(input: {
         const tags = el.tags ?? {};
         const name = tags.name?.trim();
         if (!name || /^\d+$/.test(name) || name.length < 2) continue;
+        if (isLowValueOsmName(name, tags)) continue;
         const lat = el.lat ?? el.center?.lat;
         const lng = el.lon ?? el.center?.lon;
         if (lat == null || lng == null) continue;

@@ -24,6 +24,8 @@ export interface MapPin {
   kind?: "stop" | "city";
   /** Hex color for the pin marker. */
   color?: string;
+  /** Trip day index — polylines never connect across days. */
+  dayIndex?: number;
 }
 
 export type HotelMapPin = {
@@ -227,10 +229,20 @@ export function TripMap({
         bounds.extend([p.lat, p.lng]);
       });
       if (connect && pins.length > 1 && pins.every((p) => p.kind !== "city")) {
-        L.polyline(
-          pins.map((p) => [p.lat, p.lng] as [number, number]),
-          { color: pins[0]?.color || "#1616C9", weight: 4 },
-        ).addTo(map);
+        const byDay = new Map<number, typeof pins>();
+        pins.forEach((p, i) => {
+          const key = p.dayIndex ?? i;
+          const list = byDay.get(key) ?? [];
+          list.push(p);
+          byDay.set(key, list);
+        });
+        for (const group of byDay.values()) {
+          if (group.length < 2) continue;
+          L.polyline(
+            group.map((p) => [p.lat, p.lng] as [number, number]),
+            { color: group[0]?.color || "#1616C9", weight: 4, opacity: 0.85 },
+          ).addTo(map);
+        }
       }
       let framed = 0;
       let framing = false;
@@ -410,7 +422,7 @@ export function TripMap({
             : "";
         const marker = L.marker([pin.lat, pin.lng], { icon, zIndexOffset: 50 });
         marker.bindPopup(
-          `<strong>${escapeHtml(pin.name)}</strong><br/>${escapeHtml(pin.propertyType.replaceAll("_", " "))}${pin.starRating != null ? ` · ${pin.starRating}★` : ""}${pin.address ? `<br/>${escapeHtml(pin.address)}` : ""}${pin.phone ? `<br/>${escapeHtml(pin.phone)}` : ""}${site}<br/><span style="color:#6B7280">© OpenStreetMap contributors</span>`,
+          `<strong>${escapeHtml(pin.name)}</strong><br/>${escapeHtml(pin.propertyType.replaceAll("_", " "))}${pin.starRating != null ? ` · ${pin.starRating}★` : ""}${pin.address ? `<br/>${escapeHtml(pin.address)}` : ""}${pin.phone ? `<br/>${escapeHtml(pin.phone)}` : ""}${site}<br/><span style="color:#6B7280">Listing from public map data</span>`,
         );
         marker.on("click", () => onHotelRef.current?.(pin));
         marker.addTo(group);
@@ -478,8 +490,10 @@ export function TripMap({
       {overlay}
       <span className="pointer-events-none absolute bottom-2 left-2 z-[400] rounded bg-white/90 px-2 py-0.5 text-[10px] text-[#6B7280] shadow">
         {usingGoogle ? "Google hybrid" : "Satellite + labels"}
-        {pins.some((pin) => pin.kind === "city") ? " · City centers © GeoNames" : ""}
-        {hotelPins.length ? " · Hotels © OpenStreetMap" : ""}
+        {pins.some((pin) => pin.kind === "city")
+          ? " · City centers from public city data"
+          : ""}
+        {hotelPins.length ? " · Hotels from public map data" : ""}
       </span>
     </div>
   );

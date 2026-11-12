@@ -100,11 +100,11 @@ describe("travel intelligence learning", () => {
 });
 
 describe("pro list prices and limits", () => {
-  it("centralizes Free/Pro prices and limits", () => {
+  it("centralizes Free/Plus prices and limits", () => {
     expect(PRO_PRICE_USD).toBe(5.99);
-    expect(PRO_PRICE_ANNUAL_USD).toBe(49.99);
+    expect(PRO_PRICE_ANNUAL_USD).toBe(39.99);
     expect(LIST_PRICES.proMonthlyUsd).toBe(5.99);
-    expect(LIST_PRICES.proAnnualUsd).toBe(49.99);
+    expect(LIST_PRICES.proAnnualUsd).toBe(39.99);
     expect(PLAN_LIMITS.free.generate).toBe(true);
     expect(PLAN_LIMITS.pro.generate).toBe(true);
     expect(PLAN_LIMITS.free.wishlistCollections).toBe(5);

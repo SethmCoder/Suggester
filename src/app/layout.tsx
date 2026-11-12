@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
   title: "Waypoint — AI Travel Itinerary Planner",
-  description: "Personalized, geographically optimized travel itineraries",
+  description: "Personalized travel itineraries and day plans",
 };
 
 export default function RootLayout({

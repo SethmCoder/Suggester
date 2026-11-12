@@ -414,7 +414,7 @@ export function LocalExplorer() {
                   }}
                   className="rounded-full border border-[#D7DEFF] px-3 py-1 text-xs font-medium text-[#0400FF]"
                 >
-                  Save to Wishlist
+                  Save to Collections
                 </button>
               </div>
             </article>

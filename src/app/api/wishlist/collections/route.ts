@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     if ((count ?? 0) >= PLAN_LIMITS.free.wishlistCollections) {
       return NextResponse.json(
         {
-          error: `Free includes ${PLAN_LIMITS.free.wishlistCollections} Wishlist collections. Upgrade to Pro for more.`,
+          error: `Free includes ${PLAN_LIMITS.free.wishlistCollections} Collections. Upgrade to Plus for more.`,
           code: "plan_limit",
         },
         { status: 402 },

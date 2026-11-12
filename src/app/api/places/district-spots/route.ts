@@ -19,8 +19,8 @@ export async function GET(req: Request) {
     return NextResponse.json({
       spots,
       notice: spots.length
-        ? "These places are from OpenStreetMap. Map data © OpenStreetMap contributors."
-        : `No OpenStreetMap places were found near ${name} for this trip.`,
+        ? "Nearby places from public map data."
+        : `We couldn't find nearby listed places near ${name} for this trip.`,
     });
   } catch (e) {
     return NextResponse.json(

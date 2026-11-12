@@ -221,8 +221,8 @@ export function scoreDestination(
     sources: destination.sources,
     population,
     populationNote: population
-      ? `Population ${population.toLocaleString()} from GeoNames city data.`
-      : "Population is not in the city data for this match.",
+      ? `Metro population about ${population.toLocaleString()} (public city data).`
+      : "Population estimate unavailable for this match.",
   };
 }
 

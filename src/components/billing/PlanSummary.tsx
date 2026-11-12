@@ -8,7 +8,7 @@ import Link from "next/link";
 
 function label(snapshot: BillingSnapshot) {
   if (snapshot.plan === "pro") {
-    return "Pro · unlimited trips · full planner.";
+    return "Plus · unlimited trips · full planner.";
   }
   return `Free · ${snapshot.used} of ${snapshot.limit} trips · standard planner.`;
 }
@@ -39,7 +39,7 @@ export function PlanSummary({ tone = "dark" }: { tone?: "dark" | "light" }) {
     <p className={`text-sm ${light ? "text-[#C5CAE5]" : "text-[#6B7280]"}`}>
       {text}{" "}
       <Link
-        href="/settings"
+        href="/pricing"
         className={`inline-flex items-center gap-1 font-semibold underline ${light ? "text-white" : "text-[#0400FF]"}`}
       >
         Manage billing

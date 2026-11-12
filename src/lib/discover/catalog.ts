@@ -22,7 +22,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Higher relative costs", "Can feel crowded in core districts"],
     lesserKnown: false,
     similarTo: ["kyoto", "seoul", "osaka"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "kyoto",
@@ -40,7 +40,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Popular sites can be busy", "Some hills and walking"],
     lesserKnown: false,
     similarTo: ["kanazawa", "nara", "seoul"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "kanazawa",
@@ -58,7 +58,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Fewer international nonstop flights", "Smaller nightlife scene"],
     lesserKnown: true,
     similarTo: ["kyoto", "takayama"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "osaka",
@@ -76,7 +76,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Industrial feel in parts of the city"],
     lesserKnown: false,
     similarTo: ["tokyo", "kyoto"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "rome",
@@ -94,7 +94,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Summer heat and crowds", "Pickpocket risk in tourist zones"],
     lesserKnown: false,
     similarTo: ["florence", "athens", "barcelona"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "florence",
@@ -112,7 +112,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Museum tickets sell out in peak season"],
     lesserKnown: false,
     similarTo: ["rome", "siena"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "barcelona",
@@ -130,7 +130,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Crowds in peak months", "Tourist-targeted theft in busy areas"],
     lesserKnown: false,
     similarTo: ["valencia", "lisbon", "rome"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "lisbon",
@@ -148,7 +148,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Steep hills", "Popular viewpoints get busy"],
     lesserKnown: false,
     similarTo: ["porto", "barcelona"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "porto",
@@ -166,7 +166,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Rainier shoulder seasons"],
     lesserKnown: true,
     similarTo: ["lisbon"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "paris",
@@ -184,7 +184,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Higher relative costs", "Crowds at headline museums"],
     lesserKnown: false,
     similarTo: ["london", "vienna"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "london",
@@ -202,7 +202,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Higher relative costs", "Variable weather year-round"],
     lesserKnown: false,
     similarTo: ["paris", "edinburgh"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "edinburgh",
@@ -220,7 +220,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Cooler climate", "Festival months are packed"],
     lesserKnown: false,
     similarTo: ["london", "dublin"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "athens",
@@ -238,7 +238,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Hot summers", "Some areas feel busy with coaches"],
     lesserKnown: false,
     similarTo: ["rome", "istanbul"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "istanbul",
@@ -256,7 +256,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Traffic", "Busy tourist corridors"],
     lesserKnown: false,
     similarTo: ["athens", "cairo"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "dubai",
@@ -274,7 +274,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Summer heat is extreme", "Higher relative costs"],
     lesserKnown: false,
     similarTo: ["abu-dhabi", "singapore"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "abu-dhabi",
@@ -292,7 +292,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Limited walkable historic core", "Hot summers"],
     lesserKnown: true,
     similarTo: ["dubai"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "singapore",
@@ -310,7 +310,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Higher relative costs", "Humid year-round"],
     lesserKnown: false,
     similarTo: ["tokyo", "hong-kong"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "seoul",
@@ -328,7 +328,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Air quality can vary", "Crowded central stations"],
     lesserKnown: false,
     similarTo: ["tokyo", "taipei"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "taipei",
@@ -346,7 +346,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Rainy seasons", "Fewer nonstop flights from some regions"],
     lesserKnown: true,
     similarTo: ["seoul", "hong-kong"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "mexico-city",
@@ -364,7 +364,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Altitude adjustment", "Traffic between neighborhoods"],
     lesserKnown: false,
     similarTo: ["lima", "bogota"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "lima",
@@ -382,7 +382,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Grey coastal winters", "Spread-out districts"],
     lesserKnown: true,
     similarTo: ["mexico-city"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "cape-town",
@@ -400,7 +400,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Need local safety guidance", "Wind can affect outdoor plans"],
     lesserKnown: false,
     similarTo: ["sydney"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "marrakesh",
@@ -418,7 +418,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Can feel intense for first-time visitors", "Summer heat"],
     lesserKnown: false,
     similarTo: ["istanbul"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "sydney",
@@ -436,7 +436,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Long travel time from Europe/US", "Higher relative costs"],
     lesserKnown: false,
     similarTo: ["melbourne", "auckland"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "melbourne",
@@ -454,7 +454,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Long-haul access", "Changeable weather"],
     lesserKnown: false,
     similarTo: ["sydney"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "vancouver",
@@ -472,7 +472,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Rain in shoulder seasons", "Higher relative costs"],
     lesserKnown: false,
     similarTo: ["seattle", "calgary"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "seattle",
@@ -490,7 +490,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Grey winters", "Hills"],
     lesserKnown: false,
     similarTo: ["vancouver", "portland"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "new-york",
@@ -508,7 +508,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Higher relative costs", "Crowded midtown"],
     lesserKnown: false,
     similarTo: ["london", "chicago"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "chicago",
@@ -526,7 +526,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Cold winters", "Wind along the lakefront"],
     lesserKnown: false,
     similarTo: ["new-york", "toronto"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "montreal",
@@ -544,7 +544,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Cold winters", "Some attractions seasonal"],
     lesserKnown: true,
     similarTo: ["quebec-city", "boston"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "reykjavik",
@@ -562,7 +562,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Higher relative costs", "Weather changes quickly"],
     lesserKnown: false,
     similarTo: ["bergen"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "bergen",
@@ -580,7 +580,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Rainy climate", "Higher relative costs"],
     lesserKnown: true,
     similarTo: ["reykjavik"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "valencia",
@@ -598,7 +598,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Less international recognition than Barcelona"],
     lesserKnown: true,
     similarTo: ["barcelona", "lisbon"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "krakow",
@@ -616,7 +616,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Cold winters", "Heavy visitor traffic in peak months"],
     lesserKnown: true,
     similarTo: ["prague", "budapest"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "prague",
@@ -634,7 +634,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Crowded bridge and square areas"],
     lesserKnown: false,
     similarTo: ["krakow", "vienna"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "vienna",
@@ -652,7 +652,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Can feel formal/pricey in core districts"],
     lesserKnown: false,
     similarTo: ["budapest", "prague"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "budapest",
@@ -670,7 +670,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Hills on the Buda side", "Variable nightlife quality"],
     lesserKnown: false,
     similarTo: ["vienna", "prague"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "hanoi",
@@ -688,7 +688,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Traffic and air quality in the center", "Hot humid summers"],
     lesserKnown: true,
     similarTo: ["tokyo", "osaka"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
   {
     id: "oaxaca",
@@ -706,7 +706,7 @@ export const DESTINATION_CATALOG: DestinationRecord[] = [
     disadvantages: ["Limited nonstop long-haul flights", "Uneven sidewalks in the center"],
     lesserKnown: true,
     similarTo: ["mexico-city", "lisbon"],
-    sources: ["GeoNames", "OpenStreetMap", "Waypoint destination catalog"],
+    sources: ["Public city data", "Public map data", "Waypoint destination catalog"],
   },
 ];
 

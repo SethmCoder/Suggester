@@ -1,51 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { IconExternalLink } from "@/components/ui/Icons";
 import { formatTripDate } from "@/lib/format-date";
 import { nightsBetween, nightsLabel } from "@/lib/trips/dates";
 
-type SectionId = "overview" | "itinerary" | "explore" | "details";
+export type TripDashTab =
+  | "overview"
+  | "itinerary"
+  | "discover"
+  | "bookings"
+  | "map"
+  | "assistant";
 
-const SECTIONS: {
-  id: SectionId;
-  label: string;
-  items: { href: string; label: string; hash?: string }[];
-}[] = [
-  {
-    id: "overview",
-    label: "Trip Overview",
-    items: [{ href: "", label: "Overview", hash: "overview" }],
-  },
-  {
-    id: "itinerary",
-    label: "Itinerary",
-    items: [
-      { href: "", label: "Daily itinerary", hash: "itinerary" },
-      { href: "", label: "Hotels", hash: "hotels" },
-      { href: "", label: "Transportation", hash: "transit" },
-      { href: "", label: "Budget", hash: "budget" },
-      { href: "", label: "Packing", hash: "packing" },
-    ],
-  },
-  {
-    id: "explore",
-    label: "Explore",
-    items: [
-      { href: "/things", label: "Things to do" },
-      { href: "/explore", label: "Explorer" },
-    ],
-  },
-  {
-    id: "details",
-    label: "Trip Details",
-    items: [
-      { href: "", label: "Flights & bookings", hash: "bookings" },
-      { href: "", label: "Travel notes", hash: "notes" },
-    ],
-  },
+const TABS: { id: TripDashTab; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "itinerary", label: "Itinerary" },
+  { id: "discover", label: "Discover" },
+  { id: "bookings", label: "Bookings" },
+  { id: "map", label: "Map" },
+  { id: "assistant", label: "Trip Assistant" },
 ];
 
 export function TripPlanSidebar({
@@ -55,6 +30,8 @@ export function TripPlanSidebar({
   endDate,
   travelers,
   cities,
+  activeTab,
+  onTabChange,
 }: {
   tripId: string;
   destination: string;
@@ -62,26 +39,24 @@ export function TripPlanSidebar({
   endDate?: string | null;
   travelers?: number | null;
   cities: string[];
+  activeTab?: TripDashTab;
+  onTabChange?: (tab: TripDashTab) => void;
 }) {
   const pathname = usePathname();
-  const search = useSearchParams();
   const [open, setOpen] = useState(true);
-  const [hash, setHash] = useState("");
-  const [expanded, setExpanded] = useState<Record<SectionId, boolean>>({
-    overview: true,
-    itinerary: true,
-    explore: true,
-    details: true,
-  });
+  const [hash, setHash] = useState<TripDashTab>("itinerary");
 
   useEffect(() => {
     function syncHash() {
-      setHash(window.location.hash.replace(/^#/, ""));
+      const raw = window.location.hash.replace(/^#/, "") as TripDashTab;
+      if (TABS.some((t) => t.id === raw)) setHash(raw);
     }
     syncHash();
     window.addEventListener("hashchange", syncHash);
     return () => window.removeEventListener("hashchange", syncHash);
   }, [pathname]);
+
+  const current = activeTab ?? hash;
 
   const nights =
     startDate && endDate
@@ -96,37 +71,14 @@ export function TripPlanSidebar({
 
   const tripBase = `/trips/${tripId}`;
 
-  function sectionLink(item: { href: string; hash?: string }) {
-    if (item.href.startsWith("/")) {
-      const q = new URLSearchParams(search?.toString() ?? "");
-      q.set("trip", tripId);
-      return `${item.href}?${q.toString()}`;
-    }
-    return item.hash ? `${tripBase}#${item.hash}` : tripBase;
-  }
-
-  function isActive(item: { href: string; hash?: string }) {
-    if (item.href.startsWith("/")) {
-      return pathname.startsWith(item.href);
-    }
-    if (item.hash) return hash === item.hash || (!hash && item.hash === "itinerary");
-    return pathname === tripBase;
-  }
-
-  function goToSection(
-    event: React.MouseEvent<HTMLAnchorElement>,
-    item: { href: string; hash?: string },
-  ) {
-    if (item.href.startsWith("/")) return;
-    event.preventDefault();
-    const targetId = item.hash || "overview";
-    const el = document.getElementById(targetId);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-    const next = `${tripBase}#${targetId}`;
+  function selectTab(tab: TripDashTab) {
+    const next = `${tripBase}#${tab}`;
     window.history.replaceState(null, "", next);
-    setHash(targetId);
+    setHash(tab);
+    onTabChange?.(tab);
+    window.dispatchEvent(
+      new CustomEvent("waypoint:trip-section", { detail: { section: tab } }),
+    );
   }
 
   return (
@@ -144,9 +96,9 @@ export function TripPlanSidebar({
         } w-full shrink-0 rounded-[16px] border border-[#E1E5F0] bg-white p-3 shadow-[0_4px_16px_rgba(8,11,58,0.04)] lg:block lg:w-56`}
         data-tour="tour-trip-sidebar"
       >
-        <div id="overview" className="mb-3 border-b border-[#F0F2F8] pb-3">
+        <div className="mb-3 border-b border-[#F0F2F8] pb-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
-            Trip Overview
+            Trip
           </p>
           <p className="mt-1 text-sm font-semibold text-[#080B3A]">{destination}</p>
           {startDate && endDate ? (
@@ -165,55 +117,41 @@ export function TripPlanSidebar({
             </p>
           ) : null}
         </div>
-        <nav className="space-y-2">
-          {SECTIONS.map((section) => (
-            <div key={section.id}>
+        <nav className="space-y-0.5">
+          {TABS.map((tab) => {
+            const active = current === tab.id;
+            return (
               <button
+                key={tab.id}
                 type="button"
-                className="flex w-full items-center justify-between rounded-[8px] px-2 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-[#6B7280] hover:bg-[#F5F7FF]"
-                onClick={() =>
-                  setExpanded((e) => ({ ...e, [section.id]: !e[section.id] }))
-                }
+                onClick={() => selectTab(tab.id)}
+                className={`flex w-full items-center rounded-[8px] px-2.5 py-2 text-left text-sm ${
+                  active
+                    ? "bg-[#0400FF] font-medium text-white"
+                    : "text-[#374151] hover:bg-[#F5F7FF]"
+                }`}
               >
-                {section.label}
-                <span>{expanded[section.id] ? "−" : "+"}</span>
+                {tab.label}
               </button>
-              {expanded[section.id] ? (
-                <ul className="mt-1 space-y-0.5 pl-1">
-                  {section.items.map((item) => {
-                    const href = sectionLink(item);
-                    const active = isActive(item);
-                    const leavesTrip = item.href.startsWith("/");
-                    return (
-                      <li key={`${section.id}-${item.label}`}>
-                        <Link
-                          href={href}
-                          className={`flex items-center justify-between gap-2 rounded-[8px] px-2 py-1.5 text-sm ${
-                            active
-                              ? "bg-[#0400FF] font-medium text-white"
-                              : "text-[#374151] hover:bg-[#F5F7FF]"
-                          }`}
-                          onClick={(event) => goToSection(event, item)}
-                        >
-                          <span>{item.label}</span>
-                          {leavesTrip ? (
-                            <IconExternalLink
-                              size={11}
-                              className={active ? "text-white/80" : "text-[#9299B5]"}
-                              aria-hidden
-                            />
-                          ) : null}
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : null}
-            </div>
-          ))}
+            );
+          })}
         </nav>
+        <div className="mt-4 space-y-1 border-t border-[#F0F2F8] pt-3">
+          <Link
+            href="/discover"
+            className="block rounded-[8px] px-2.5 py-1.5 text-xs font-medium text-[#0400FF] hover:bg-[#F5F7FF]"
+          >
+            Destination Discover
+          </Link>
+          <Link
+            href="/future-plans"
+            className="block rounded-[8px] px-2.5 py-1.5 text-xs font-medium text-[#6B7280] hover:bg-[#F5F7FF]"
+          >
+            Future Trips
+          </Link>
+        </div>
         <p className="mt-4 text-[11px] leading-snug text-[#9CA3AF]">
-          Switching sections keeps your itinerary. Only Delete trip removes data.
+          Switching tabs keeps your itinerary. Only Delete trip removes data.
         </p>
       </aside>
     </>

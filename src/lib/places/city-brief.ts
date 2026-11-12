@@ -22,7 +22,7 @@ export async function getCityBrief(name: string): Promise<CityBrief> {
   const city = resolveGeonameCity(trimmed);
   const population = city && city.population > 0 ? city.population : null;
   const fact = population
-    ? `Population from GeoNames: ${population.toLocaleString("en-US")}. Country code: ${city?.countryCode || "unknown"}.`
+    ? `Metro population about ${population.toLocaleString("en-US")}. Country code: ${city?.countryCode || "unknown"}.`
     : "Population is not in the city data.";
   const wiki = await lookupWikipedia(city?.name || trimmed).catch(() => null);
   const written = cleanCityParagraph(

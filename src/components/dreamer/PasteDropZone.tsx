@@ -58,11 +58,16 @@ export function PasteDropZone({
         };
         if (!res.ok) throw new Error(data.error ?? "Paste failed");
         const storedText = data.text || payload.text || payload.html || "";
-        if (data.booking?.id?.startsWith("local-") && storedText) {
-          sessionStorage.setItem(
-            `waypoint:dreamer-email:${data.booking.id}`,
-            storedText,
-          );
+        // Raw bodies stay on-device; cloud inbound_emails omits text/html.
+        if (data.booking?.id && storedText) {
+          try {
+            sessionStorage.setItem(
+              `waypoint:dreamer-email:${data.booking.id}`,
+              storedText,
+            );
+          } catch {
+            /* quota / private mode */
+          }
         }
         setText("");
         setPreviewUrl(null);

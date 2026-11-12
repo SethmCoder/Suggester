@@ -77,7 +77,7 @@ export function DemoCheckout({
               Checkout preview
             </p>
             <p className="text-xs text-[#6B7280]">
-              Demo only — no card is charged, Pro is not turned on.
+              Demo only — no card is charged, Plus is not turned on.
             </p>
           </div>
           <button
@@ -221,7 +221,7 @@ export function DemoCheckout({
                 </p>
                 <p className="mt-2 text-sm text-[#6B7280]">
                   In production, Stripe Checkout would confirm here and unlock
-                  Pro on the account. This preview did not charge a card or
+                  Plus on the account. This preview did not charge a card or
                   change your plan.
                 </p>
                 <p className="mt-3 text-sm font-medium text-[#080B3A]">

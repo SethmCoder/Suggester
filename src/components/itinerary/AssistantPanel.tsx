@@ -8,13 +8,19 @@ import type { AssistantPatch } from "@/lib/ai/patch";
 export function AssistantPanel({
   tripId,
   isDemo = false,
+  forceOpen = false,
   onDemoApply,
 }: {
   tripId: string;
   isDemo?: boolean;
+  forceOpen?: boolean;
   onDemoApply?: (patch: AssistantPatch) => void;
 }) {
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (forceOpen) setOpen(true);
+  }, [forceOpen]);
 
   // Open during the guided tour assistant step
   useEffect(() => {

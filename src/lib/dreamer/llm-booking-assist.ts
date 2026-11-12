@@ -3,7 +3,13 @@ import { redactSecretsForLlm } from "@/lib/dreamer/redact-secrets";
 import type { ParsedBooking } from "@/lib/dreamer/types";
 
 function asKind(value: unknown): ParsedBooking["kind"] {
-  if (value === "flight" || value === "hotel" || value === "rail" || value === "other") {
+  if (
+    value === "flight" ||
+    value === "hotel" ||
+    value === "rail" ||
+    value === "restaurant" ||
+    value === "other"
+  ) {
     return value;
   }
   return "other";
@@ -31,8 +37,11 @@ export async function assistParseBookingFromText(input: {
       {
         role: "system",
         content: `Extract travel booking fields from a confirmation email (any language). Return JSON only:
-{"kind":"flight|hotel|rail|other","fromIata":"AAA|null","toIata":"BBB|null","startDate":"YYYY-MM-DD|null","endDate":"YYYY-MM-DD|null","hotelName":"string|null","flightNumber":"XX123|null","confirmation":"PNR|null","cities":["City"],"cabin":"economy|business|first|null","departureLocal":"HH:MM|null","arrivalLocal":"HH:MM|null","nights":number|null}
-Rules: never invent PNRs, card numbers, or passwords. Omit unreadable fields as null. Prefer IATA codes when present.`,
+{"kind":"flight|hotel|rail|restaurant|other","fromIata":"AAA|null","toIata":"BBB|null","startDate":"YYYY-MM-DD|null","endDate":"YYYY-MM-DD|null","hotelName":"string|null","restaurantName":"string|null","reservationLocal":"HH:MM|null","flightNumber":"XX123|null","confirmation":"PNR|null","cities":["City"],"cabin":"economy|business|first|null","departureLocal":"HH:MM|null","arrivalLocal":"HH:MM|null","nights":number|null}
+Rules:
+- Classify hotels/ryokan/Airbnb/Booking.com lodging as kind=hotel with hotelName.
+- Classify OpenTable/Resy/restaurant table bookings as kind=restaurant with restaurantName + reservationLocal when present.
+- Never invent PNRs, card numbers, or passwords. Omit unreadable fields as null. Prefer IATA codes when present.`,
       },
       { role: "user", content: safe },
     ],
@@ -61,6 +70,14 @@ Rules: never invent PNRs, card numbers, or passwords. Omit unreadable fields as 
           : null,
       hotelName:
         typeof parsed.hotelName === "string" ? parsed.hotelName.trim() : null,
+      restaurantName:
+        typeof parsed.restaurantName === "string"
+          ? parsed.restaurantName.trim()
+          : null,
+      reservationLocal:
+        typeof parsed.reservationLocal === "string"
+          ? parsed.reservationLocal
+          : null,
       flightNumber:
         typeof parsed.flightNumber === "string"
           ? parsed.flightNumber.replace(/\s+/g, "").toUpperCase()
@@ -88,6 +105,7 @@ export function needsLlmBookingAssist(parsed: ParsedBooking): boolean {
   if (!parsed.startDate) return true;
   if (parsed.kind === "flight" && (!parsed.fromIata || !parsed.toIata)) return true;
   if (parsed.kind === "hotel" && !parsed.hotelName) return true;
+  if (parsed.kind === "restaurant" && !parsed.restaurantName) return true;
   return false;
 }
 
@@ -111,6 +129,8 @@ export function mergeBookingParse(
     startDate: base.startDate ?? assist.startDate ?? null,
     endDate: base.endDate ?? assist.endDate ?? null,
     hotelName: base.hotelName ?? assist.hotelName ?? null,
+    restaurantName: base.restaurantName ?? assist.restaurantName ?? null,
+    reservationLocal: base.reservationLocal ?? assist.reservationLocal ?? null,
     vendor: base.vendor ?? assist.vendor ?? null,
     nights: base.nights ?? assist.nights ?? null,
     flightNumber: base.flightNumber ?? assist.flightNumber ?? null,

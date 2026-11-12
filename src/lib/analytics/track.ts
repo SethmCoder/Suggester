@@ -28,9 +28,7 @@ export function isAnalyticsAdmin(email: string | null | undefined): boolean {
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
-  if (!allowed.length) {
-    // Solo-dev default: any signed-in user can see funnel until admins are set.
-    return true;
-  }
+  // Fail closed: unset/empty allow-list denies everyone.
+  if (!allowed.length) return false;
   return allowed.includes(email.trim().toLowerCase());
 }

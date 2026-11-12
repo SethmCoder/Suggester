@@ -54,7 +54,7 @@ export async function POST(req: Request) {
       {
         error: pro
           ? `Compare up to ${compareCap} destinations.`
-          : `Free compares up to ${compareCap} destinations. Pro compares up to ${PLAN_LIMITS.pro.compareDestinations}.`,
+          : `Free compares up to ${compareCap} destinations. Plus compares up to ${PLAN_LIMITS.pro.compareDestinations}.`,
         code: "plan_limit",
       },
       { status: 402 },

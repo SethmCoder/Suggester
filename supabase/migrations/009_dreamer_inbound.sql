@@ -1,5 +1,10 @@
 -- Dreamer inbound mailbox, raw emails, and TripIt-like booking cards.
 -- Extends future_trips; no destructive changes to trips.
+--
+-- Note (app policy): paste + inbound API routes no longer persist text_body /
+-- html_body (store null). Columns remain for schema compatibility; parsed
+-- dreamer_bookings metadata is what lives in the cloud. Clients may keep the
+-- raw body in sessionStorage key waypoint:dreamer-email:<bookingId>.
 
 create table if not exists dreamer_mailboxes (
   id uuid primary key default gen_random_uuid(),

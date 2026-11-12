@@ -13,5 +13,5 @@ export default async function PlanRedirectPage({
     else if (Array.isArray(value) && value[0]) q.set(key, value[0]);
   }
   const qs = q.toString();
-  redirect(qs ? `/settings?${qs}` : "/settings");
+  redirect(qs ? `/pricing?${qs}` : "/pricing");
 }

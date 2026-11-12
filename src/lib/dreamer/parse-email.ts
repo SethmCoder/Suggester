@@ -201,9 +201,17 @@ export function parseBookingFromEmailText(input: {
   ]);
   const hotelMatch =
     blob.match(
-      /\b(?:stay at|reservation at|hotel:)\s+([A-Z][A-Za-z0-9 &'.,-]{2,60})/i,
+      /\b(?:property|accommodation|lodging|宿泊先|ホテル)\s*[:\-]\s*([^\n,]{3,60})/i,
     ) ||
-    blob.match(/\bat\s+(Park Hyatt[^\n,]{0,40}|[A-Z][A-Za-z0-9 &'.,-]{2,40}\s+Hotel)\b/);
+    blob.match(
+      /\b(?:stay at|reservation at|checking in at|hotel(?:\s+name)?)\s*[:\-]\s*([A-Z][A-Za-z0-9 &'.,-]{2,60})/i,
+    ) ||
+    blob.match(
+      /\bat\s+(Park Hyatt[^\n,]{0,40}|[A-Z][A-Za-z0-9 &'.,-]{2,40}\s+(?:Hotel|Inn|Resort|Ryokan|Hostel|Suites?))\b/,
+    ) ||
+    blob.match(
+      /\b(?:booking\.com|hotels\.com|expedia|agoda|airbnb)\b[\s\S]{0,160}?(?:property|listing)\s*[:\-]\s*([^\n,]{3,60})/i,
+    );
   let hotelName = hotelMatch?.[1]?.trim() ?? null;
   if (hotelName) {
     hotelName = hotelName.replace(/\s+(is|on|for|confirmed|check).*$/i, "").trim();
@@ -211,6 +219,36 @@ export function parseBookingFromEmailText(input: {
       hotelName = null;
     }
   }
+
+  const restaurantMatch =
+    blob.match(
+      /\b(?:reservation\s+at|table\s+at|dining at)\s+([A-Z][A-Za-z0-9 &'.,-]{2,60})/i,
+    ) ||
+    blob.match(
+      /\brestaurant\s*[:\-]\s*([A-Z][A-Za-z0-9 &'.,-]{2,60})/i,
+    ) ||
+    blob.match(
+      /\b(?:opentable|resy|tock)\b[\s\S]{0,100}?(?:reservation\s+at|restaurant\s*[:\-])\s*([A-Z][A-Za-z0-9 &'.,-]{2,50})/i,
+    );
+  let restaurantName = restaurantMatch?.[1]?.trim() ?? null;
+  if (restaurantName) {
+    restaurantName = restaurantName
+      .replace(/\s+(is|on|for|confirmed|party|guests?).*$/i, "")
+      .trim();
+    const first = restaurantName.toLowerCase().split(/\s+/)[0] || "";
+    if (
+      HOTEL_STOP.has(first) ||
+      first === "reservation" ||
+      first === "table" ||
+      first === "restaurant"
+    ) {
+      restaurantName = null;
+    }
+  }
+  const reservationLocal = extractLabeledTime(
+    blob,
+    /(?:reservation|table|dining|seat(?:ing)?)(?:\s+time)?/,
+  );
 
   // Only take an explicitly labeled flight number — never guess from PNR tokens.
   const flightMatch = blob.match(
@@ -241,10 +279,22 @@ export function parseBookingFromEmailText(input: {
   if (/dubai|dxb/i.test(blob)) cities.add("Dubai");
   if (/osaka|kix/i.test(blob)) cities.add("Osaka");
 
+  const lodgingCue =
+    Boolean(hotelName) ||
+    /\b(hotel|hostel|ryokan|resort|airbnb|booking\.com|hotels\.com|agoda|check[- ]?in|check[- ]?out|宿泊|ホテル)\b/i.test(
+      blob,
+    );
+  const diningCue =
+    Boolean(restaurantName) ||
+    /\b(restaurant|opentable|resy|tock|dinner reservation|table for|レストラン|予約)\b/i.test(
+      blob,
+    );
+
   let kind: ParsedBooking["kind"] = "other";
   if (fromIata && toIata) kind = "flight";
-  else if (hotelMatch || /\bhotel\b/i.test(blob)) kind = "hotel";
-  else if (/\btrain|rail\b/i.test(blob)) kind = "rail";
+  else if (lodgingCue) kind = "hotel";
+  else if (diningCue) kind = "restaurant";
+  else if (/\btrain|rail|shinkansen|jr\b/i.test(blob)) kind = "rail";
 
   let nights: number | null = null;
   if (startDate && endDate) {
@@ -265,6 +315,8 @@ export function parseBookingFromEmailText(input: {
     startDate,
     endDate,
     hotelName,
+    restaurantName,
+    reservationLocal,
     vendor: null,
     nights,
     flightNumber,

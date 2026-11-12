@@ -254,8 +254,8 @@ export function filterHotels(hotels: HotelRecord[], query: HotelQuery): HotelRec
 export function toPublicHotel(hotel: HotelRecord) {
   return {
     ...hotel,
-    attribution: "© OpenStreetMap contributors",
-    license: "ODbL",
+    attribution: "Public map data",
+    license: "Open data",
     wikidataLicense: hotel.wikidataId ? "CC0" : null,
   };
 }

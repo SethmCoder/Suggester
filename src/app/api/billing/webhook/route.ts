@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { setSubscriptionTier } from "@/lib/billing/access";
+import { grantTripPass } from "@/lib/billing/premium";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getStripe } from "@/lib/billing/stripe";
 
@@ -28,7 +29,23 @@ export async function POST(req: Request) {
     const session = event.data.object as Stripe.Checkout.Session;
     const userId = session.client_reference_id || session.metadata?.userId;
     const customerId = typeof session.customer === "string" ? session.customer : null;
-    if (userId) await setSubscriptionTier(userId, "pro", customerId);
+    const product = session.metadata?.product;
+    const tripId = session.metadata?.tripId;
+    const expiresDate = session.metadata?.expiresDate;
+
+    if (product === "trip_pass" && userId && tripId && expiresDate) {
+      const paymentIntentId =
+        typeof session.payment_intent === "string" ? session.payment_intent : null;
+      await grantTripPass({
+        userId,
+        tripId,
+        expiresAt: expiresDate,
+        checkoutSessionId: session.id,
+        paymentIntentId,
+      });
+    } else if (userId && session.mode === "subscription") {
+      await setSubscriptionTier(userId, "pro", customerId);
+    }
   }
 
   if (

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ShareInviteButton } from "@/components/social/ShareInviteButton";
 import { Button } from "@/components/ui/Button";
-import { LeavePageLink } from "@/components/ui/LeavePageLink";
 import { Label } from "@/components/ui/Input";
 import { BookingEmailModal } from "@/components/dreamer/BookingEmailModal";
 import { PasteDropZone } from "@/components/dreamer/PasteDropZone";
@@ -34,6 +33,15 @@ import {
 } from "@/lib/destination-image";
 import { bookingHasConcreteEvidence } from "@/lib/dreamer/ingest";
 import { materializeFutureTripLocally } from "@/lib/dreamer/materialize-local";
+import {
+  StaySuggestModal,
+  type StaySuggestPayload,
+} from "@/components/itinerary/StaySuggestModal";
+import {
+  DreamerBuildGate,
+  type DreamerBuildAnswers,
+} from "@/components/dreamer/DreamerBuildGate";
+import { nightsBetween } from "@/lib/trips/dates";
 
 type Tab = "bookings" | "plan" | "places";
 
@@ -43,6 +51,11 @@ export function DreamerDetail({ id }: { id: string }) {
   const [bookings, setBookings] = useState<DreamerBooking[]>([]);
   const [suggestions, setSuggestions] = useState<DreamerSuggestion[]>([]);
   const [stayAdvise, setStayAdvise] = useState<DreamerStayAdvise | null>(null);
+  const [stayGate, setStayGate] = useState<{
+    tripId: string;
+    payload: StaySuggestPayload;
+  } | null>(null);
+  const [buildGateOpen, setBuildGateOpen] = useState(false);
   const [places, setPlaces] = useState<
     { name: string; kind: string; note: string }[]
   >([]);
@@ -187,6 +200,41 @@ export function DreamerDetail({ id }: { id: string }) {
     setWishlist(wishlistItemsForFutureTrip(local, listItems()));
   }
 
+  function openStayGate(tripId: string, advise: DreamerStayAdvise | null) {
+    const local = getFutureTrip(id);
+    let suggestedDays = local?.estimatedDurationDays ?? null;
+    if (
+      (suggestedDays == null || suggestedDays <= 0) &&
+      local?.potentialStart &&
+      local?.potentialEnd
+    ) {
+      try {
+        suggestedDays = nightsBetween(local.potentialStart, local.potentialEnd) + 1;
+      } catch {
+        suggestedDays = null;
+      }
+    }
+    const payload: StaySuggestPayload = {
+      events: advise?.events ?? [],
+      stayUntil: advise?.stayUntil ?? null,
+      rationale:
+        advise?.rationale ||
+        `We sketched a calendar from your confirmations for ${titleCasePlace(local?.destination || "this trip")}. Adjust days anytime on the itinerary.`,
+      catalogStayHint: advise?.catalogStayHint,
+      suggestedDays,
+      destination: local?.destination ?? null,
+    };
+    try {
+      sessionStorage.setItem(
+        `waypoint:stay-advise:${tripId}`,
+        JSON.stringify(payload),
+      );
+    } catch {
+      /* ignore */
+    }
+    setStayGate({ tripId, payload });
+  }
+
   const materialize = useCallback(
     async (opts?: { silent?: boolean }) => {
       if (materializing) return;
@@ -196,7 +244,7 @@ export function DreamerDetail({ id }: { id: string }) {
         setMessage(null);
       }
       try {
-        await runStayAdvise();
+        const advise = (await runStayAdvise()) ?? stayAdvise;
         const res = await fetch(`/api/dreamer/${id}/materialize`, {
           method: "POST",
         });
@@ -206,20 +254,7 @@ export function DreamerDetail({ id }: { id: string }) {
             convertedTripId: data.tripId,
             status: "planning",
           });
-          if (stayAdvise?.rationale || stayAdvise?.stayUntil) {
-            try {
-              sessionStorage.setItem(
-                `waypoint:stay-advise:${data.tripId}`,
-                JSON.stringify({
-                  ...stayAdvise,
-                  suggestedDays: trip?.estimatedDurationDays ?? null,
-                }),
-              );
-            } catch {
-              /* ignore */
-            }
-          }
-          router.push(`/trips/${data.tripId}`);
+          openStayGate(data.tripId as string, advise);
           return;
         }
 
@@ -236,7 +271,7 @@ export function DreamerDetail({ id }: { id: string }) {
               convertedTripId: local.tripId,
               status: "planning",
             });
-            router.push(local.redirect);
+            openStayGate(local.tripId, advise);
             return;
           }
           if (!opts?.silent) {
@@ -265,7 +300,7 @@ export function DreamerDetail({ id }: { id: string }) {
         setBusy(false);
       }
     },
-    [id, materializing, runStayAdvise, stayAdvise, trip?.estimatedDurationDays, router],
+    [id, materializing, runStayAdvise, stayAdvise],
   );
 
   useEffect(() => {
@@ -290,8 +325,9 @@ export function DreamerDetail({ id }: { id: string }) {
         const hasEvidence = list.some((b) =>
           bookingHasConcreteEvidence(b.parsed),
         );
+        // Ready to build — open date + vibe gate (never silent-build).
         if (hasEvidence && !local?.convertedTripId) {
-          void materialize({ silent: true });
+          setBuildGateOpen(true);
         }
       }
     });
@@ -392,9 +428,35 @@ export function DreamerDetail({ id }: { id: string }) {
     setTab("plan");
     const evidence = booking && bookingHasConcreteEvidence(booking.parsed);
     if (evidence || result.planShift?.shifted) {
-      void materialize({ silent: true });
+      setBuildGateOpen(true);
     }
   };
+
+  async function confirmBuild(answers: DreamerBuildAnswers) {
+    const prev = getFutureTrip(id);
+    updateFutureTrip(id, {
+      potentialStart: answers.startDate,
+      potentialEnd: answers.endDate,
+      estimatedDurationDays: answers.estimatedDurationDays,
+      preferences: {
+        ...(prev?.preferences ?? {}),
+        prefersHiddenGems: answers.prefersHiddenGems,
+        intensity: answers.intensity,
+        dreamer: {
+          ...((prev?.preferences?.dreamer as Record<string, unknown>) ?? {}),
+          vibe: answers.vibe,
+          idealTripNote: answers.idealTripNote,
+        },
+      },
+      notes: [prev?.notes?.trim() || "", answers.idealTripNote]
+        .filter(Boolean)
+        .join("\n")
+        .trim(),
+    });
+    setTrip(getFutureTrip(id));
+    setBuildGateOpen(false);
+    await materialize();
+  }
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 px-4 py-10 sm:px-6">
@@ -494,7 +556,7 @@ export function DreamerDetail({ id }: { id: string }) {
       <section className="rounded-[18px] border border-[#E1E5F0] bg-white p-5 sm:p-6">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-base font-semibold tracking-tight text-[#080B3A]">
-            Wishlist
+            Collections
           </h2>
           <Link
             href="/wishlist"
@@ -748,21 +810,39 @@ export function DreamerDetail({ id }: { id: string }) {
         <Button
           type="button"
           disabled={busy || waiting || materializing}
-          onClick={() => void materialize()}
+          onClick={() => {
+            if (trip.convertedTripId) {
+              void (async () => {
+                const advise = stayAdvise ?? (await runStayAdvise());
+                openStayGate(trip.convertedTripId as string, advise);
+              })();
+              return;
+            }
+            setBuildGateOpen(true);
+          }}
         >
           {busy || materializing
             ? "Opening calendar…"
             : waiting
               ? "Waiting for first booking"
-              : "Open day-by-day itinerary"}
+              : trip.convertedTripId
+                ? "Open day-by-day itinerary"
+                : "Choose dates & build itinerary"}
         </Button>
         {trip.convertedTripId ? (
-          <LeavePageLink
-            href={`/trips/${trip.convertedTripId}`}
+          <Button
+            type="button"
             variant="secondary"
+            disabled={busy || materializing}
+            onClick={() => {
+              void (async () => {
+                const advise = stayAdvise ?? (await runStayAdvise());
+                openStayGate(trip.convertedTripId as string, advise);
+              })();
+            }}
           >
             Open trip
-          </LeavePageLink>
+          </Button>
         ) : null}
       </div>
       {message ? <p className="text-sm text-[#B91C1C]">{message}</p> : null}
@@ -776,6 +856,32 @@ export function DreamerDetail({ id }: { id: string }) {
           setShowEmail(false);
         }}
         onShowEmail={() => setShowEmail(true)}
+      />
+
+      <DreamerBuildGate
+        open={buildGateOpen}
+        destination={trip.destination}
+        initialStart={trip.potentialStart}
+        initialEnd={trip.potentialEnd}
+        initialDays={trip.estimatedDurationDays}
+        busy={busy || materializing}
+        onCancel={() => setBuildGateOpen(false)}
+        onConfirm={(answers) => void confirmBuild(answers)}
+      />
+
+      <StaySuggestModal
+        open={Boolean(stayGate)}
+        payload={stayGate?.payload ?? null}
+        onConfirm={() => {
+          const next = stayGate?.tripId;
+          setStayGate(null);
+          if (next) router.push(`/trips/${next}`);
+        }}
+        onSkip={() => {
+          const next = stayGate?.tripId;
+          setStayGate(null);
+          if (next) router.push(`/trips/${next}`);
+        }}
       />
     </div>
   );

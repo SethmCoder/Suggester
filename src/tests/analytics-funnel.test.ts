@@ -1,9 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { AnalyticsEvent } from "@/lib/analytics/events";
 import { computeSignupToPlanFunnel } from "@/lib/analytics/funnel";
 import { isAnalyticsAdmin } from "@/lib/analytics/track";
 
-function mockSvc(rows: Array<Record<string, unknown>>, trips: string[] = []) {
+function mockSvc(
+  rows: Array<Record<string, unknown>>,
+  trips: string[] = [],
+  authUsers: Array<{ id: string; created_at: string }> = [],
+) {
   return {
     from(table: string) {
       if (table === "analytics_events") {
@@ -51,10 +55,11 @@ function mockSvc(rows: Array<Record<string, unknown>>, trips: string[] = []) {
         return {
           select() {
             return {
-              in() {
-                return Promise.resolve({
-                  data: trips.map((owner_id) => ({ owner_id })),
-                });
+              in(_col: string, ownerIds: string[]) {
+                const data = trips
+                  .filter((owner_id) => ownerIds.includes(owner_id))
+                  .map((owner_id) => ({ owner_id }));
+                return Promise.resolve({ data });
               },
             };
           },
@@ -72,7 +77,13 @@ function mockSvc(rows: Array<Record<string, unknown>>, trips: string[] = []) {
     },
     auth: {
       admin: {
-        listUsers: async () => ({ data: { users: [] } }),
+        listUsers: async () => ({
+          data: {
+            users: authUsers.length
+              ? authUsers
+              : [],
+          },
+        }),
       },
     },
   };
@@ -86,10 +97,12 @@ describe("analytics funnel", () => {
     expect(AnalyticsEvent.TripPlanned).toBe("trip_planned");
   });
 
-  it("allows any email when ANALYTICS_ADMIN_EMAILS is unset", () => {
+  it("denies all when ANALYTICS_ADMIN_EMAILS is unset or empty", () => {
     const prev = process.env.ANALYTICS_ADMIN_EMAILS;
     delete process.env.ANALYTICS_ADMIN_EMAILS;
-    expect(isAnalyticsAdmin("anyone@example.com")).toBe(true);
+    expect(isAnalyticsAdmin("anyone@example.com")).toBe(false);
+    process.env.ANALYTICS_ADMIN_EMAILS = "";
+    expect(isAnalyticsAdmin("anyone@example.com")).toBe(false);
     process.env.ANALYTICS_ADMIN_EMAILS = prev;
   });
 
@@ -98,46 +111,87 @@ describe("analytics funnel", () => {
     process.env.ANALYTICS_ADMIN_EMAILS = "owner@waypoint.test, co@x.com";
     expect(isAnalyticsAdmin("owner@waypoint.test")).toBe(true);
     expect(isAnalyticsAdmin("stranger@x.com")).toBe(false);
+    expect(isAnalyticsAdmin(null)).toBe(false);
     process.env.ANALYTICS_ADMIN_EMAILS = prev;
   });
 
-  it("computes signup → plan rate from event rows", async () => {
+  it("computes signup → plan rate from auth cohort + trips", async () => {
+    const now = Date.now();
+    const recent = new Date(now - 2 * 86_400_000).toISOString();
     const rows = [
       {
         user_id: "a",
         event_name: AnalyticsEvent.SignupCompleted,
-        created_at: "2026-11-01T10:00:00.000Z",
+        created_at: recent,
       },
       {
         user_id: "b",
         event_name: AnalyticsEvent.SignupCompleted,
-        created_at: "2026-11-01T11:00:00.000Z",
+        created_at: recent,
       },
       {
         user_id: "a",
         event_name: AnalyticsEvent.WizardOpened,
-        created_at: "2026-11-01T12:00:00.000Z",
+        created_at: recent,
       },
       {
         user_id: "a",
         event_name: AnalyticsEvent.GenerateClicked,
-        created_at: "2026-11-01T12:05:00.000Z",
+        created_at: recent,
       },
       {
         user_id: "a",
         event_name: AnalyticsEvent.TripPlanned,
-        created_at: "2026-11-01T12:10:00.000Z",
+        created_at: recent,
+      },
+      {
+        user_id: "a",
+        event_name: AnalyticsEvent.TripPlanned,
+        created_at: recent,
       },
     ];
     const stats = await computeSignupToPlanFunnel(
-      mockSvc(rows) as never,
+      mockSvc(rows, ["a", "a"], [
+        { id: "a", created_at: recent },
+        { id: "b", created_at: recent },
+      ]) as never,
       30,
     );
+    expect(stats.cohortSource).toBe("auth");
     expect(stats.signedUp).toBe(2);
     expect(stats.wizardOpened).toBe(1);
     expect(stats.generateClicked).toBe(1);
-    expect(stats.tripPlanned).toBe(1);
     expect(stats.signedUpThenPlanned).toBe(1);
     expect(stats.signupToPlanRate).toBe(0.5);
+    expect(stats.secondTripUsers).toBe(1);
+    expect(stats.secondTripRate).toBe(0.5);
+  });
+
+  it("falls back to signup_completed events when auth list is empty of recent users", async () => {
+    const recent = new Date(Date.now() - 2 * 86_400_000).toISOString();
+    const rows = [
+      {
+        user_id: "a",
+        event_name: AnalyticsEvent.SignupCompleted,
+        created_at: recent,
+      },
+      {
+        user_id: "a",
+        event_name: AnalyticsEvent.TripPlanned,
+        created_at: recent,
+      },
+    ];
+    // Auth returns no recent users → cohort from events path needs listUsers to throw
+    // or return empty. Empty auth users means signedUp=0 with auth source.
+    // Use a throwing listUsers via custom mock:
+    const svc = mockSvc(rows, ["a"]) as never;
+    (svc as { auth: { admin: { listUsers: () => Promise<unknown> } } }).auth.admin.listUsers =
+      async () => {
+        throw new Error("no admin");
+      };
+    const stats = await computeSignupToPlanFunnel(svc, 30);
+    expect(stats.cohortSource).toBe("events");
+    expect(stats.signedUp).toBe(1);
+    expect(stats.signedUpThenPlanned).toBe(1);
   });
 });

@@ -11,10 +11,10 @@ import { DemoSessionGuard } from "@/components/demo/DemoSessionGuard";
 import { FirstRunTour } from "@/components/tutorial/FirstRunTour";
 import { LanguageProvider, useLanguage } from "@/components/i18n/LanguageProvider";
 import {
+  IconArchive,
   IconCompass,
   IconHelp,
   IconHome,
-  IconMap,
   IconMenu,
   IconPin,
   IconPlane,
@@ -39,8 +39,8 @@ const PRIMARY: NavItem[] = [
   { href: "/future-plans", labelKey: "nav.futurePlans", icon: IconPlane },
   { href: "/wishlist", labelKey: "nav.wishlist", icon: IconPin, tour: "tour-nav-saved" },
   { href: "/discover", labelKey: "nav.discover", icon: IconCompass },
-  { href: "/explore", labelKey: "nav.explore", icon: IconMap },
-  { href: "/things", labelKey: "nav.things", icon: IconSpark },
+  { href: "/inspiration", labelKey: "nav.inspiration", icon: IconSpark },
+  { href: "/archive", labelKey: "nav.archive", icon: IconArchive },
   { href: "/friends", labelKey: "nav.friends", icon: IconUsers },
 ];
 

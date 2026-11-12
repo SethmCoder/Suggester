@@ -136,6 +136,8 @@ export async function POST(req: Request) {
   });
   const parsedEarly = early.parsed;
 
+  // Raw bodies are parsed in-memory only — do not persist text_body/html_body.
+  // Parsed dreamer_bookings metadata is stored below when owner is known.
   const { data: row, error } = await svc
     .from("inbound_emails")
     .insert({
@@ -144,8 +146,8 @@ export async function POST(req: Request) {
       from_address: fromAddress,
       to_addresses: toAddresses,
       subject,
-      text_body: textBody,
-      html_body: htmlBody,
+      text_body: null,
+      html_body: null,
       status,
     })
     .select("id")

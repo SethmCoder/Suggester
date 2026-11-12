@@ -24,11 +24,14 @@ export async function GET(req: Request) {
     return NextResponse.json({
       days,
       signedUp: 0,
+      cohortSource: "events",
       wizardOpened: 0,
       generateClicked: 0,
       tripPlanned: 0,
       signedUpThenPlanned: 0,
       signupToPlanRate: 0,
+      secondTripUsers: 0,
+      secondTripRate: 0,
       offline: true,
     });
   }

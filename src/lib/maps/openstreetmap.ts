@@ -56,11 +56,23 @@ export async function osmTextSearch(input: {
   centerLng: number;
   radiusMeters: number;
 }): Promise<PlaceHit | null> {
+  const deg = input.radiusMeters / 111_320;
+  const dLng =
+    input.radiusMeters /
+    (111_320 * Math.max(0.2, Math.cos((input.centerLat * Math.PI) / 180)));
+  const viewbox = [
+    input.centerLng - dLng,
+    input.centerLat + deg,
+    input.centerLng + dLng,
+    input.centerLat - deg,
+  ].join(",");
   const params = new URLSearchParams({
     q: input.query,
     format: "json",
-    limit: "5",
+    limit: "8",
     addressdetails: "1",
+    viewbox,
+    bounded: "1",
   });
   const res = await fetch(
     `https://nominatim.openstreetmap.org/search?${params}`,
@@ -72,6 +84,8 @@ export async function osmTextSearch(input: {
   if (!res.ok) return null;
   const data = (await res.json()) as {
     place_id: number;
+    osm_type?: string;
+    osm_id?: number;
     lat: string;
     lon: string;
     display_name: string;
@@ -82,10 +96,19 @@ export async function osmTextSearch(input: {
   for (const hit of data) {
     const lat = Number(hit.lat);
     const lng = Number(hit.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
     const dist = haversineKm(input.centerLat, input.centerLng, lat, lng);
     if (dist > input.radiusMeters / 1000) continue;
+    // Prefer stable OSM type/id — Nominatim place_id is NOT an OSM node id
+    // and caused wrong-country detail lookups.
+    const osmType = (hit.osm_type || "").toLowerCase();
+    const osmId = hit.osm_id;
+    const placeId =
+      osmType && osmId
+        ? `osm:${osmType}:${osmId}`
+        : `osm:nominatim:${hit.place_id}`;
     return {
-      placeId: `osm:${hit.place_id}`,
+      placeId,
       displayName: hit.display_name.split(",")[0] ?? hit.display_name,
       lat,
       lng,

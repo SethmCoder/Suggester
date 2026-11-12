@@ -99,6 +99,15 @@ export function IconSpark(p: IconProps) {
     </svg>
   );
 }
+export function IconArchive(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M4 8h16v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" />
+      <path d="M3 5h18v3H3z" />
+      <path d="M10 13h4" />
+    </svg>
+  );
+}
 export function IconCredit(p: IconProps) {
   return (
     <svg {...base(p)}>

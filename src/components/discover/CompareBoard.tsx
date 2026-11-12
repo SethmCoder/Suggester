@@ -150,8 +150,8 @@ export function CompareBoard() {
             Compare destinations
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-[#6B7280]">
-            Side-by-side fit against your interests, budget ceiling, and available days. Scores are transparent and catalog-based.
-            Free compares up to {PLAN_LIMITS.free.compareDestinations}; Pro up to{" "}
+            Side-by-side fit against your interests, budget ceiling, and available days. Scores use your inputs and our destination catalog.
+            Free compares up to {PLAN_LIMITS.free.compareDestinations}; Plus up to{" "}
             {PLAN_LIMITS.pro.compareDestinations}.
           </p>
         </div>
@@ -312,10 +312,10 @@ export function CompareBoard() {
                       photoUrl: row.destination.photoUrl,
                       externalPlaceId: `discover:${row.destination.id}`,
                       priority: "high",
-                    }).then(() => setMessage(`Saved ${row.destination.name} to Wishlist`));
+                    }).then(() => setMessage(`Saved ${row.destination.name} to Collections`));
                   }}
                 >
-                  Save to Wishlist
+                  Save to Collections
                 </Button>
                 <Button
                   type="button"

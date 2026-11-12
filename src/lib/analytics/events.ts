@@ -11,15 +11,22 @@ export type AnalyticsEventName =
 
 export type FunnelStats = {
   days: number;
+  /** Accounts created in the window (auth cohort when available). */
   signedUp: number;
+  /** Honest labeling for the signup denominator. */
+  cohortSource: "auth" | "events";
   wizardOpened: number;
   generateClicked: number;
   tripPlanned: number;
-  /** Users who signed up in the window and later planned a trip. */
+  /** Cohort users who planned ≥1 trip (owned trip and/or trip_planned). */
   signedUpThenPlanned: number;
   /** signedUpThenPlanned / signedUp (0–1). */
   signupToPlanRate: number;
-  /** Fallback from auth.users + trips when event rows are thin. */
+  /** Cohort users with ≥2 owned trips and/or ≥2 trip_planned events. */
+  secondTripUsers: number;
+  /** secondTripUsers / signedUp (0–1). */
+  secondTripRate: number;
+  /** Legacy mirror of auth cohort trip conversion (kept for older clients). */
   fallback?: {
     usersCreated: number;
     usersWithTrip: number;

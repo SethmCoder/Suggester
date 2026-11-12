@@ -85,7 +85,7 @@ export function cuisineConflicts(dietary: string | undefined, cuisine: string | 
 }
 
 export function feeLabel(fee: string | null | undefined): string {
-  if (fee === "no") return "OpenStreetMap lists this as free.";
+  if (fee === "no") return "Listed as free admission (confirm locally).";
   if (fee === "yes") return "A fee is listed, amount not listed.";
   return "Cost not listed";
 }
@@ -95,10 +95,10 @@ export function accessNote(input: {
   stepFree: boolean;
 }): { drop: boolean; note: string } {
   if (input.wheelchair === "yes") {
-    return { drop: false, note: "OpenStreetMap lists this as wheelchair-accessible." };
+    return { drop: false, note: "Listed as wheelchair-accessible." };
   }
   if (input.wheelchair === "no" && input.stepFree) {
-    return { drop: true, note: "OpenStreetMap lists this as not wheelchair-accessible." };
+    return { drop: true, note: "Listed as not wheelchair-accessible." };
   }
   return { drop: false, note: "Accessibility is not listed." };
 }

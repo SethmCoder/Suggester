@@ -25,7 +25,8 @@ const LIBRARY: Record<string, string> = {
   paris:
     "https://images.unsplash.com/photo-1511739001486-6bfe10ce785f?auto=format&fit=crop&w=1600&q=80",
   tokyo:
-    "https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?auto=format&fit=crop&w=1800&q=80",
+    // Daytime crossing — night shots and bad photo IDs read as empty navy cards under collage overlays.
+    "https://images.unsplash.com/photo-1542051841857-5f90071e7989?auto=format&fit=crop&w=1800&q=80",
   kyoto:
     "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=1600&q=80",
   osaka:
@@ -169,6 +170,7 @@ const METRO_ALIASES: Record<string, string> = {
   yokohama: "tokyo",
   shibuya: "tokyo",
   shinjuku: "tokyo",
+  東京: "tokyo",
   // Mexico City
   cdmx: "mexico city",
   "ciudad de mexico": "mexico city",

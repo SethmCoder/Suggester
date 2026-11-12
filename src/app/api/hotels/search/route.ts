@@ -42,7 +42,7 @@ export async function GET(req: Request) {
         starRating: hotel.starRating,
         label: hotel.address ? `${hotel.name} · ${hotel.address}` : hotel.name,
       })),
-      attribution: "© OpenStreetMap contributors",
+      attribution: "Public map data",
     });
   } catch {
     return NextResponse.json({ hotels: [] });

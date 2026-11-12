@@ -82,7 +82,28 @@ export async function POST(
   const city =
     dream.destination.split("→")[0]?.trim() || dream.destination;
 
+  const dreamPrefs = (dream.preferences ?? {}) as Record<string, unknown>;
+  const dreamerMeta = (dreamPrefs.dreamer ?? {}) as Record<string, unknown>;
+  const vibe =
+    typeof dreamerMeta.vibe === "string" ? dreamerMeta.vibe : undefined;
+  const prefersHiddenGems =
+    Boolean(dreamPrefs.prefersHiddenGems) || vibe === "local";
+  const intensity =
+    dreamPrefs.intensity === "relaxed" ||
+    dreamPrefs.intensity === "packed" ||
+    dreamPrefs.intensity === "balanced"
+      ? dreamPrefs.intensity
+      : "balanced";
+  const dreamNote =
+    typeof dreamerMeta.idealTripNote === "string"
+      ? dreamerMeta.idealTripNote
+      : vibe === "local"
+        ? "Dream: small local places, not tourist traps."
+        : vibe === "sights"
+          ? "Dream: the well-known sights."
+          : "";
   const evidenceIdeal = [
+    dreamNote,
     dream.notes?.trim() || "",
     evidence.provenance.length
       ? `Evidence: ${evidence.provenance.join(" · ")}.`
@@ -99,17 +120,29 @@ export async function POST(
     originAirport: origin,
     destinationAirport: destAirport,
     travelers: dream.travelers ?? 2,
-    interests: dream.interests ?? [],
-    intensity: "balanced" as const,
+    interests: Array.isArray(dream.interests) && dream.interests.length
+      ? dream.interests
+      : prefersHiddenGems
+        ? ["food", "neighborhoods", "markets"]
+        : ["food", "culture", "landmarks"],
+    intensity,
     transport: dream.transport || "transit",
     idealTrip: evidenceIdeal,
+    prefersHiddenGems,
+    budgetAllocation:
+      vibe === "local" || prefersHiddenGems
+        ? "mostly-free"
+        : vibe === "sights"
+          ? "sights"
+          : "balanced",
     tripTitle: dream.title ?? undefined,
     hotel: evidence.hotelName,
     flightNumber: evidence.flightNumber,
     arrivalLocal: evidence.arrivalLocal,
     dayStart: evidence.arrivalLocal,
-    mustSee: [] as string[],
+    mustSee: evidence.restaurants.map((r) => r.name).slice(0, 6),
     preferred: [] as string[],
+    bookedRestaurants: evidence.restaurants,
     futureTripId: id,
     idempotencyKey: `future:${id}`,
     legs: [
@@ -120,6 +153,7 @@ export async function POST(
         arrivalDate: dates.startDate,
         departureDate: dates.endDate,
         hotel: evidence.hotelName,
+        hotelBooked: Boolean(evidence.hotelName),
       },
     ],
   };

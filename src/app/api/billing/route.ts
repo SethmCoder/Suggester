@@ -165,7 +165,7 @@ export async function POST(req: Request) {
     allowlisted: emailGrantedPro(user?.email),
     message:
       body.action === "upgrade"
-        ? `Pro is $${LIST_PRICES.proMonthlyUsd.toFixed(2)} a month or $${LIST_PRICES.proAnnualUsd.toFixed(2)} a year. Use Subscribe in Settings. This request does not turn Pro on.`
+        ? `Plus is $${LIST_PRICES.proMonthlyUsd.toFixed(2)} a month or $${LIST_PRICES.proAnnualUsd.toFixed(2)} a year. Use Subscribe in Pricing. This request does not turn Plus on.`
         : undefined,
   });
   applyCookies(response, plan, used);

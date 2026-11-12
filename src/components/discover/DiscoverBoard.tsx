@@ -154,7 +154,7 @@ export function DiscoverBoard() {
         </div>
         <div className="flex gap-2">
           <LeavePageLink href="/wishlist" variant="secondary">
-            Wishlist
+            Collections
           </LeavePageLink>
           {compareIds.length >= 2 ? (
             <LeavePageLink

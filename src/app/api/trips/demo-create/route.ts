@@ -58,6 +58,16 @@ const bodySchema = z.object({
   dayStart: z.string().optional(),
   dayEnd: z.string().optional(),
   prefersHiddenGems: z.boolean().optional(),
+  bookedRestaurants: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(120),
+        date: z.string().nullable().optional(),
+        time: z.string().nullable().optional(),
+        city: z.string().nullable().optional(),
+      }),
+    )
+    .optional(),
   // Soft-truncate oversized pastes — never reject the whole create for length.
   mustSee: z
     .array(z.string())
@@ -201,7 +211,7 @@ export async function POST(req: Request) {
         {
           error:
             gate.used >= gate.limit
-              ? `Free includes ${gate.limit} AI requests this month. Upgrade to Pro for more generation.`
+              ? `Free includes ${gate.limit} AI requests this month. Upgrade to Plus for more AI planning this month.`
               : PRO_REQUIRED_MESSAGE,
           code: gate.used >= gate.limit ? "ai_limit" : "pro_required",
         },
@@ -298,6 +308,7 @@ export async function POST(req: Request) {
       avoid: body.avoid,
       idealTrip: body.idealTrip,
       prefersHiddenGems: body.prefersHiddenGems,
+      bookedRestaurants: body.bookedRestaurants,
       budget: budgetTotal,
       budgetAllocation,
       restaurantStyle,

@@ -28,7 +28,7 @@ export async function districtSpots(input: {
   const picked = await chooseSpots(input.name, interests, found);
   const spots = picked.length ? picked : found.slice(0, 2).map((place) => ({
     ...place,
-    why: `OpenStreetMap lists this near ${input.name}.`,
+    why: `Listed near ${input.name}.`,
   }));
   cacheSet(cacheKey, spots, 6 * 60 * 60 * 1000);
   return spots;

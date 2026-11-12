@@ -18,8 +18,8 @@ const FAQS = [
     a: "Open the trip and choose Trip Wizard. Tell them the delay, for example “My flight is two hours late on day 1,” then accept the revised plan.",
   },
   {
-    q: "What is the difference between Free and Pro?",
-    a: "Free includes 3 trips and the standard planner. Pro removes the trip cap and uses the more detailed planner. Open Settings to see billing and pricing.",
+    q: "What is the difference between Free and Plus?",
+    a: "Free includes 2 active trips and core planning. Plus removes the trip cap and unlocks advanced planning tools. A Trip Pass upgrades one trip without a subscription. See Pricing or Settings for plans.",
   },
   {
     q: "Where are my trips saved?",

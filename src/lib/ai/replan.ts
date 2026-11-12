@@ -119,7 +119,7 @@ export function planCheaper(input: {
       startTime: paid.start_time?.slice(0, 5) || "12:00",
       durationMinutes: paid.duration_minutes ?? 60,
       priority: "preferred",
-      planningNote: "OpenStreetMap lists this as free.",
+      planningNote: "Listed as free admission (confirm locally).",
     });
   }
   return {

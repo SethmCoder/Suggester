@@ -20,10 +20,11 @@ export async function computeSignupToPlanFunnel(
       AnalyticsEvent.TripPlanned,
     ]);
 
-  const signedUp = new Set<string>();
-  const wizardOpened = new Set<string>();
-  const generateClicked = new Set<string>();
-  const tripPlanned = new Set<string>();
+  const signedUpEvents = new Set<string>();
+  const wizardOpenedAll = new Set<string>();
+  const generateClickedAll = new Set<string>();
+  const tripPlannedAll = new Set<string>();
+  const tripPlannedCount = new Map<string, number>();
   const signupAt = new Map<string, number>();
 
   for (const row of rows ?? []) {
@@ -31,27 +32,104 @@ export async function computeSignupToPlanFunnel(
     if (!uid) continue;
     const t = Date.parse(row.created_at as string);
     if (row.event_name === AnalyticsEvent.SignupCompleted) {
-      signedUp.add(uid);
+      signedUpEvents.add(uid);
       const prev = signupAt.get(uid);
       if (prev == null || t < prev) signupAt.set(uid, t);
     }
-    if (row.event_name === AnalyticsEvent.WizardOpened) wizardOpened.add(uid);
-    if (row.event_name === AnalyticsEvent.GenerateClicked) {
-      generateClicked.add(uid);
+    if (row.event_name === AnalyticsEvent.WizardOpened) {
+      wizardOpenedAll.add(uid);
     }
-    if (row.event_name === AnalyticsEvent.TripPlanned) tripPlanned.add(uid);
+    if (row.event_name === AnalyticsEvent.GenerateClicked) {
+      generateClickedAll.add(uid);
+    }
+    if (row.event_name === AnalyticsEvent.TripPlanned) {
+      tripPlannedAll.add(uid);
+      tripPlannedCount.set(uid, (tripPlannedCount.get(uid) ?? 0) + 1);
+    }
+  }
+
+  let cohortIds: string[] = [];
+  let cohortSource: FunnelStats["cohortSource"] = "events";
+  let fallback: FunnelStats["fallback"];
+
+  try {
+    const { data: listed } = await svc.auth.admin.listUsers({ perPage: 1000 });
+    const users = (listed?.users ?? []).filter(
+      (u) => Date.parse(u.created_at) >= Date.parse(sinceIso),
+    );
+    cohortIds = users.map((u) => u.id);
+    cohortSource = "auth";
+    for (const u of users) {
+      const created = Date.parse(u.created_at);
+      if (!signupAt.has(u.id) || created < (signupAt.get(u.id) ?? Infinity)) {
+        signupAt.set(u.id, created);
+      }
+    }
+    // Prefer auth; if the admin list is empty but events exist, stay honest.
+    if (!cohortIds.length && signedUpEvents.size) {
+      cohortIds = [...signedUpEvents];
+      cohortSource = "events";
+    }
+
+    let withTrip = 0;
+    if (cohortIds.length) {
+      const { data: trips } = await svc
+        .from("trips")
+        .select("owner_id")
+        .in("owner_id", cohortIds);
+      withTrip = new Set((trips ?? []).map((t) => t.owner_id as string)).size;
+    }
+    fallback = {
+      usersCreated: cohortSource === "auth" ? users.length : signedUpEvents.size,
+      usersWithTrip: withTrip,
+      rate:
+        (cohortSource === "auth" ? users.length : signedUpEvents.size) === 0
+          ? 0
+          : withTrip /
+            (cohortSource === "auth" ? users.length : signedUpEvents.size),
+    };
+  } catch {
+    cohortIds = [...signedUpEvents];
+    cohortSource = "events";
+    fallback = undefined;
+  }
+
+  const cohort = new Set(cohortIds);
+  const signedUp = cohort.size;
+
+  const inCohort = (uid: string) => cohort.has(uid);
+  const wizardOpened = [...wizardOpenedAll].filter(inCohort).length;
+  const generateClicked = [...generateClickedAll].filter(inCohort).length;
+
+  const tripCountByOwner = new Map<string, number>();
+  if (cohortIds.length) {
+    const { data: trips } = await svc
+      .from("trips")
+      .select("owner_id")
+      .in("owner_id", cohortIds);
+    for (const row of trips ?? []) {
+      const oid = row.owner_id as string;
+      tripCountByOwner.set(oid, (tripCountByOwner.get(oid) ?? 0) + 1);
+    }
   }
 
   let signedUpThenPlanned = 0;
-  if (signedUp.size) {
-    const { data: laterTrips } = await svc
-      .from("analytics_events")
-      .select("user_id, created_at")
-      .eq("event_name", AnalyticsEvent.TripPlanned)
-      .in("user_id", [...signedUp]);
+  let secondTripUsers = 0;
+  for (const uid of cohortIds) {
+    const owned = tripCountByOwner.get(uid) ?? 0;
+    const plannedEvents = tripPlannedCount.get(uid) ?? 0;
+    const hasFirst = owned >= 1 || plannedEvents >= 1 || tripPlannedAll.has(uid);
+    if (hasFirst) signedUpThenPlanned += 1;
+    if (owned >= 2 || plannedEvents >= 2) secondTripUsers += 1;
+  }
+
+  // Event-only fallback when trips query was empty but TripPlanned after signup exists.
+  if (cohortSource === "events" && signedUpThenPlanned === 0 && signedUp) {
     const plannedAfter = new Set<string>();
-    for (const row of laterTrips ?? []) {
-      const uid = row.user_id as string;
+    for (const row of rows ?? []) {
+      if (row.event_name !== AnalyticsEvent.TripPlanned) continue;
+      const uid = row.user_id as string | null;
+      if (!uid || !cohort.has(uid)) continue;
       const signed = signupAt.get(uid);
       const planned = Date.parse(row.created_at as string);
       if (signed != null && Number.isFinite(planned) && planned >= signed) {
@@ -61,42 +139,26 @@ export async function computeSignupToPlanFunnel(
     signedUpThenPlanned = plannedAfter.size;
   }
 
-  const signupToPlanRate =
-    signedUp.size === 0 ? 0 : signedUpThenPlanned / signedUp.size;
+  const tripPlanned = Math.max(
+    [...tripPlannedAll].filter(inCohort).length,
+    signedUpThenPlanned,
+  );
 
-  // Fallback: auth users created in window vs those with a trips row.
-  let fallback: FunnelStats["fallback"];
-  try {
-    const { data: listed } = await svc.auth.admin.listUsers({ perPage: 1000 });
-    const users = (listed?.users ?? []).filter(
-      (u) => Date.parse(u.created_at) >= Date.parse(sinceIso),
-    );
-    const userIds = users.map((u) => u.id);
-    let withTrip = 0;
-    if (userIds.length) {
-      const { data: trips } = await svc
-        .from("trips")
-        .select("owner_id")
-        .in("owner_id", userIds);
-      withTrip = new Set((trips ?? []).map((t) => t.owner_id as string)).size;
-    }
-    fallback = {
-      usersCreated: users.length,
-      usersWithTrip: withTrip,
-      rate: users.length === 0 ? 0 : withTrip / users.length,
-    };
-  } catch {
-    fallback = undefined;
-  }
+  const signupToPlanRate =
+    signedUp === 0 ? 0 : signedUpThenPlanned / signedUp;
+  const secondTripRate = signedUp === 0 ? 0 : secondTripUsers / signedUp;
 
   return {
     days,
-    signedUp: signedUp.size,
-    wizardOpened: wizardOpened.size,
-    generateClicked: generateClicked.size,
-    tripPlanned: tripPlanned.size,
+    signedUp,
+    cohortSource,
+    wizardOpened,
+    generateClicked,
+    tripPlanned,
     signedUpThenPlanned,
     signupToPlanRate,
+    secondTripUsers,
+    secondTripRate,
     fallback,
   };
 }

@@ -2,6 +2,7 @@ import Stripe from "stripe";
 import {
   PRO_PRICE_ANNUAL_USD,
   PRO_PRICE_USD,
+  TRIP_PASS_PRICE_USD,
 } from "@/lib/billing/entitlements";
 
 export function checkoutConfigured(): boolean {
@@ -24,13 +25,25 @@ export function proPriceData(
       currency: "usd",
       unit_amount: Math.round(PRO_PRICE_ANNUAL_USD * 100),
       recurring: { interval: "year" },
-      product_data: { name: "Waypoint Pro (annual)" },
+      product_data: { name: "Waypoint Plus (annual)" },
     };
   }
   return {
     currency: "usd",
     unit_amount: Math.round(PRO_PRICE_USD * 100),
     recurring: { interval: "month" },
-    product_data: { name: "Waypoint Pro" },
+    product_data: { name: "Waypoint Plus" },
+  };
+}
+
+export function tripPassPriceData(): Stripe.Checkout.SessionCreateParams.LineItem.PriceData {
+  const priceId = process.env.STRIPE_PRICE_TRIP_PASS?.trim();
+  if (priceId) {
+    // Prefer configured Stripe Price id when set (passed separately to line_items).
+  }
+  return {
+    currency: "usd",
+    unit_amount: Math.round(TRIP_PASS_PRICE_USD * 100),
+    product_data: { name: "Waypoint Trip Pass" },
   };
 }
