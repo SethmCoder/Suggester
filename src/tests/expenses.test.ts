@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   budgetProgress,
+  migrateExpenseCategory,
+  normalizeExpense,
   normalizeExpenses,
   spentByCategory,
   sumExpenses,
@@ -8,12 +10,28 @@ import {
 import { convertCurrency } from "@/lib/trips/fx";
 
 describe("trip expenses", () => {
+  it("maps legacy categories when normalizing", () => {
+    const row = normalizeExpense({
+      id: "1",
+      label: "Louvre",
+      category: "tickets",
+      amount: 22,
+      currency: "EUR",
+      amountInTripCurrency: 24,
+      purchasedAt: "2026-07-01",
+      createdAt: "2026-07-01T12:00:00.000Z",
+    });
+    expect(row?.category).toBe("things_to_do");
+    expect(migrateExpenseCategory("food")).toBe("eating");
+    expect(migrateExpenseCategory("other")).toBe("souvenirs");
+  });
+
   it("sums spend in the trip currency and tracks remaining budget", () => {
     const expenses = normalizeExpenses([
       {
         id: "1",
         label: "Louvre",
-        category: "tickets",
+        category: "things_to_do",
         amount: 22,
         currency: "EUR",
         amountInTripCurrency: 24,
@@ -23,7 +41,7 @@ describe("trip expenses", () => {
       {
         id: "2",
         label: "Café",
-        category: "food",
+        category: "eating",
         amount: 18,
         currency: "USD",
         amountInTripCurrency: 18,
@@ -36,8 +54,8 @@ describe("trip expenses", () => {
     expect(progress.remaining).toBe(58);
     expect(progress.percentUsed).toBe(42);
     expect(progress.overBudget).toBe(false);
-    expect(spentByCategory(expenses, "USD").tickets).toBe(24);
-    expect(spentByCategory(expenses, "USD").food).toBe(18);
+    expect(spentByCategory(expenses, "USD").things_to_do).toBe(24);
+    expect(spentByCategory(expenses, "USD").eating).toBe(18);
   });
 
   it("marks over-budget when spend exceeds the ceiling", () => {

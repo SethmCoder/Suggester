@@ -5,6 +5,7 @@ import {
   setSubscriptionTier,
 } from "@/lib/billing/access";
 import { ENTITLEMENT_COOKIE } from "@/lib/billing/entitlements";
+import { PLAN_COOKIE } from "@/lib/billing/plans";
 import {
   emailGrantedPro,
   grantSecretConfigured,
@@ -139,5 +140,7 @@ export async function POST(req: Request) {
   });
   const cookie = entitlementCookie(body.tier);
   response.cookies.set(cookie.name, cookie.value, cookie.options);
+  // Keep legacy trip-cap cookie in sync so Free's 3-trip limit unlocks with Pro.
+  response.cookies.set(PLAN_COOKIE, body.tier === "pro" ? "pro" : "free", cookie.options);
   return response;
 }

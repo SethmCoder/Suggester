@@ -356,15 +356,33 @@ export async function osmComputeDayRoute(input: {
       };
       const route = data.routes?.[0];
       if (route?.legs?.length) {
-        const legs = route.legs.map((leg) => ({
-          durationMinutes: Math.max(1, Math.ceil((leg.duration ?? 0) / 60)),
-          distanceMeters: Math.round(leg.distance ?? 0),
-          routed: true as const,
-        }));
+        // Cap absurd OSRM legs (bad snaps / ferry loops) so the day clock
+        // is not wiped by multi-day "transfers" inside one city.
+        const maxLegMin = input.mode === "WALK" ? 75 : input.mode === "TRANSIT" ? 90 : 120;
+        const legs = route.legs.map((leg, i) => {
+          const rawMin = Math.max(1, Math.ceil((leg.duration ?? 0) / 60));
+          if (rawMin <= maxLegMin) {
+            return {
+              durationMinutes: rawMin,
+              distanceMeters: Math.round(leg.distance ?? 0),
+              routed: true as const,
+            };
+          }
+          const est = estimateTravelFallback(
+            input.mode,
+            input.points[i],
+            input.points[i + 1],
+          );
+          return {
+            durationMinutes: Math.min(maxLegMin, est.durationMinutes),
+            distanceMeters: est.distanceMeters,
+            routed: false as const,
+          };
+        });
         return {
           legs,
-          totalDurationMinutes: Math.ceil((route.duration ?? 0) / 60),
-          totalDistanceMeters: Math.round(route.distance ?? 0),
+          totalDurationMinutes: legs.reduce((sum, leg) => sum + leg.durationMinutes, 0),
+          totalDistanceMeters: legs.reduce((sum, leg) => sum + leg.distanceMeters, 0),
           source: "osrm",
         };
       }

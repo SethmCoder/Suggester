@@ -26,6 +26,10 @@ import {
 } from "@/lib/trips/truncate-input";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { InboundFlightPrefs } from "@/lib/types/trip";
+import {
+  LANGUAGE_COOKIE,
+  normalizeLanguage,
+} from "@/lib/i18n/preference";
 
 const bodySchema = z.object({
   destination: z.string().min(2),
@@ -172,7 +176,8 @@ export async function POST(req: Request) {
   try {
     const jar = await cookies();
     const billing = readPlan((name) => jar.get(name)?.value);
-    if (!canCreateTrip(billing)) {
+    // Demo is a sandbox — don't block generation on the free trip cap.
+    if (!demo && !canCreateTrip(billing)) {
       return NextResponse.json(
         { error: PLAN_LIMIT_MESSAGE, code: "plan_limit" },
         { status: 402 },
@@ -256,8 +261,12 @@ export async function POST(req: Request) {
       }
     }
 
-    const dayStart =
-      inboundFlight?.suggestedDayStart ?? body.dayStart ?? "09:00";
+    // Keep trip-wide dayStart as the traveler's preferred morning start.
+    // Arrival-day timing comes from inboundFlight.suggestedDayStart only.
+    const dayStart = body.dayStart ?? "09:00";
+    if (inboundFlight && !inboundFlight.suggestedDayStart) {
+      inboundFlight.suggestedDayStart = dayStart;
+    }
     const destination = body.legs?.length
       ? body.legs.map((leg) => leg.city).join(" → ")
       : body.destination;
@@ -268,6 +277,14 @@ export async function POST(req: Request) {
           86_400_000,
       ) + 1,
     );
+
+    const talkedBudget = budgetFromConversation(body.idealTrip);
+    const language = normalizeLanguage(
+      body.language || jar.get(LANGUAGE_COOKIE)?.value,
+    );
+    const budgetTotal = body.budget ?? talkedBudget.total;
+    const budgetAllocation = body.budgetAllocation ?? talkedBudget.allocation;
+    const restaurantStyle = body.restaurantStyle ?? talkedBudget.restaurantStyle;
 
     const generated = await generateItinerary({
       destination,
@@ -281,11 +298,9 @@ export async function POST(req: Request) {
       avoid: body.avoid,
       idealTrip: body.idealTrip,
       prefersHiddenGems: body.prefersHiddenGems,
-      budget: body.budget ?? budgetFromConversation(body.idealTrip).total,
-      budgetAllocation:
-        body.budgetAllocation ?? budgetFromConversation(body.idealTrip).allocation,
-      restaurantStyle:
-        body.restaurantStyle ?? budgetFromConversation(body.idealTrip).restaurantStyle,
+      budget: budgetTotal,
+      budgetAllocation,
+      restaurantStyle,
       rejectedPlaceIds: body.rejectedPlaceIds,
       keptPlaceIds: body.keptPlaceIds,
       party: body.party ?? constraintsFromConversation(body.idealTrip, body.interests).party,
@@ -315,7 +330,7 @@ export async function POST(req: Request) {
       inboundFlight: inboundFlight
         ? { ...inboundFlight, ...arrivalCoords }
         : undefined,
-      language: body.language,
+      language,
     });
 
     const res = NextResponse.json({
@@ -324,6 +339,11 @@ export async function POST(req: Request) {
       days: generated.days,
       warnings: generated.warnings,
       legs: body.legs ?? [],
+      budget: budgetTotal,
+      currency: body.currency ?? "USD",
+      budgetAllocation,
+      restaurantStyle,
+      language,
     });
     const options = {
       httpOnly: true,
@@ -332,14 +352,16 @@ export async function POST(req: Request) {
       path: "/",
       maxAge: 60 * 60 * 24 * 365,
     };
-    res.cookies.set(PLAN_COOKIE, billing.plan, options);
-    res.cookies.set(USED_COOKIE, String(billing.used + 1), options);
-    if (gate.consumes) {
-      const { AI_USED_COOKIE, AI_MONTH_COOKIE, currentMonthKey } = await import(
-        "@/lib/billing/entitlements"
-      );
-      res.cookies.set(AI_USED_COOKIE, String(gate.used + 1), options);
-      res.cookies.set(AI_MONTH_COOKIE, currentMonthKey(), options);
+    if (!demo) {
+      res.cookies.set(PLAN_COOKIE, billing.plan, options);
+      res.cookies.set(USED_COOKIE, String(billing.used + 1), options);
+      if (gate.consumes) {
+        const { AI_USED_COOKIE, AI_MONTH_COOKIE, currentMonthKey } = await import(
+          "@/lib/billing/entitlements"
+        );
+        res.cookies.set(AI_USED_COOKIE, String(gate.used + 1), options);
+        res.cookies.set(AI_MONTH_COOKIE, currentMonthKey(), options);
+      }
     }
     return res;
   } catch (err) {

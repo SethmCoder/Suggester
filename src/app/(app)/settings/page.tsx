@@ -14,9 +14,10 @@ import type { MapsProviderId } from "@/lib/maps/types";
 import { notifyAvatarChanged } from "@/components/layout/UserAvatar";
 import { UserAvatar } from "@/components/layout/UserAvatar";
 import {
-  AVATAR_STORAGE_KEY,
   avatarInitial,
+  clearMismatchedAvatarKeys,
   letterAvatarDataUrl,
+  readStoredAvatar,
   writeStoredAvatar,
 } from "@/lib/avatar";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
@@ -43,6 +44,7 @@ export default function SettingsPage() {
     useState<MapsProviderId>("openstreetmap");
   const [language, setLanguage] = useState<AppLanguageCode>("en");
   const [isDemo, setIsDemo] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +55,6 @@ export default function SettingsPage() {
     setMapsProvider(getMapsProviderPreference());
     setLanguage(getPreferredLanguageClient());
     try {
-      setAvatarUrl(localStorage.getItem(AVATAR_STORAGE_KEY));
       setUsername(localStorage.getItem(USERNAME_KEY) ?? "");
     } catch {
       /* ignore */
@@ -61,7 +62,15 @@ export default function SettingsPage() {
 
     fetch("/api/trips")
       .then((r) => r.json())
-      .then((d) => setIsDemo(Boolean(d.isDemo)))
+      .then((d) => {
+        const demo = Boolean(d.isDemo);
+        setIsDemo(demo);
+        if (demo) {
+          clearMismatchedAvatarKeys("demo");
+          setUserId("demo");
+          setAvatarUrl(readStoredAvatar("demo"));
+        }
+      })
       .catch(() => null);
 
     if (!isSupabaseConfigured()) return;
@@ -69,6 +78,9 @@ export default function SettingsPage() {
       const supabase = createClient();
       supabase.auth.getUser().then(({ data: { user } }) => {
         if (!user) return;
+        clearMismatchedAvatarKeys(user.id);
+        setUserId(user.id);
+        setAvatarUrl(readStoredAvatar(user.id));
         setEmail(user.email ?? "");
         setNewEmail(user.email ?? "");
         supabase
@@ -108,7 +120,7 @@ export default function SettingsPage() {
 
   function setAvatar(dataUrl: string | null) {
     setAvatarUrl(dataUrl);
-    writeStoredAvatar(dataUrl);
+    writeStoredAvatar(dataUrl, userId ?? (isDemo ? "demo" : null));
     notifyAvatarChanged();
   }
 
@@ -288,6 +300,7 @@ export default function SettingsPage() {
           <UserAvatar
             displayName={displayName || username}
             email={email || newEmail}
+            userId={userId ?? (isDemo ? "demo" : null)}
             imageUrl={avatarUrl}
             size="lg"
           />

@@ -1,0 +1,9 @@
+export function Input({ className = "", ...props }) {
+    return (React.createElement("input", { className: `h-11 w-full rounded-[12px] border border-[#D1D7E5] bg-white px-3.5 text-sm text-[#080B3A] caret-[#080B3A] placeholder:text-[#9299B5] transition-colors focus:border-[#0400FF] focus:outline-none focus:ring-2 focus:ring-[#818CFF]/35 disabled:cursor-not-allowed disabled:opacity-60 ${className}`, ...props }));
+}
+export function Label({ children, className = "", htmlFor, }) {
+    return (React.createElement("label", { htmlFor: htmlFor, className: `mb-1.5 block text-sm font-semibold text-[#1F2937] ${className}` }, children));
+}
+export function TextArea({ className = "", ...props }) {
+    return (React.createElement("textarea", { className: `w-full rounded-[12px] border border-[#D1D7E5] bg-white px-3.5 py-2.5 text-sm text-[#1F2937] placeholder:text-[#9299B5] focus:border-[#0400FF] focus:outline-none focus:ring-2 focus:ring-[#818CFF]/35 ${className}`, ...props }));
+}

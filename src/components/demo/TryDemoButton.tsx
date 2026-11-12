@@ -8,6 +8,8 @@ import {
   getDemoTripPayload,
   listDemoTrips,
 } from "@/lib/demo/data";
+import { DEMO_AVATAR_USER_ID, clearMismatchedAvatarKeys } from "@/lib/avatar";
+import { clearDemoLocalStorage } from "@/lib/demo/cleanup";
 import { saveOfflineTrip } from "@/lib/offline/trips";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
@@ -36,6 +38,8 @@ export function TryDemoButton({
 
   async function startDemo() {
     setLoading(true);
+    clearMismatchedAvatarKeys(DEMO_AVATAR_USER_ID);
+    clearDemoLocalStorage();
     try {
       seedDemoOffline();
     } catch {

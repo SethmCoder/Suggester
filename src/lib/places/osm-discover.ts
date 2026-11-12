@@ -6,9 +6,13 @@ import {
 } from "@/lib/http/accountless-fetch";
 import type { DiscoveredPlace, PlaceCategory } from "./types";
 
-const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
+const OVERPASS_MIRRORS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.cs.usu.edu/interpreter",
+];
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_LIMIT = 48;
+const DEFAULT_LIMIT = 64;
 
 const CATEGORY_FILTERS: Record<
   PlaceCategory,
@@ -137,7 +141,7 @@ export async function discoverPlacesFromOsm(input: {
   limit?: number;
 }): Promise<DiscoveredPlace[]> {
   const radius = input.radiusMeters ?? 6000;
-  const limit = Math.min(input.limit ?? DEFAULT_LIMIT, 60);
+  const limit = Math.min(input.limit ?? DEFAULT_LIMIT, 96);
   const categories = input.categories ?? [];
   const cacheKey = `osm-discover:${input.destination.toLowerCase()}|${input.lat.toFixed(3)}|${input.lng.toFixed(3)}|${radius}|${categories.join(",")}|${limit}`;
 
@@ -152,55 +156,61 @@ export async function discoverPlacesFromOsm(input: {
     limit,
   });
 
-  try {
-    const res = await accountlessFetch(OVERPASS_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": waypointUserAgent(),
-      },
-      body: `data=${encodeURIComponent(query)}`,
-      timeoutMs: 28000,
-    });
-    if (!res.ok) return [];
-    const data = (await res.json()) as { elements?: OverpassElement[] };
-    const seen = new Set<string>();
-    const places: DiscoveredPlace[] = [];
-    const now = new Date().toISOString();
-
-    for (const el of data.elements ?? []) {
-      const tags = el.tags ?? {};
-      const name = tags.name?.trim();
-      if (!name) continue;
-      const lat = el.lat ?? el.center?.lat;
-      const lng = el.lon ?? el.center?.lon;
-      if (lat == null || lng == null) continue;
-      const osmId = `${el.type}/${el.id}`;
-      if (seen.has(osmId)) continue;
-      seen.add(osmId);
-      const placeId = `osm:${el.type}:${el.id}`;
-      places.push({
-        placeId,
-        name,
-        category: categorize(tags),
-        address: buildAddress(tags),
-        lat,
-        lng,
-        osmId,
-        tags,
-        wikipediaTitle: parseWikipediaTag(tags.wikipedia),
-        wikidataId: tags.wikidata ?? null,
-        source: "openstreetmap",
-        retrievedAt: now,
+  for (const url of OVERPASS_MIRRORS) {
+    try {
+      const res = await accountlessFetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": waypointUserAgent(),
+        },
+        body: `data=${encodeURIComponent(query)}`,
+        timeoutMs: 28000,
+        retryOnce: false,
       });
-      if (places.length >= limit) break;
-    }
+      if (!res.ok) continue;
+      const data = (await res.json()) as { elements?: OverpassElement[] };
+      const seen = new Set<string>();
+      const places: DiscoveredPlace[] = [];
+      const now = new Date().toISOString();
 
-    cacheSet(cacheKey, places, CACHE_TTL_MS);
-    return places;
-  } catch {
-    return [];
+      for (const el of data.elements ?? []) {
+        const tags = el.tags ?? {};
+        const name = tags.name?.trim();
+        if (!name || /^\d+$/.test(name) || name.length < 2) continue;
+        const lat = el.lat ?? el.center?.lat;
+        const lng = el.lon ?? el.center?.lon;
+        if (lat == null || lng == null) continue;
+        const osmId = `${el.type}/${el.id}`;
+        if (seen.has(osmId)) continue;
+        seen.add(osmId);
+        const placeId = `osm:${el.type}:${el.id}`;
+        places.push({
+          placeId,
+          name,
+          category: categorize(tags),
+          address: buildAddress(tags),
+          lat,
+          lng,
+          osmId,
+          tags,
+          wikipediaTitle: parseWikipediaTag(tags.wikipedia),
+          wikidataId: tags.wikidata ?? null,
+          source: "openstreetmap",
+          retrievedAt: now,
+        });
+        if (places.length >= limit) break;
+      }
+
+      if (places.length) {
+        cacheSet(cacheKey, places, CACHE_TTL_MS);
+        return places;
+      }
+    } catch {
+      /* try next mirror */
+    }
   }
+  return [];
 }
 
 /** Map discovered OSM places into PlaceHit-compatible shapes for generation. */

@@ -206,10 +206,12 @@ export function TripAgentDesk({
       <section className="overflow-hidden rounded-[20px] border border-[#E1E5F0] bg-white shadow-[0_8px_24px_rgba(8,11,58,0.05)]">
         {!lead ? (
           <div className="bg-gradient-to-br from-[#080B3A] via-[#12185C] to-[#0400FF] px-5 py-14 text-center text-white sm:py-20">
-            <p className="text-3xl font-bold tracking-tight">Plan a trip</p>
+            <p className="text-3xl font-bold tracking-tight">
+              Already have a date and time?
+            </p>
             <p className="mx-auto mt-2 max-w-md text-sm text-white/75">
-              Type the full city name, then choose it from the list. Your trip
-              sheet opens after you pick.
+              Build a day-by-day itinerary when flights or hotels are set. For
+              ideas without dates yet, start a Future Trip instead.
             </p>
 
             <div className="mx-auto mt-6 flex justify-center">

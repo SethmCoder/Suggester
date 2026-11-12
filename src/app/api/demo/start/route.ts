@@ -5,6 +5,8 @@ import {
   clearSupabaseAuthCookies,
   setDemoCookie,
 } from "@/lib/demo/session";
+import { PLAN_COOKIE, USED_COOKIE } from "@/lib/billing/plans";
+import { AI_MONTH_COOKIE, AI_USED_COOKIE } from "@/lib/billing/entitlements";
 
 export async function POST() {
   const cookieStore = await cookies();
@@ -20,5 +22,17 @@ export async function POST() {
   setDemoCookie(res);
   // Personal auth must not ride along — demo is its own account.
   clearSupabaseAuthCookies(res, authCookieNames);
+  // Fresh demo quota so prior free-plan usage doesn't block try-it flows.
+  const clearOpts = {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 0,
+  };
+  res.cookies.set(USED_COOKIE, "", clearOpts);
+  res.cookies.set(AI_USED_COOKIE, "", clearOpts);
+  res.cookies.set(AI_MONTH_COOKIE, "", clearOpts);
+  res.cookies.set(PLAN_COOKIE, "", clearOpts);
   return res;
 }

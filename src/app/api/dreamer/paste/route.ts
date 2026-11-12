@@ -5,7 +5,7 @@ import { createServiceClient, createSupabaseServerClient } from "@/lib/supabase/
 import {
   bookingHasConcreteEvidence,
   mapBookingRow,
-  parseAndSummarize,
+  parseAndSummarizeAsync,
   resolveMatch,
 } from "@/lib/dreamer/ingest";
 import type { MatchCandidate } from "@/lib/dreamer/match-booking";
@@ -13,11 +13,12 @@ import {
   extractTextFromConfirmationScreenshot,
   normalizeScreenshotDataUrl,
 } from "@/lib/dreamer/parse-screenshot";
+import { confirmationPlainText } from "@/lib/dreamer/redact-secrets";
 import type { ParsedBooking } from "@/lib/dreamer/types";
 import { datesFromDreamAndBooking } from "@/lib/dreamer/materialize";
 import { recordConfirmationEvidence } from "@/lib/dreamer/record-evidence";
 
-function localPasteResponse(input: {
+async function localPasteResponse(input: {
   ownerId: string;
   text: string;
   html: string | null;
@@ -25,9 +26,10 @@ function localPasteResponse(input: {
   preferredFutureTripId: string | null;
 }) {
   const messageId = `paste:${input.ownerId}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
-  const { parsed, title, summary } = parseAndSummarize({
+  const { parsed, title, summary } = await parseAndSummarizeAsync({
     subject: input.subject,
-    text: input.text || input.html || "",
+    text: input.text,
+    html: input.html,
   });
   const booking = {
     id: `local-${messageId}`,
@@ -143,13 +145,14 @@ export async function POST(req: Request) {
   const preferredFutureTripId = body.preferredFutureTripId ?? null;
 
   if (parseOnly) {
-    const summarized = parseAndSummarize({
+    const summarized = await parseAndSummarizeAsync({
       subject,
-      text: text || html || "",
+      text,
+      html,
     });
     return NextResponse.json({
       parseOnly: true,
-      text: text || undefined,
+      text: confirmationPlainText({ text, html }) || undefined,
       parsed: summarized.parsed,
       summary: summarized.summary,
       title: summarized.title,
@@ -162,7 +165,7 @@ export async function POST(req: Request) {
   // Demo / unsigned: keep bookings on-device so paste still works.
   if (!user || demo) {
     return NextResponse.json(
-      localPasteResponse({
+      await localPasteResponse({
         ownerId: demo ? "demo" : user?.id ?? "local",
         text,
         html,
@@ -179,7 +182,7 @@ export async function POST(req: Request) {
   // Offline / local path — return parsed booking for client store.
   if (!svc) {
     return NextResponse.json(
-      localPasteResponse({
+      await localPasteResponse({
         ownerId: user.id,
         text,
         html,
@@ -189,7 +192,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const offline = () =>
+  const offline = async () =>
     localPasteResponse({
       ownerId: user.id,
       text,
@@ -214,9 +217,10 @@ export async function POST(req: Request) {
     ((priorBookings ?? [])[0]?.parsed as ParsedBooking | undefined) ??
     null;
 
-  const { parsed, title, summary } = parseAndSummarize({
+  const { parsed, title, summary } = await parseAndSummarizeAsync({
     subject,
-    text: text || html || "",
+    text,
+    html,
     primaryContext: primary,
   });
 
@@ -238,7 +242,7 @@ export async function POST(req: Request) {
   if (emailErr || !emailRow) {
     // Bad service-role key / RLS / missing tables must not block paste —
     // keep the booking on-device so confirmations still work.
-    return NextResponse.json(offline());
+    return NextResponse.json(await offline());
   }
 
   const { data: dreams } = await svc
@@ -315,7 +319,7 @@ export async function POST(req: Request) {
           parse_error: retry.error?.message ?? bookErr.message,
         })
         .eq("id", emailRow.id);
-      return NextResponse.json(offline());
+      return NextResponse.json(await offline());
     }
     bookingRow = retry.data;
     bookErr = null;
@@ -326,7 +330,7 @@ export async function POST(req: Request) {
       .from("inbound_emails")
       .update({ status: "failed", parse_error: bookErr?.message ?? null })
       .eq("id", emailRow.id);
-    return NextResponse.json(offline());
+    return NextResponse.json(await offline());
   }
 
   // Grow traveler flight/stay DBs + booking-grounded intelligence (no PNR).

@@ -7,6 +7,7 @@ import { CreateAccountLink } from "@/components/auth/CreateAccountLink";
 import { TryDemoButton } from "@/components/demo/TryDemoButton";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
+import { clearMismatchedAvatarKeys } from "@/lib/avatar";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 function LoginForm() {
@@ -44,6 +45,10 @@ function LoginForm() {
       setError(err.message);
       return;
     }
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user?.id) clearMismatchedAvatarKeys(user.id);
     // Personal login ends demo — the two sessions must not share a browser.
     await fetch("/api/demo/end", { method: "POST" }).catch(() => null);
     // Returning sign-in: mark intro done and hard-navigate so middleware

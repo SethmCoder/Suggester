@@ -11,6 +11,7 @@ import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 export default function ProfilePage() {
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
+  const [userId, setUserId] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
   );
@@ -21,6 +22,7 @@ export default function ProfilePage() {
       const supabase = createClient();
       supabase.auth.getUser().then(({ data: { user } }) => {
         if (!user) return;
+        setUserId(user.id);
         setEmail(user.email ?? "");
         supabase
           .from("profiles")
@@ -73,6 +75,7 @@ export default function ProfilePage() {
           <UserAvatar
             displayName={displayName}
             email={email}
+            userId={userId}
             size="md"
             listenForStorage
           />

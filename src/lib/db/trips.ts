@@ -1,4 +1,4 @@
-import type { GeneratedDay } from "@/lib/ai/generate-itinerary";
+import type { GeneratedActivity, GeneratedDay } from "@/lib/ai/generate-itinerary";
 import type { TripPreferencesPayload } from "@/lib/types/trip";
 import { createServiceClient } from "@/lib/supabase/server";
 
@@ -15,6 +15,88 @@ function asClock(time: string): string {
   if (/^\d{2}:\d{2}:\d{2}$/.test(trimmed)) return trimmed;
   if (/^\d{2}:\d{2}$/.test(trimmed)) return `${trimmed}:00`;
   return trimmed;
+}
+
+function startTimeSortKey(time: string): number {
+  const [h, m] = time.slice(0, 5).split(":").map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+}
+
+type LockedActivityRow = {
+  day_id: string;
+  place_id: string | null;
+  name: string;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  start_time: string | null;
+  end_time: string | null;
+  duration_minutes: number | null;
+  travel_minutes_from_prev: number | null;
+  priority: string | null;
+  planning_note: string | null;
+  hours_verified: boolean;
+  opening_hours: unknown;
+  website_uri: string | null;
+  google_maps_uri: string | null;
+  popularity_label: string | null;
+  popularity_sources: string[] | null;
+  popularity_attribution_urls: string[] | null;
+  schedule_warnings: string[] | null;
+  source: string;
+  sort_order: number;
+};
+
+function lockedRowToGenerated(row: LockedActivityRow): GeneratedActivity {
+  const start =
+    row.start_time?.slice(0, 5) && /^\d{2}:\d{2}$/.test(row.start_time.slice(0, 5))
+      ? row.start_time.slice(0, 5)
+      : "09:00";
+  return {
+    placeId: row.place_id?.trim() || `user-locked:${row.name}`,
+    name: row.name,
+    address: row.address ?? undefined,
+    lat: row.lat ?? 0,
+    lng: row.lng ?? 0,
+    startTime: start,
+    durationMinutes: row.duration_minutes ?? 60,
+    priority: (row.priority as GeneratedActivity["priority"]) ?? "must_see",
+    planningNote: row.planning_note ?? undefined,
+    hoursVerified: Boolean(row.hours_verified),
+    websiteUri: row.website_uri ?? undefined,
+    googleMapsUri: row.google_maps_uri ?? undefined,
+    popularityLabel: row.popularity_label,
+    popularitySources: row.popularity_sources ?? undefined,
+    popularityAttributionUrls: row.popularity_attribution_urls ?? undefined,
+    scheduleWarnings: row.schedule_warnings ?? undefined,
+    travelMinutesFromPrev: row.travel_minutes_from_prev ?? 0,
+    openingHours: row.opening_hours ?? undefined,
+  };
+}
+
+function mergeLockedIntoGeneratedDays(
+  days: GeneratedDay[],
+  lockedByDayIndex: Map<number, LockedActivityRow[]>,
+): GeneratedDay[] {
+  if (!lockedByDayIndex.size) return days;
+  return days.map((day) => {
+    const locked = lockedByDayIndex.get(day.dayIndex);
+    if (!locked?.length) return day;
+    const lockedActs = locked.map(lockedRowToGenerated);
+    const lockedIds = new Set(
+      locked
+        .map((row) => row.place_id?.trim())
+        .filter((id): id is string => Boolean(id)),
+    );
+    const aiActs = day.activities.filter((act) => {
+      const pid = act.placeId?.trim();
+      return !pid || !lockedIds.has(pid);
+    });
+    const activities = [...lockedActs, ...aiActs].sort(
+      (a, b) => startTimeSortKey(a.startTime) - startTimeSortKey(b.startTime),
+    );
+    return { ...day, activities };
+  });
 }
 
 /** Supabase Postgrest errors are plain objects — normalize to Error. */
@@ -47,9 +129,51 @@ export async function saveGeneratedItinerary(input: {
   const supabase = createServiceClient();
   if (!supabase) throw new Error("Database not configured");
 
+  const lockedByDayIndex = new Map<number, LockedActivityRow[]>();
+  const { data: existingDays } = await supabase
+    .from("itinerary_days")
+    .select("id, day_index")
+    .eq("trip_id", input.tripId);
+
+  const dayIds = existingDays?.map((d) => d.id) ?? [];
+  if (dayIds.length) {
+    const dayIndexById = new Map(
+      (existingDays ?? []).map((d) => [d.id, d.day_index] as const),
+    );
+    const { data: lockedRows } = await supabase
+      .from("activities")
+      .select(
+        "day_id, place_id, name, address, lat, lng, start_time, end_time, duration_minutes, travel_minutes_from_prev, priority, planning_note, hours_verified, opening_hours, website_uri, google_maps_uri, popularity_label, popularity_sources, popularity_attribution_urls, schedule_warnings, source, sort_order",
+      )
+      .in("day_id", dayIds)
+      .eq("user_locked", true);
+
+    for (const row of lockedRows ?? []) {
+      const dayIndex = dayIndexById.get(row.day_id);
+      if (dayIndex == null) continue;
+      const list = lockedByDayIndex.get(dayIndex) ?? [];
+      list.push(row as LockedActivityRow);
+      lockedByDayIndex.set(dayIndex, list);
+    }
+    for (const [dayIndex, list] of lockedByDayIndex) {
+      list.sort((a, b) => a.sort_order - b.sort_order);
+      lockedByDayIndex.set(dayIndex, list);
+    }
+  }
+
+  const lockedMetaByPlaceDay = new Map<string, { source: string }>();
+  for (const [dayIndex, rows] of lockedByDayIndex) {
+    for (const row of rows) {
+      const key = `${dayIndex}:${row.place_id?.trim() || row.name}`;
+      lockedMetaByPlaceDay.set(key, { source: row.source || "user" });
+    }
+  }
+
+  const daysToSave = mergeLockedIntoGeneratedDays(input.days, lockedByDayIndex);
+
   await supabase.from("itinerary_days").delete().eq("trip_id", input.tripId);
 
-  for (const day of input.days) {
+  for (const day of daysToSave) {
     const { data: dayRow, error: dayErr } = await supabase
       .from("itinerary_days")
       .insert({ trip_id: input.tripId, day_index: day.dayIndex })
@@ -65,13 +189,18 @@ export async function saveGeneratedItinerary(input: {
     const activities = day.activities.map((act, sort_order) => {
       const rawId = act.placeId?.trim() || null;
       let place_id = rawId;
-      if (place_id) {
+      if (place_id && !place_id.startsWith("user-locked:")) {
         if (seenPlaceIds.has(place_id)) place_id = null;
         else seenPlaceIds.add(place_id);
       }
+      const lockKey = `${day.dayIndex}:${
+        rawId && !rawId.startsWith("user-locked:") ? rawId : act.name
+      }`;
+      const lockedMeta = lockedMetaByPlaceDay.get(lockKey);
+      const wasLocked = Boolean(lockedMeta);
       return {
         day_id: dayRow.id,
-        place_id,
+        place_id: place_id?.startsWith("user-locked:") ? null : place_id,
         name: act.name,
         address: act.address ?? null,
         lat: act.lat,
@@ -97,7 +226,8 @@ export async function saveGeneratedItinerary(input: {
         popularity_attribution_urls: act.popularityAttributionUrls ?? null,
         schedule_warnings: act.scheduleWarnings ?? null,
         sort_order,
-        source: "ai",
+        source: wasLocked ? lockedMeta!.source : "ai",
+        user_locked: wasLocked,
       };
     });
 

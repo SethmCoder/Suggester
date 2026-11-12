@@ -7,6 +7,7 @@ import { AvatarMenu } from "./AvatarMenu";
 import { HeaderSearch } from "./HeaderSearch";
 import { NotificationsMenu } from "./NotificationsMenu";
 import { UserAvatar } from "./UserAvatar";
+import { DemoSessionGuard } from "@/components/demo/DemoSessionGuard";
 import { FirstRunTour } from "@/components/tutorial/FirstRunTour";
 import { LanguageProvider, useLanguage } from "@/components/i18n/LanguageProvider";
 import {
@@ -20,6 +21,7 @@ import {
   IconSettings,
   IconSpark,
   IconUser,
+  IconUsers,
 } from "@/components/ui/Icons";
 
 type NavIcon = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
@@ -34,11 +36,12 @@ type NavItem = {
 
 const PRIMARY: NavItem[] = [
   { href: "/dashboard", labelKey: "nav.home", icon: IconHome, tour: "tour-nav-home", match: "exact" },
+  { href: "/future-plans", labelKey: "nav.futurePlans", icon: IconPlane },
+  { href: "/wishlist", labelKey: "nav.wishlist", icon: IconPin, tour: "tour-nav-saved" },
   { href: "/discover", labelKey: "nav.discover", icon: IconCompass },
   { href: "/explore", labelKey: "nav.explore", icon: IconMap },
   { href: "/things", labelKey: "nav.things", icon: IconSpark },
-  { href: "/wishlist", labelKey: "nav.wishlist", icon: IconPin, tour: "tour-nav-saved" },
-  { href: "/future-plans", labelKey: "nav.futurePlans", icon: IconPlane },
+  { href: "/friends", labelKey: "nav.friends", icon: IconUsers },
 ];
 
 const SECONDARY: NavItem[] = [
@@ -92,7 +95,7 @@ function NavGroup({
   return (
     <div className="space-y-0.5">
       {label ? (
-        <p className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#6B7280]">
+        <p className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9299B5]">
           {label}
         </p>
       ) : null}
@@ -119,16 +122,22 @@ export function AppShell({
   children,
   userEmail,
   displayName,
+  userId,
+  isDemo = false,
 }: {
   children: React.ReactNode;
   userEmail?: string | null;
   displayName?: string | null;
+  userId?: string | null;
+  isDemo?: boolean;
 }) {
   return (
     <LanguageProvider>
       <AppShellInner
         userEmail={userEmail}
         displayName={displayName}
+        userId={userId}
+        isDemo={isDemo}
       >
         {children}
       </AppShellInner>
@@ -140,10 +149,14 @@ function AppShellInner({
   children,
   userEmail,
   displayName,
+  userId,
+  isDemo,
 }: {
   children: React.ReactNode;
   userEmail?: string | null;
   displayName?: string | null;
+  userId?: string | null;
+  isDemo?: boolean;
 }) {
   const pathname = usePathname();
   const { t } = useLanguage();
@@ -183,14 +196,21 @@ function AppShellInner({
         />
       </nav>
 
-      <div className="border-t border-[#292F68] p-3" data-tour="tour-create-trip">
+      <div className="space-y-2 border-t border-[#292F68] p-3" data-tour="tour-create-trip">
         <Link
-          href="/trips/new"
+          href="/future-plans"
           onClick={closeMobile}
           className="inline-flex w-full items-center justify-center gap-2 rounded-[12px] bg-[#0400FF] px-3 py-2.5 text-sm font-semibold text-white shadow-sm shadow-[#0400FF]/25 transition hover:bg-[#0A0080]"
         >
           <IconPlane size={16} />
-          {t("nav.planTrip")}
+          {t("nav.futurePlans")}
+        </Link>
+        <Link
+          href="/trips/new"
+          onClick={closeMobile}
+          className="block text-center text-[11px] font-medium text-[#9299B5] transition hover:text-white"
+        >
+          {t("nav.haveDates")}
         </Link>
       </div>
     </aside>
@@ -215,8 +235,8 @@ function AppShellInner({
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 border-b border-[#E1E5F0] bg-white/95 backdrop-blur">
-          <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
+        <header className="sticky top-0 z-30 border-b border-[#E1E5F0]/90 bg-white/90 backdrop-blur-md">
+          <div className="flex items-center gap-3 px-4 py-2.5 sm:px-6">
             <button
               type="button"
               className="rounded-lg p-2 text-[#080B3A] hover:bg-[#DDE1FF] md:hidden"
@@ -233,6 +253,7 @@ function AppShellInner({
               <UserAvatar
                 displayName={displayName}
                 email={userEmail}
+                userId={userId}
                 size="sm"
                 listenForStorage
               />
@@ -242,6 +263,7 @@ function AppShellInner({
               <UserAvatar
                 displayName={displayName}
                 email={userEmail}
+                userId={userId}
                 size="sm"
                 className="mr-1"
                 listenForStorage
@@ -251,9 +273,10 @@ function AppShellInner({
           </div>
         </header>
 
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <main className="flex-1 px-4 py-5 sm:px-6 sm:py-7 lg:px-8">{children}</main>
       </div>
       <FirstRunTour />
+      {isDemo ? <DemoSessionGuard /> : null}
     </div>
   );
 }

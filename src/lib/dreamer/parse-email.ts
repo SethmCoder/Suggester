@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "crypto";
 import { citiesFromParsedIatas } from "./iata-cities";
 import type { ParsedBooking } from "./types";
 
@@ -33,8 +34,8 @@ function extractLabeledTime(
 ): string | null {
   const m = blob.match(
     new RegExp(
-      `${labels.source}\\s*[:#]?\\s*(\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\s*[AaPp]\\.?[Mm\\.])?)`,
-      labels.flags.includes("i") ? "i" : "i",
+      `${labels.source}\\s*[:#]?\\s*(?:20\\d{2}-\\d{2}-\\d{2}\\s+)?(\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\s*[AaPp]\\.?[Mm\\.])?)`,
+      "i",
     ),
   );
   return m?.[1] ? parseClockToHHMM(m[1]) : null;
@@ -59,25 +60,75 @@ export function parseBookingFromEmailText(input: {
   let fromIata: string | null = route?.[1]?.toUpperCase() ?? null;
   let toIata: string | null = route?.[2]?.toUpperCase() ?? null;
 
+  const NON_IATA = new Set([
+    "THE",
+    "AND",
+    "FOR",
+    "YOU",
+    "UTC",
+    "GMT",
+    "PDF",
+    "OUT",
+    "IN",
+    "ALL",
+    "ANY",
+    "NEW",
+    "OLD",
+    "DAY",
+    "MON",
+    "TUE",
+    "WED",
+    "THU",
+    "FRI",
+    "SAT",
+    "SUN",
+    "JAN",
+    "FEB",
+    "MAR",
+    "APR",
+    "MAY",
+    "JUN",
+    "JUL",
+    "AUG",
+    "SEP",
+    "OCT",
+    "NOV",
+    "DEC",
+    "PNR",
+    "ETA",
+    "ETD",
+  ]);
   if (!fromIata || !toIata) {
     const codes = [...upper.matchAll(IATA)]
       .map((m) => m[1])
-      .filter((c) => !["THE", "AND", "FOR", "YOU", "UTC", "GMT", "PDF"].includes(c));
+      .filter((c) => !NON_IATA.has(c));
     if (!fromIata && codes[0]) fromIata = codes[0];
     if (!toIata && codes[1]) toIata = codes[1];
   }
 
   const dateMatch =
     blob.match(/\b(20\d{2}-\d{2}-\d{2})\b/) ||
+    blob.match(/\b(\d{1,2})[./](\d{1,2})[./](20\d{2})\b/) ||
     blob.match(
-      /\b((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:,?\s+20\d{2})?)\b/i,
+      /\b((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic|Janv|Févr|Mars|Avr|Mai|Juin|Juil|Août|Sept|Oct|Nov|Déc)[a-zA-Zéû.]*\.?\s+\d{1,2}(?:,?\s+20\d{2})?)\b/i,
     );
 
   let startDate: string | null = null;
-  if (dateMatch?.[1]) {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateMatch[1])) {
+  if (dateMatch) {
+    if (dateMatch[1] && /^\d{4}-\d{2}-\d{2}$/.test(dateMatch[1])) {
       startDate = dateMatch[1];
-    } else {
+    } else if (dateMatch[3] && /^\d{4}$/.test(dateMatch[3])) {
+      // DD/MM/YYYY or MM/DD/YYYY — prefer day>12 as day-first
+      const a = Number(dateMatch[1]);
+      const b = Number(dateMatch[2]);
+      const y = dateMatch[3];
+      const dayFirst = a > 12 || (a <= 12 && b <= 12);
+      const day = dayFirst ? a : b;
+      const month = dayFirst ? b : a;
+      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        startDate = `${y}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      }
+    } else if (dateMatch[1]) {
       const d = new Date(dateMatch[1]);
       if (!Number.isNaN(d.getTime())) {
         startDate = d.toISOString().slice(0, 10);
@@ -85,24 +136,81 @@ export function parseBookingFromEmailText(input: {
     }
   }
 
-  const confMatch = blob.match(
-    /\b(?:confirmation(?:\s*(?:#|number|code))?|PNR|record locator)\s*[:#]?\s*([A-Z0-9]{5,8})\b/i,
-  );
+  const checkoutMatch =
+    blob.match(
+      /\b(?:check[- ]?out|departure\s+date|leave|salida|départ)\s*[:#]?\s*(20\d{2}-\d{2}-\d{2}|\d{1,2}[./]\d{1,2}[./]20\d{2})\b/i,
+    ) ||
+    blob.match(
+      /\b(?:check[- ]?out|departure\s+date)\s*[:#]?\s*((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:,?\s+20\d{2})?)\b/i,
+    );
+  let endDate: string | null = null;
+  if (checkoutMatch?.[1]) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(checkoutMatch[1])) {
+      endDate = checkoutMatch[1];
+    } else {
+      const d = new Date(checkoutMatch[1]);
+      if (!Number.isNaN(d.getTime())) endDate = d.toISOString().slice(0, 10);
+    }
+  }
+
+  const confMatch =
+    blob.match(/\bPNR\s*[:#/]?\s*([A-Z0-9]{5,12})\b/i) ||
+    blob.match(
+      /\b(?:confirmation(?:\s*(?:#|number|code))?|record locator|booking\s*(?:ref|reference|code)|código|numero\s+de\s+reserva)\s*[:#/]?\s*([A-Z0-9]{5,12})\b/i,
+    );
+  const CONF_STOP = new Set([
+    "SUBJECT",
+    "FLIGHT",
+    "HOTEL",
+    "THANKS",
+    "THANK",
+    "NUMBER",
+    "CODE",
+    "BOOKING",
+    "RECORD",
+    "LOCATOR",
+    "WITH",
+    "YOUR",
+    "THIS",
+    "THAT",
+    "FROM",
+    "PASSENGER",
+  ]);
   const rawConf = confMatch?.[1]?.toUpperCase() ?? null;
   const confirmation =
-    rawConf &&
-    !["SUBJECT", "FLIGHT", "HOTEL", "THANKS", "NUMBER", "CODE"].includes(rawConf)
+    rawConf && !CONF_STOP.has(rawConf) && /[0-9]/.test(rawConf)
       ? rawConf
-      : null;
+      : rawConf && !CONF_STOP.has(rawConf) && rawConf.length >= 6
+        ? rawConf
+        : null;
 
   const cabinMatch = blob.match(
     /\b(economy|premium economy|business|first)\b/i,
   );
   const cabin = cabinMatch?.[1]?.toLowerCase() ?? null;
 
-  const hotelMatch = blob.match(
-    /\b(?:hotel|stay at|reservation at)\s+([A-Z][A-Za-z0-9 &'.,-]{2,60})/i,
-  );
+  const HOTEL_STOP = new Set([
+    "booking",
+    "reservation",
+    "confirmation",
+    "details",
+    "information",
+    "number",
+    "ref",
+    "reference",
+  ]);
+  const hotelMatch =
+    blob.match(
+      /\b(?:stay at|reservation at|hotel:)\s+([A-Z][A-Za-z0-9 &'.,-]{2,60})/i,
+    ) ||
+    blob.match(/\bat\s+(Park Hyatt[^\n,]{0,40}|[A-Z][A-Za-z0-9 &'.,-]{2,40}\s+Hotel)\b/);
+  let hotelName = hotelMatch?.[1]?.trim() ?? null;
+  if (hotelName) {
+    hotelName = hotelName.replace(/\s+(is|on|for|confirmed|check).*$/i, "").trim();
+    if (HOTEL_STOP.has(hotelName.toLowerCase().split(/\s+/)[0] || "")) {
+      hotelName = null;
+    }
+  }
 
   // Only take an explicitly labeled flight number — never guess from PNR tokens.
   const flightMatch = blob.match(
@@ -114,11 +222,11 @@ export function parseBookingFromEmailText(input: {
 
   const departureLocal = extractLabeledTime(
     blob,
-    /(?:scheduled\s+)?depart(?:ure|s|ed)?(?:\s+time)?/,
+    /(?:scheduled\s+)?(?:depart(?:ure|s|ed)?|salida|départ)(?:\s+time)?/,
   );
   const arrivalLocal = extractLabeledTime(
     blob,
-    /(?:scheduled\s+|estimated\s+)?arriv(?:al|es|ed)?(?:\s+time)?/,
+    /(?:scheduled\s+|estimated\s+)?(?:arriv(?:al|es|ed)?|llegada|arrivée)(?:\s+time)?/,
   );
 
   const cities = new Set<string>();
@@ -138,6 +246,15 @@ export function parseBookingFromEmailText(input: {
   else if (hotelMatch || /\bhotel\b/i.test(blob)) kind = "hotel";
   else if (/\btrain|rail\b/i.test(blob)) kind = "rail";
 
+  let nights: number | null = null;
+  if (startDate && endDate) {
+    const a = Date.parse(`${startDate}T12:00:00Z`);
+    const b = Date.parse(`${endDate}T12:00:00Z`);
+    if (Number.isFinite(a) && Number.isFinite(b) && b > a) {
+      nights = Math.round((b - a) / 86_400_000);
+    }
+  }
+
   return {
     kind,
     cities: [...cities],
@@ -146,10 +263,10 @@ export function parseBookingFromEmailText(input: {
     cabin,
     confirmation,
     startDate,
-    endDate: null,
-    hotelName: hotelMatch?.[1]?.trim() ?? null,
+    endDate,
+    hotelName,
     vendor: null,
-    nights: null,
+    nights,
     flightNumber,
     departureLocal,
     arrivalLocal,
@@ -188,9 +305,26 @@ export function verifyInboundSignature(
     return process.env.DREAMER_INBOUND_ALLOW_UNSIGNED === "1";
   }
   if (!signatureHeader) return false;
-  return (
-    signatureHeader === secret ||
-    signatureHeader === `sha256=${secret}` ||
-    signatureHeader.includes(secret)
-  );
+  const header = signatureHeader.trim();
+  // Exact shared-secret headers (Resend/custom). Never substring-match.
+  if (header === secret || header === `sha256=${secret}`) return true;
+
+  // Svix / HMAC: v1,<sig> or sha256=<hex>
+  const parts = header.split(/[,\s]+/).filter(Boolean);
+  for (const part of parts) {
+    const token = part.replace(/^v1=/i, "").replace(/^sha256=/i, "").trim();
+    if (!token || token === "v1") continue;
+    const digestB64 = createHmac("sha256", secret).update(rawBody).digest("base64");
+    const digestHex = createHmac("sha256", secret).update(rawBody).digest("hex");
+    for (const digest of [digestB64, digestHex]) {
+      try {
+        const a = Buffer.from(token);
+        const b = Buffer.from(digest);
+        if (a.length === b.length && timingSafeEqual(a, b)) return true;
+      } catch {
+        /* length mismatch */
+      }
+    }
+  }
+  return false;
 }

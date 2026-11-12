@@ -78,8 +78,8 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Only skip rebuild when the trip already has real stops — empty day shells
-  // from create must still run generation.
+  // Skip rebuild only when every day already has enough sightseeing stops.
+  // A single placeholder activity must not block full generation.
   if (trip.status === "ready") {
     const { data: dayRows } = await svc
       .from("itinerary_days")
@@ -87,11 +87,22 @@ export async function POST(
       .eq("trip_id", tripId);
     const dayIds = (dayRows ?? []).map((d) => d.id);
     if (dayIds.length) {
-      const { count } = await svc
+      const { data: acts } = await svc
         .from("activities")
-        .select("id", { count: "exact", head: true })
+        .select("id, day_id, place_id")
         .in("day_id", dayIds);
-      if ((count ?? 0) > 0) {
+      const byDay = new Map<string, number>();
+      for (const id of dayIds) byDay.set(id, 0);
+      for (const act of acts ?? []) {
+        const pid = String(act.place_id ?? "");
+        if (pid.startsWith("flight:") || pid.startsWith("transit:")) continue;
+        byDay.set(act.day_id, (byDay.get(act.day_id) ?? 0) + 1);
+      }
+      const minPerDay = 3;
+      const full =
+        dayIds.length > 0 &&
+        [...byDay.values()].every((n) => n >= minPerDay);
+      if (full) {
         return NextResponse.json({ tripId, status: "ready", reused: true });
       }
     }

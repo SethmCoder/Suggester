@@ -4,7 +4,9 @@ import { DemoBanner } from "@/components/demo/DemoBanner";
 import { ItineraryEditor } from "@/components/itinerary/ItineraryEditor";
 import type { BudgetPlan } from "@/lib/trips/budget";
 import {
+  normalizeCategorySplit,
   normalizeExpenses,
+  type ExpenseCategorySplit,
   type TripExpense,
 } from "@/lib/trips/expenses";
 
@@ -34,6 +36,17 @@ function budgetPlanFrom(preferences: unknown): BudgetPlan | undefined {
 function expensesFrom(preferences: unknown): TripExpense[] {
   if (!preferences || typeof preferences !== "object") return [];
   return normalizeExpenses((preferences as { expenses?: unknown }).expenses);
+}
+
+function categorySplitFrom(
+  preferences: unknown,
+  allocation?: BudgetPlan["allocation"],
+): ExpenseCategorySplit | undefined {
+  if (!preferences || typeof preferences !== "object") return undefined;
+  const split = (preferences as { expenseCategorySplit?: unknown })
+    .expenseCategorySplit;
+  if (!split) return undefined;
+  return normalizeCategorySplit(split, allocation);
 }
 import { OfflineTripLoader } from "@/components/trips/OfflineTripLoader";
 import {
@@ -144,6 +157,10 @@ export default async function TripItineraryPage({
         }
         budgetPlan={budgetPlanFrom(data.preferences)}
         initialExpenses={expensesFrom(data.preferences)}
+        initialCategorySplit={categorySplitFrom(
+          data.preferences,
+          budgetPlanFrom(data.preferences)?.allocation,
+        )}
       />
     );
   } catch {

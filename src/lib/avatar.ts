@@ -1,4 +1,11 @@
 export const AVATAR_STORAGE_KEY = "waypoint:avatarDataUrl";
+export const AVATAR_STORAGE_PREFIX = "waypoint:avatarDataUrl:";
+export const DEMO_AVATAR_USER_ID = "demo";
+
+export function avatarStorageKey(userId?: string | null): string {
+  if (!userId) return AVATAR_STORAGE_KEY;
+  return `${AVATAR_STORAGE_PREFIX}${userId}`;
+}
 
 export function avatarInitial(
   displayName?: string | null,
@@ -20,19 +27,56 @@ export function letterAvatarDataUrl(letter: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-export function readStoredAvatar(): string | null {
+function migrateLegacyAvatar(userId?: string | null) {
+  if (!userId || typeof window === "undefined") return;
   try {
+    const legacy = localStorage.getItem(AVATAR_STORAGE_KEY);
+    if (!legacy) return;
+    const key = avatarStorageKey(userId);
+    if (!localStorage.getItem(key)) localStorage.setItem(key, legacy);
+    localStorage.removeItem(AVATAR_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function readStoredAvatar(userId?: string | null): string | null {
+  try {
+    migrateLegacyAvatar(userId);
+    if (userId) return localStorage.getItem(avatarStorageKey(userId));
     return localStorage.getItem(AVATAR_STORAGE_KEY);
   } catch {
     return null;
   }
 }
 
-export function writeStoredAvatar(dataUrl: string | null) {
+export function writeStoredAvatar(dataUrl: string | null, userId?: string | null) {
   try {
-    if (dataUrl) localStorage.setItem(AVATAR_STORAGE_KEY, dataUrl);
-    else localStorage.removeItem(AVATAR_STORAGE_KEY);
+    const key = avatarStorageKey(userId);
+    if (dataUrl) localStorage.setItem(key, dataUrl);
+    else localStorage.removeItem(key);
+    if (userId) localStorage.removeItem(AVATAR_STORAGE_KEY);
   } catch {
     /* ignore quota / private mode */
+  }
+}
+
+/** Drop avatar keys for other accounts (login, logout, demo swap). */
+export function clearMismatchedAvatarKeys(activeUserId?: string | null) {
+  if (typeof window === "undefined") return;
+  try {
+    const keep = new Set<string>();
+    if (activeUserId) keep.add(avatarStorageKey(activeUserId));
+    const toRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (key === AVATAR_STORAGE_KEY || key.startsWith(AVATAR_STORAGE_PREFIX)) {
+        if (!keep.has(key)) toRemove.push(key);
+      }
+    }
+    for (const key of toRemove) localStorage.removeItem(key);
+  } catch {
+    /* ignore */
   }
 }

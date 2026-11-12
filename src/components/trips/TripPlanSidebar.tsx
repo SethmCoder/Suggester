@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { IconExternalLink } from "@/components/ui/Icons";
+import { formatTripDate } from "@/lib/format-date";
 import { nightsBetween, nightsLabel } from "@/lib/trips/dates";
 
 type SectionId = "overview" | "itinerary" | "explore" | "details";
@@ -25,6 +26,8 @@ const SECTIONS: {
       { href: "", label: "Daily itinerary", hash: "itinerary" },
       { href: "", label: "Hotels", hash: "hotels" },
       { href: "", label: "Transportation", hash: "transit" },
+      { href: "", label: "Budget", hash: "budget" },
+      { href: "", label: "Packing", hash: "packing" },
     ],
   },
   {
@@ -138,7 +141,7 @@ export function TripPlanSidebar({
       <aside
         className={`${
           open ? "block" : "hidden"
-        } w-full shrink-0 rounded-[16px] border border-[#E1E5F0] bg-white p-3 lg:block lg:w-56`}
+        } w-full shrink-0 rounded-[16px] border border-[#E1E5F0] bg-white p-3 shadow-[0_4px_16px_rgba(8,11,58,0.04)] lg:block lg:w-56`}
         data-tour="tour-trip-sidebar"
       >
         <div id="overview" className="mb-3 border-b border-[#F0F2F8] pb-3">
@@ -148,7 +151,8 @@ export function TripPlanSidebar({
           <p className="mt-1 text-sm font-semibold text-[#080B3A]">{destination}</p>
           {startDate && endDate ? (
             <p className="mt-1 text-xs text-[#6B7280]">
-              {startDate} – {endDate}
+              {formatTripDate(startDate, "short")} –{" "}
+              {formatTripDate(endDate, "long")}
               {nights > 0 ? ` · ${nightsLabel(nights)}` : ""}
             </p>
           ) : null}

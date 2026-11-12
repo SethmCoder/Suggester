@@ -8,7 +8,7 @@ Never invent places, opening hours, popularity, social-media virality, or travel
 The scheduler moves each visit into published opening hours when a source lists them, and leaves off a place that is closed that day. Do not guess a time the source did not publish.
 NEVER invent vague relative stops such as "a bakery near your hotel", "lunch nearby", or "cafe by the hotel".
 Every activity must use an exact placeId from the candidate list (a real named place).
-Return one day object for EVERY dayIndex in the day plan. Fill EACH day with enough real candidate places: relaxed ≈3, balanced ≈4, packed ≈5. Never leave a day empty or with only one or two stops, and never schedule a placeholder such as "free day" or "free block". If candidates remain, keep filling until the day target is met.
+Return one day object for EVERY dayIndex in the day plan. Each day MUST hit the requested stop target exactly (real sightseeing/food stops — not transit placeholders). Mix variety: at least one sight (museum, attraction, historic, park, viewpoint), at least one food stop when the target is 3+, and a walk-friendly outdoor or neighborhood stop when candidates exist. Never leave a day empty or with only one or two stops, and never schedule a placeholder such as "free day" or "free block". If candidates remain, keep filling until the day target is met.
 Online-interest / popularity scores are SECONDARY ranking hints only — traveler interests, geography, pace, and budget matter more.
 When a hotel anchor is provided for a day, prefer candidates close to that hotel.
 Never invent hotel names or review quotes. Use only the hotel anchor name that was provided.
@@ -44,7 +44,17 @@ export function buildItineraryUserPrompt(input: {
   dietary?: string;
   indoorOutdoor?: string;
   maxWalkMinutes?: number;
+  /** Sightseeing stops per day (matches stopCap in the scheduler). */
+  stopsPerDay?: number;
 }): string {
+  const stopTarget =
+    input.stopsPerDay != null && input.stopsPerDay >= 3
+      ? input.stopsPerDay
+      : input.intensity === "packed"
+        ? 5
+        : input.intensity === "relaxed"
+          ? 3
+          : 4;
   const candidateLines = input.candidates.slice(0, 60).map((c) => {
     const pop = c.popularity;
     const popPart =
@@ -109,7 +119,7 @@ ${candidateLines.join("\n")}
 
 Rules:
 - Include every dayIndex from the day plan above — not only day 0.
-- Schedule major stops first (priority must_see). Then fill remaining slots from preferred stops and traveler interests until each day has several stops.
+- Schedule major stops first (priority must_see). Then fill until each day has exactly ${stopTarget} sightseeing stops (mix sight + food + walk; do not stack duplicate types back-to-back).
 - On wet forecast days, fill with indoor candidates; skip outdoor parks/beaches/viewpoints unless they are hard must-sees with no indoor substitute.
 - Online-interest hints are SECONDARY. Prefer traveler interests, hotel proximity, weather fit, and a realistic schedule.
 - Never invent social-media virality or vague "near hotel" fillers.

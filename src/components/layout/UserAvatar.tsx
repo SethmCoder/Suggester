@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import {
-  AVATAR_STORAGE_KEY,
   avatarInitial,
+  avatarStorageKey,
   letterAvatarDataUrl,
   readStoredAvatar,
   writeStoredAvatar,
@@ -20,6 +20,7 @@ const SIZES: Record<Size, string> = {
 export function UserAvatar({
   displayName,
   email,
+  userId,
   imageUrl,
   size = "sm",
   className = "",
@@ -27,6 +28,7 @@ export function UserAvatar({
 }: {
   displayName?: string | null;
   email?: string | null;
+  userId?: string | null;
   /** Remote or data-URL photo. When omitted, local letter/photo storage is used. */
   imageUrl?: string | null;
   size?: Size;
@@ -34,21 +36,22 @@ export function UserAvatar({
   listenForStorage?: boolean;
 }) {
   const [stored, setStored] = useState<string | null>(null);
+  const storageKey = avatarStorageKey(userId);
 
   useEffect(() => {
-    let current = readStoredAvatar();
+    let current = readStoredAvatar(userId);
     if (!current && listenForStorage) {
       // Persist the blue letter mark as the set avatar on first use.
       current = letterAvatarDataUrl(avatarInitial(displayName, email, "M"));
-      writeStoredAvatar(current);
+      writeStoredAvatar(current, userId);
     }
     setStored(current);
     if (!listenForStorage) return;
     function onStorage(e: StorageEvent) {
-      if (e.key === AVATAR_STORAGE_KEY) setStored(e.newValue);
+      if (e.key === storageKey) setStored(e.newValue);
     }
     function onCustom() {
-      setStored(readStoredAvatar());
+      setStored(readStoredAvatar(userId));
     }
     window.addEventListener("storage", onStorage);
     window.addEventListener("waypoint:avatar-changed", onCustom);
@@ -56,7 +59,7 @@ export function UserAvatar({
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("waypoint:avatar-changed", onCustom);
     };
-  }, [listenForStorage, displayName, email]);
+  }, [listenForStorage, displayName, email, userId, storageKey]);
 
   const src = imageUrl || stored;
   const letter = avatarInitial(displayName, email, "M");

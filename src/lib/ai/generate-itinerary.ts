@@ -172,8 +172,10 @@ function isSitDown(types: string[]): boolean {
 }
 
 function isGenericName(name: string): boolean {
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length < 2 || /^\d+$/.test(trimmed)) return true;
   return /^(food|restaurant|cafe|café|bar|pub|park|museum|attraction|shop|hotel|viewpoint)$/i.test(
-    name.trim(),
+    trimmed,
   );
 }
 
@@ -317,6 +319,7 @@ async function callGroq(
           dietary: prefs.dietary,
           indoorOutdoor: prefs.indoorOutdoor,
           maxWalkMinutes: prefs.maxWalkMinutes,
+          stopsPerDay: sightseeingStopsTarget(prefs),
         }),
       },
     ],
@@ -349,9 +352,14 @@ function fallbackSchedule(
   );
 }
 
-function stopsPerDay(intensity: TripPreferencesInput["intensity"]): number {
-  // Keep in sync with stopCap — every first plan should fill the day.
-  return intensity === "packed" ? 5 : intensity === "relaxed" ? 3 : 4;
+function sightseeingStopsTarget(prefs: TripPreferencesInput): number {
+  return stopCap({
+    intensity: prefs.intensity,
+    party: prefs.party,
+    tightBudget:
+      prefs.budgetAllocation === "mostly-free" ||
+      (typeof prefs.budget === "number" && prefs.budget > 0 && prefs.budget < 800),
+  });
 }
 
 function fallbackScheduleMultiCity(
@@ -359,7 +367,7 @@ function fallbackScheduleMultiCity(
   candidates: RankedCandidate[],
   dayPlan: ReturnType<typeof expandLegsToDays>,
 ): ItineraryGeneration {
-  const perDay = stopsPerDay(prefs.intensity);
+  const perDay = sightseeingStopsTarget(prefs);
   const used = new Set<string>();
   const must = prefs.mustSee ?? [];
   const soft = prefs.preferred ?? [];
@@ -543,21 +551,42 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
 
   // Discover candidates per unique city, anchored on hotel when available
   const uniqueCities = [...new Set(legs.map((l) => l.city))];
+  const stopsNeeded =
+    dayPlan.length * sightseeingStopsTarget(prefs) + Math.max(8, dayPlan.length * 2);
   for (const city of uniqueCities) {
     const leg = legs.find((l) => l.city === city)!;
     const centerLat = leg.hotelLat ?? leg.lat!;
     const centerLng = leg.hotelLng ?? leg.lng!;
     if (centerLat == null || centerLng == null) continue;
+    const cityDays = dayPlan.filter((d) => d.city === city).length;
+    const discoverLimit = Math.min(96, Math.max(48, cityDays * sightseeingStopsTarget(prefs) * 3));
 
     try {
-      const osmDiscovered = await discoverPlacesFromOsm({
+      let osmDiscovered = await discoverPlacesFromOsm({
         destination: city,
         lat: centerLat,
         lng: centerLng,
-        radiusMeters: leg.hotel ? 4500 : 7000,
-        limit: 36,
+        radiusMeters: leg.hotel ? 5500 : 9000,
+        limit: discoverLimit,
       });
+      // Thin Overpass response — widen the search once.
+      if (osmDiscovered.length < Math.min(20, stopsNeeded)) {
+        const wider = await discoverPlacesFromOsm({
+          destination: city,
+          lat: centerLat,
+          lng: centerLng,
+          radiusMeters: 14000,
+          limit: discoverLimit,
+        });
+        const seen = new Set(osmDiscovered.map((p) => p.placeId));
+        for (const place of wider) {
+          if (seen.has(place.placeId)) continue;
+          osmDiscovered.push(place);
+          seen.add(place.placeId);
+        }
+      }
       for (const h of discoveredToPlaceHits(osmDiscovered)) {
+        if (isGenericName(h.displayName)) continue;
         byId.set(h.placeId, { ...h, city });
         wikiByPlace.set(h.placeId, h.wikipediaTitle ?? null);
       }
@@ -583,6 +612,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
         interests: expandInterestQueries(prefs.interests),
       });
       for (const h of interestHits) {
+        if (isGenericName(h.displayName)) continue;
         byId.set(h.placeId, { ...h, city });
       }
     } catch {
@@ -804,7 +834,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       ai,
       fallback: deterministic,
       dayPlan,
-      perDay: stopsPerDay(prefs.intensity),
+      perDay: sightseeingStopsTarget(prefs),
     });
   }
 
@@ -978,6 +1008,10 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
     ) => {
       if (usedAcross.has(placeId) || usedPlaces.has(placeId) || !byId.has(placeId)) return false;
       const candidate = byId.get(placeId)!;
+      if (isGenericName(candidate.displayName)) {
+        usedPlaces.add(placeId);
+        return false;
+      }
       if (
         dayWet &&
         priority !== "must_see" &&
@@ -1069,13 +1103,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       );
     }
 
-    const target = stopCap({
-      intensity: prefs.intensity,
-      party: prefs.party,
-      tightBudget:
-        prefs.budgetAllocation === "mostly-free" ||
-        (typeof prefs.budget === "number" && prefs.budget > 0 && prefs.budget < 800),
-    });
+    const target = sightseeingStopsTarget(prefs);
     const sightseeing = () =>
       activities.filter(
         (item) =>
@@ -1214,7 +1242,7 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
     const routePoints = activities
       .slice(Math.max(0, localStartIdx))
       .map((a) => ({ lat: a.lat, lng: a.lng }));
-    const route = await computeDayRoute({
+    let route = await computeDayRoute({
       mode: routeMode,
       points:
         routePoints.length >= 2
@@ -1229,12 +1257,16 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
       }
       for (let i = localStartIdx + 1; i < activities.length; i++) {
         const routeLeg = route.legs[i - localStartIdx - 1];
-        const travel = routeLeg?.durationMinutes ?? 0;
+        const rawTravel = routeLeg?.durationMinutes ?? 0;
+        const travelCap = routeMode === "WALK" ? 75 : routeMode === "TRANSIT" ? 90 : 120;
+        const travel = Math.min(rawTravel, travelCap);
         activities[i].travelMinutesFromPrev = travel;
-        activities[i].travelRouted = route.source === "osrm" || route.source === "google";
-        if (travel > 45) {
+        activities[i].travelRouted =
+          travel === rawTravel &&
+          (route.source === "osrm" || route.source === "google");
+        if (rawTravel > 45) {
           warnings.push(
-            `Long transfer (${travel} min) before ${activities[i].name} — likely a real-path detour (bridge, one-way, or sparse paths), not crow-flies distance.`,
+            `Long transfer (${rawTravel} min) before ${activities[i].name} — likely a real-path detour (bridge, one-way, or sparse paths), not crow-flies distance.`,
           );
         }
         // Flag when routed path is much longer than straight line (river banks, etc.)
@@ -1369,7 +1401,9 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
           !item.placeId.startsWith("transit:") &&
           !item.placeId.startsWith("flight:"),
       ).length;
-    if (finishedSightseeing() < target) {
+    // Refill → re-route/clock/constrain, then refill again if still thin (up to 2 passes).
+    for (let refillPass = 0; refillPass < 2; refillPass++) {
+      if (finishedSightseeing() >= target) break;
       const already = new Set(finished.map((item) => item.placeId));
       let cursor =
         finished.length > 0
@@ -1386,14 +1420,18 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
             !usedAcross.has(c.placeId) &&
             (!c.city || c.city === assignment.city),
         ),
+        // Last resort: allow reusing unused city-pool even if marked across days
+        ...cityPool.filter((c) => !already.has(c.placeId)),
       ];
       const seenRefill = new Set<string>();
+      let added = 0;
       for (const candidate of refillPool) {
         if (finishedSightseeing() >= target) break;
         if (seenRefill.has(candidate.placeId)) continue;
         seenRefill.add(candidate.placeId);
         const hit = byId.get(candidate.placeId);
         if (!hit) continue;
+        added += 1;
         finished.push({
           placeId: candidate.placeId,
           name: hit.displayName,
@@ -1420,11 +1458,245 @@ export async function generateItinerary(prefs: TripPreferencesInput): Promise<{
         already.add(candidate.placeId);
         cursor = addMinutes(cursor, (isSitDown(candidate.types) ? 75 : 90) + 15);
       }
-      if (finishedSightseeing() < target) {
-        warnings.push(
-          `Day ${assignment.dayIndex + 1} in ${assignment.city} still has only ${finishedSightseeing()} stops — the place list for this city was thin.`,
+      if (!added) break;
+
+      const refillRouteStartIdx = finished.findIndex(
+        (a) => !a.placeId.startsWith("transit:") && !a.placeId.startsWith("flight:"),
+      );
+      const refillRoutePoints = finished
+        .slice(Math.max(0, refillRouteStartIdx))
+        .map((a) => ({ lat: a.lat, lng: a.lng }));
+      const refillRoute = await computeDayRoute({
+        mode: routeMode,
+        points:
+          refillRoutePoints.length >= 2
+            ? refillRoutePoints
+            : finished.map((a) => ({ lat: a.lat, lng: a.lng })),
+      });
+      if (refillRoute && refillRouteStartIdx >= 0) {
+        route = refillRoute;
+        const travelCap = routeMode === "WALK" ? 75 : routeMode === "TRANSIT" ? 90 : 120;
+        for (let i = refillRouteStartIdx + 1; i < finished.length; i++) {
+          const routeLeg = refillRoute.legs[i - refillRouteStartIdx - 1];
+          const rawTravel = routeLeg?.durationMinutes ?? 0;
+          const travel = Math.min(rawTravel, travelCap);
+          finished[i].travelMinutesFromPrev = travel;
+          finished[i].travelRouted =
+            travel === rawTravel &&
+            (refillRoute.source === "osrm" || refillRoute.source === "google");
+        }
+      }
+      const relaxHours = refillPass > 0;
+      const refillClocked = fitDayClock(
+        finished.map((activity) => {
+          const details = detailsCache.get(activity.placeId);
+          const rawHours =
+            details && "regularOpeningHours" in (details as object)
+              ? (details as { regularOpeningHours?: unknown }).regularOpeningHours
+              : activity.openingHours;
+          return {
+            ...activity,
+            hoursWindow:
+              typeof activity.openingHours === "string" ? activity.openingHours : null,
+            openingHours: relaxHours
+              ? undefined
+              : (rawHours ?? activity.openingHours),
+            dayDate,
+            types: activity.types ?? byId.get(activity.placeId)?.types ?? [],
+          };
+        }),
+        {
+          dayEnd,
+          mealGapMinutes: 60,
+          isMeal: (item) => isSitDown(item.types ?? []),
+          anchored: (item) =>
+            item.placeId.startsWith("flight:") || item.placeId.startsWith("transit:"),
+        },
+      );
+      for (const drop of refillClocked.dropped) warnings.push(drop.reason);
+      const refillConstrained = applyDayConstraints(
+        refillClocked.kept.map((activity) => ({
+          ...activity,
+          types: activity.types ?? byId.get(activity.placeId)?.types ?? [],
+          wheelchair: byId.get(activity.placeId)?.wheelchair,
+          fee: byId.get(activity.placeId)?.fee,
+          cuisine: byId.get(activity.placeId)?.cuisine,
+        })),
+        {
+          maxWalkMinutes:
+            refillPass > 0
+              ? Math.max(prefs.maxWalkMinutes ?? 25, 45)
+              : prefs.maxWalkMinutes,
+          walking: prefs.transport !== "driving" && prefs.transport !== "transit",
+          stepFree: wantsStepFree(prefs.accessibility),
+          dietary: prefs.dietary,
+          wetWeather: refillPass > 0 ? false : dayWet,
+          isOutdoor: (stop) => isOutdoorPlace(stop.types, stop.name),
+          isMustSee: (stop) => stop.priority === "must_see",
+          transit: finished
+            .filter((activity) => activity.placeId.startsWith("transit:"))
+            .map((activity) => ({
+              start: activity.startTime,
+              durationMinutes: activity.durationMinutes,
+            })),
+        },
+      );
+      for (const drop of refillConstrained.dropped) warnings.push(drop.reason);
+      finished = refillConstrained.kept.map((activity) => {
+        const note = refillConstrained.notes[activity.placeId];
+        const extra = [note?.fee, note?.access, note?.cuisine].filter(Boolean).join(" ");
+        return {
+          ...activity,
+          planningNote: extra
+            ? `${activity.planningNote ?? ""} ${extra}`.trim()
+            : activity.planningNote,
+        };
+      });
+    }
+
+    // Last-resort pack: rebuild a full daytime slate when clock/routing gutted the day.
+    const thinBeforePack = finishedSightseeing();
+    if (thinBeforePack < target) {
+      warnings.push(
+        `Day ${assignment.dayIndex + 1}: packing toward ${target} stops (had ${thinBeforePack}).`,
+      );
+      const anchors = finished.filter(
+        (item) =>
+          item.placeId.startsWith("flight:") ||
+          item.placeId.startsWith("transit:"),
+      );
+      const keptSight = finished.filter(
+        (item) =>
+          !item.placeId.startsWith("flight:") &&
+          !item.placeId.startsWith("transit:"),
+      );
+      const already = new Set(finished.map((item) => item.placeId));
+      const extras = [...byId.values()].filter(
+        (hit) =>
+          (!hit.city || hit.city === assignment.city) &&
+          !already.has(hit.placeId) &&
+          !isGenericName(hit.displayName),
+      );
+      // Prefer unused-across-days, but reuse city places before leaving a thin day.
+      extras.sort(
+        (a, b) =>
+          Number(usedAcross.has(a.placeId)) - Number(usedAcross.has(b.placeId)),
+      );
+      warnings.push(
+        `Day ${assignment.dayIndex + 1}: emergency pool ${keptSight.length} kept + ${extras.length} extras.`,
+      );
+      let cursor = defaultStart.slice(0, 5);
+      if (anchors.length) {
+        const lastAnchor = anchors[anchors.length - 1];
+        cursor = addMinutes(
+          lastAnchor.startTime,
+          lastAnchor.durationMinutes + 30,
         );
       }
+      const packed: typeof finished = [...anchors];
+      const seenEmergency = new Set<string>(anchors.map((a) => a.placeId));
+      const endMin =
+        Number(dayEnd.slice(0, 2)) * 60 + Number(dayEnd.slice(3, 5));
+
+      const pushStop = (
+        hit: {
+          placeId: string;
+          displayName: string;
+          formattedAddress?: string;
+          lat: number;
+          lng: number;
+          types?: string[];
+          wheelchair?: string | null;
+          fee?: string | null;
+          cuisine?: string | null;
+        },
+        base?: (typeof finished)[number],
+      ) => {
+        if (seenEmergency.has(hit.placeId)) return false;
+        const duration = isSitDown(hit.types ?? base?.types ?? []) ? 70 : 80;
+        const startMin =
+          Number(cursor.slice(0, 2)) * 60 + Number(cursor.slice(3, 5));
+        if (!Number.isFinite(startMin) || startMin + duration > endMin) {
+          return false;
+        }
+        seenEmergency.add(hit.placeId);
+        if (base) {
+          packed.push({
+            ...base,
+            startTime: cursor,
+            durationMinutes: duration,
+            travelMinutesFromPrev: packed.length > anchors.length ? 15 : 0,
+          });
+        } else {
+          packed.push({
+            placeId: hit.placeId,
+            name: hit.displayName,
+            address: hit.formattedAddress,
+            lat: hit.lat,
+            lng: hit.lng,
+            startTime: cursor,
+            durationMinutes: duration,
+            priority: "preferred",
+            planningNote: `Packed so day ${assignment.dayIndex + 1} in ${assignment.city} stays complete.`,
+            hoursVerified: false,
+            scheduleWarnings: [
+              "Added to keep a full day plan — confirm hours and travel before you go.",
+            ],
+            travelMinutesFromPrev: packed.length > anchors.length ? 15 : 0,
+            types: hit.types ?? [],
+            wheelchair: hit.wheelchair,
+            fee: hit.fee,
+            cuisine: hit.cuisine,
+            hoursWindow: null,
+            openingHours: undefined,
+            dayDate,
+          } as (typeof finished)[number]);
+        }
+        cursor = addMinutes(cursor, duration + 15);
+        return true;
+      };
+
+      for (const item of keptSight) {
+        if (
+          packed.filter(
+            (row) =>
+              !row.placeId.startsWith("flight:") &&
+              !row.placeId.startsWith("transit:"),
+          ).length >= target
+        ) {
+          break;
+        }
+        pushStop(
+          {
+            placeId: item.placeId,
+            displayName: item.name,
+            formattedAddress: item.address,
+            lat: item.lat,
+            lng: item.lng,
+            types: item.types,
+          },
+          item,
+        );
+      }
+      for (const hit of extras) {
+        if (
+          packed.filter(
+            (row) =>
+              !row.placeId.startsWith("flight:") &&
+              !row.placeId.startsWith("transit:"),
+          ).length >= target
+        ) {
+          break;
+        }
+        pushStop(hit);
+      }
+      finished = packed;
+    }
+
+    if (finishedSightseeing() < target) {
+      warnings.push(
+        `Day ${assignment.dayIndex + 1} in ${assignment.city} still has only ${finishedSightseeing()} stops — the place list for this city was thin.`,
+      );
     }
 
     if (dayWeather) {

@@ -144,21 +144,24 @@ export default function DashboardPage() {
 
       {/* Hero */}
       <section className="rounded-[16px] border border-[#E1E5F0] bg-white px-6 py-8 shadow-[0_6px_18px_rgba(8,11,58,0.05)] sm:px-8">
-        <h1 className="text-[28px] font-bold tracking-tight text-[#080B3A]">
-          Your trips
+        <h1 className="text-[28px] font-semibold tracking-tight text-[#080B3A]">
+          Where next?
         </h1>
         <p className="mt-1 text-sm text-[#6B7280]">
-          Tell the agent where you are going.
+          Start with a Future Trip — dates can come later when you book.
         </p>
         <div className="mt-3">
           <PlanSummary />
         </div>
-        <div className="mt-6 flex flex-wrap gap-3">
-          <LeavePageLink href="/trips/new" variant="primary">
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <LeavePageLink href="/future-plans" variant="primary">
             <span className="inline-flex items-center gap-2">
               <IconPlane size={16} />
-              Plan a trip
+              Future Trips
             </span>
+          </LeavePageLink>
+          <LeavePageLink href="/trips/new" variant="secondary">
+            Already have a date and time?
           </LeavePageLink>
           {isDemo ? (
             <CreateAccountLink className="inline-flex items-center justify-center gap-1.5 rounded-[12px] border border-[#E1E5F0] bg-white px-4 py-2.5 text-sm font-semibold text-[#1F2937] shadow-sm transition-colors hover:bg-[#DDE1FF]/60">
@@ -178,19 +181,19 @@ export default function DashboardPage() {
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {[
             {
-              href: "/discover",
-              title: "Discover destinations",
-              body: "Personalized ideas from your interests and saves.",
-            },
-            {
-              href: "/future-trips",
-              title: "Future trips",
-              body: "Continue research projects before they become itineraries.",
+              href: "/future-plans",
+              title: "Future Trips",
+              body: "The main place to hold destinations before tickets exist.",
             },
             {
               href: "/wishlist",
               title: "Wishlist",
-              body: "Organize saved places and attractions.",
+              body: "Save places from Reels or notes — they attach to Future Trips.",
+            },
+            {
+              href: "/discover",
+              title: "Discover destinations",
+              body: "Personalized ideas from your interests and saves.",
             },
             {
               href: "/discover/compare",
@@ -204,8 +207,8 @@ export default function DashboardPage() {
             },
             {
               href: "/trips/new",
-              title: "Start planning",
-              body: "Turn a researched idea into an active trip.",
+              title: "Already have a date and time?",
+              body: "Open the calendar itinerary builder when flights are booked.",
             },
           ].map((entry) => (
             <Link
@@ -259,13 +262,19 @@ export default function DashboardPage() {
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#DDE1FF] text-[#0400FF]">
             <IconPlane size={22} />
           </div>
-          <p className="text-lg font-semibold text-[#1F2937]">No trips yet</p>
+          <p className="text-lg font-semibold text-[#1F2937]">No dated trips yet</p>
           <p className="mx-auto mt-2 max-w-md text-sm text-[#6B7280]">
-            Tell the agent where you are going.
+            Start a Future Trip first — or open the builder if you already have
+            dates.
           </p>
-          <LeavePageLink href="/trips/new" variant="primary" className="mt-6">
-            Plan a trip
-          </LeavePageLink>
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <LeavePageLink href="/future-plans" variant="primary">
+              Future Trips
+            </LeavePageLink>
+            <LeavePageLink href="/trips/new" variant="secondary">
+              Already have a date and time?
+            </LeavePageLink>
+          </div>
         </div>
       ) : (
         <div id="trips" className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
@@ -299,12 +308,14 @@ function CreateTripPreviewCard() {
         </span>
       </div>
       <div className="flex flex-1 flex-col space-y-1.5 p-4">
-        <h3 className="text-[16px] font-semibold text-[#1F2937]">Plan a trip</h3>
+        <h3 className="text-[16px] font-semibold text-[#1F2937]">
+          Already have a date and time?
+        </h3>
         <p className="text-sm text-[#6B7280]">
-          Tell the agent where you are going.
+          Build a day-by-day itinerary when your trip is booked.
         </p>
         <span className="inline-flex items-center gap-1 pt-2 text-sm font-semibold text-[#0400FF] group-hover:gap-2">
-          Open planner <IconArrowRight size={14} />
+          Open builder <IconArrowRight size={14} />
         </span>
       </div>
     </Link>

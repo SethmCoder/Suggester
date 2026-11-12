@@ -10,6 +10,7 @@ import { withProfileEntitlement } from "@/lib/billing/access";
 import { LIST_PRICES } from "@/lib/billing/limits";
 import {
   emailGrantedPro,
+  grantSecretConfigured,
   selfProGrantEnabled,
 } from "@/lib/billing/pro-grant";
 import { checkoutConfigured } from "@/lib/billing/stripe";
@@ -76,6 +77,7 @@ export async function GET() {
       signedIn: false,
       isDemo: true,
       selfGrantAvailable: false,
+      secretGrantAvailable: grantSecretConfigured(),
       allowlisted: false,
     });
   }
@@ -94,6 +96,7 @@ export async function GET() {
     signedIn: Boolean(user),
     isDemo: false,
     selfGrantAvailable: selfProGrantEnabled() && Boolean(user) && !entitled,
+    secretGrantAvailable: grantSecretConfigured(),
     allowlisted: emailGrantedPro(user?.email),
   });
   if (entitled) applyEntitlementCookie(response, true);
@@ -137,6 +140,7 @@ export async function POST(req: Request) {
       signedIn: false,
       isDemo: true,
       selfGrantAvailable: false,
+      secretGrantAvailable: grantSecretConfigured(),
       allowlisted: false,
     });
     applyCookies(response, plan, used);
@@ -157,6 +161,7 @@ export async function POST(req: Request) {
     signedIn: Boolean(user),
     isDemo: false,
     selfGrantAvailable: selfProGrantEnabled() && Boolean(user) && !entitled,
+    secretGrantAvailable: grantSecretConfigured(),
     allowlisted: emailGrantedPro(user?.email),
     message:
       body.action === "upgrade"

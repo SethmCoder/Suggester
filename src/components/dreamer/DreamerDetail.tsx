@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ShareInviteButton } from "@/components/social/ShareInviteButton";
 import { Button } from "@/components/ui/Button";
 import { LeavePageLink } from "@/components/ui/LeavePageLink";
+import { Label } from "@/components/ui/Input";
 import { BookingEmailModal } from "@/components/dreamer/BookingEmailModal";
 import { PasteDropZone } from "@/components/dreamer/PasteDropZone";
+import { SegmentedCityHero } from "@/components/dreamer/SegmentedCityHero";
 import { buildDreamerSuggestions } from "@/lib/dreamer/suggestions";
 import {
   listDreamerBookings,
@@ -19,13 +22,18 @@ import type {
   DreamerSuggestion,
 } from "@/lib/dreamer/types";
 import { getFutureTrip, updateFutureTrip } from "@/lib/future-trips/store";
-import { removeFutureTrip } from "@/lib/future-trips/sync";
+import { patchFutureTrip, removeFutureTrip } from "@/lib/future-trips/sync";
 import type { FutureTrip } from "@/lib/future-trips/types";
 import { useRouter } from "next/navigation";
+import { listItems } from "@/lib/wishlist/store";
+import { wishlistItemsForFutureTrip } from "@/lib/wishlist/future-link";
+import type { WishlistItem } from "@/lib/wishlist/types";
 import {
   destinationImageUrl,
   hasCuratedCityImage,
 } from "@/lib/destination-image";
+import { bookingHasConcreteEvidence } from "@/lib/dreamer/ingest";
+import { materializeFutureTripLocally } from "@/lib/dreamer/materialize-local";
 
 type Tab = "bookings" | "plan" | "places";
 
@@ -45,9 +53,13 @@ export function DreamerDetail({ id }: { id: string }) {
   const [selected, setSelected] = useState<DreamerBooking | null>(null);
   const [showEmail, setShowEmail] = useState(false);
   const [deletingPlan, setDeletingPlan] = useState(false);
+  const [why, setWhy] = useState("");
+  const [whySaving, setWhySaving] = useState(false);
+  const [wishlist, setWishlist] = useState<WishlistItem[]>([]);
   const [detourState, setDetourState] = useState<
     Record<string, "accepted" | "dismissed" | "pending">
   >({});
+  const [materializing, setMaterializing] = useState(false);
 
   async function deleteBooking(booking: DreamerBooking) {
     if (
@@ -145,8 +157,9 @@ export function DreamerDetail({ id }: { id: string }) {
       });
       const data = (await res.json()) as DreamerStayAdvise;
       if (res.ok) setStayAdvise(data);
+      return data;
     } catch {
-      /* optional */
+      return null;
     }
   }, [id]);
 
@@ -166,9 +179,105 @@ export function DreamerDetail({ id }: { id: string }) {
     }
   }, [id]);
 
+  function refreshWishlist(local: FutureTrip | null) {
+    if (!local) {
+      setWishlist([]);
+      return;
+    }
+    setWishlist(wishlistItemsForFutureTrip(local, listItems()));
+  }
+
+  const materialize = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (materializing) return;
+      setMaterializing(true);
+      if (!opts?.silent) {
+        setBusy(true);
+        setMessage(null);
+      }
+      try {
+        await runStayAdvise();
+        const res = await fetch(`/api/dreamer/${id}/materialize`, {
+          method: "POST",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.tripId) {
+          updateFutureTrip(id, {
+            convertedTripId: data.tripId,
+            status: "planning",
+          });
+          if (stayAdvise?.rationale || stayAdvise?.stayUntil) {
+            try {
+              sessionStorage.setItem(
+                `waypoint:stay-advise:${data.tripId}`,
+                JSON.stringify({
+                  ...stayAdvise,
+                  suggestedDays: trip?.estimatedDurationDays ?? null,
+                }),
+              );
+            } catch {
+              /* ignore */
+            }
+          }
+          router.push(`/trips/${data.tripId}`);
+          return;
+        }
+
+        // Demo / unsigned: build from local booking evidence.
+        const localTrip = getFutureTrip(id);
+        const localBookings = listDreamerBookings(id);
+        if (localTrip && localBookings.length) {
+          const local = materializeFutureTripLocally({
+            trip: localTrip,
+            bookings: localBookings,
+          });
+          if ("tripId" in local) {
+            updateFutureTrip(id, {
+              convertedTripId: local.tripId,
+              status: "planning",
+            });
+            router.push(local.redirect);
+            return;
+          }
+          if (!opts?.silent) {
+            throw new Error(
+              local.code === "evidence_required"
+                ? "Paste a confirmation or screenshot first — trips are built from booking evidence only."
+                : local.error,
+            );
+          }
+          return;
+        }
+
+        if (!opts?.silent) {
+          throw new Error(
+            data.code === "evidence_required"
+              ? "Paste a confirmation or screenshot first — trips are built from booking evidence only."
+              : (data.error ?? "Could not build trip"),
+          );
+        }
+      } catch (e) {
+        if (!opts?.silent) {
+          setMessage(e instanceof Error ? e.message : "Failed");
+        }
+      } finally {
+        setMaterializing(false);
+        setBusy(false);
+      }
+    },
+    [id, materializing, runStayAdvise, stayAdvise, trip?.estimatedDurationDays, router],
+  );
+
   useEffect(() => {
     const local = getFutureTrip(id);
     setTrip(local ?? null);
+    const dreamer = (local?.preferences?.dreamer ?? {}) as Record<string, unknown>;
+    setWhy(
+      typeof dreamer.why === "string"
+        ? dreamer.why
+        : local?.notes?.trim() || "",
+    );
+    refreshWishlist(local ?? null);
     void loadBookings().then((list) => {
       if (local) refreshSuggestions(list, local);
       if (list.length) {
@@ -178,6 +287,12 @@ export function DreamerDetail({ id }: { id: string }) {
           updateFutureTrip(id, { status: "planning" });
           setTrip(getFutureTrip(id));
         }
+        const hasEvidence = list.some((b) =>
+          bookingHasConcreteEvidence(b.parsed),
+        );
+        if (hasEvidence && !local?.convertedTripId) {
+          void materialize({ silent: true });
+        }
       }
     });
     void fetch("/api/dreamer/mailbox")
@@ -186,40 +301,28 @@ export function DreamerDetail({ id }: { id: string }) {
         if (d.address) setMailbox(d.address);
       })
       .catch(() => null);
-  }, [id, loadBookings, loadPlaces, refreshSuggestions, runStayAdvise]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once per id
+  }, [id]);
 
-  async function materialize() {
-    if (!bookings.length) {
-      setMessage("Add a confirmation email first.");
-      return;
-    }
-    setBusy(true);
-    setMessage(null);
+  async function saveWhy() {
+    if (!trip) return;
+    setWhySaving(true);
     try {
-      const res = await fetch(`/api/dreamer/${id}/materialize`, {
-        method: "POST",
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(
-          data.code === "evidence_required"
-            ? "Paste a confirmation or screenshot first — trips are built from booking evidence only."
-            : (data.error ?? "Could not build trip"),
-        );
-      }
-      if (data.tripId) {
-        updateFutureTrip(id, {
-          convertedTripId: data.tripId,
-          status: "planning",
-        });
-        window.location.href = `/trips/${data.tripId}`;
-        return;
-      }
-      setMessage("Trip ready.");
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Failed");
+      const nextPrefs = {
+        ...trip.preferences,
+        dreamer: {
+          ...((trip.preferences.dreamer as object) || {}),
+          why: why.trim(),
+        },
+      };
+      updateFutureTrip(id, { notes: why.trim() || null, preferences: nextPrefs });
+      await patchFutureTrip(id, {
+        notes: why.trim() || null,
+        preferences: nextPrefs,
+      }).catch(() => null);
+      setTrip(getFutureTrip(id));
     } finally {
-      setBusy(false);
+      setWhySaving(false);
     }
   }
 
@@ -239,12 +342,23 @@ export function DreamerDetail({ id }: { id: string }) {
     }
   }
 
+  const whyHint = useMemo(
+    () =>
+      why.trim()
+        ? null
+        : "e.g. leisure, anniversary, cherry blossom season, conference…",
+    [why],
+  );
+
   if (!trip) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-10">
-        <p className="text-sm text-[#6B7280]">Dream not found on this device.</p>
-        <Link href="/future-plans" className="text-sm font-semibold text-[#0400FF]">
-          Back to Future Plans
+      <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
+        <p className="text-sm text-[#6B7280]">Trip not found on this device.</p>
+        <Link
+          href="/future-plans"
+          className="mt-3 inline-block text-sm font-semibold text-[#0400FF]"
+        >
+          Back to Future Trips
         </Link>
       </div>
     );
@@ -254,118 +368,196 @@ export function DreamerDetail({ id }: { id: string }) {
   const waiting = bookings.length === 0;
   const isPlan =
     trip.status === "planning" || Boolean(trip.convertedTripId) || !waiting;
-  const photo = hasCuratedCityImage(name);
+
+  const pasteDone = async (result: {
+    booking?: unknown;
+    planShift?: { shifted?: boolean };
+  }) => {
+    const booking = result.booking as DreamerBooking | undefined;
+    if (booking?.id?.startsWith("local-")) {
+      const next = [...listDreamerBookings(id), booking];
+      setDreamerBookings(id, next);
+      setBookings(next);
+      refreshSuggestions(next, trip);
+      updateFutureTrip(id, { status: "planning" });
+      setTrip(getFutureTrip(id));
+    } else {
+      const list = await loadBookings();
+      refreshSuggestions(list, trip);
+      updateFutureTrip(id, { status: "planning" });
+      setTrip(getFutureTrip(id));
+    }
+    void runStayAdvise();
+    void loadPlaces();
+    setTab("plan");
+    const evidence = booking && bookingHasConcreteEvidence(booking.parsed);
+    if (evidence || result.planShift?.shifted) {
+      void materialize({ silent: true });
+    }
+  };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
+    <div className="mx-auto max-w-3xl space-y-8 px-4 py-10 sm:px-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link href="/future-plans" className="text-sm font-semibold text-[#0400FF]">
-          ← Future Plans
-        </Link>
-        <Button
-          type="button"
-          variant="ghost"
-          className="text-[#B91C1C] hover:bg-[#FEF2F2]"
-          disabled={deletingPlan}
-          onClick={() => void deletePlan()}
+        <Link
+          href="/future-plans"
+          className="text-sm font-medium text-[#6B7280] transition hover:text-[#0400FF]"
         >
-          {deletingPlan ? "Deleting…" : "Delete plan"}
-        </Button>
+          ← Future Trips
+        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {/^[0-9a-f-]{36}$/i.test(id) ? (
+            <ShareInviteButton kind="future_trip" resourceId={id} />
+          ) : null}
+          <button
+            type="button"
+            className="text-xs font-medium text-[#9CA3AF] hover:text-[#B91C1C]"
+            disabled={deletingPlan}
+            onClick={() => void deletePlan()}
+          >
+            {deletingPlan ? "Deleting…" : "Delete"}
+          </button>
+        </div>
       </div>
 
-      <header className="overflow-hidden rounded-[20px] border border-[#E1E5F0] bg-white">
-        {photo ? (
-          <div className="relative h-40 sm:h-52">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={destinationImageUrl(name)}
-              alt=""
-              className="h-full w-full object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#080B3A]/75 to-transparent" />
-            <div className="absolute bottom-4 left-5 right-5">
-              <p className="text-3xl font-bold text-white">{name}</p>
-              <p className="mt-1 text-sm text-white/80">
-                {waiting
-                  ? "Waiting for your first confirmation"
-                  : isPlan
-                    ? "Planning from booking evidence"
-                    : `${bookings.length} booking${bookings.length === 1 ? "" : "s"} in`}
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="bg-[#080B3A] px-5 py-8 text-white">
-            <p className="text-3xl font-bold">{name}</p>
-            <p className="mt-1 text-sm text-white/80">
-              {waiting
-                ? "Waiting for your first confirmation"
-                : "Planning from booking evidence"}
-            </p>
-          </div>
-        )}
+      <header className="overflow-hidden rounded-[18px] border border-[#E1E5F0] shadow-[0_8px_30px_rgba(8,11,58,0.06)]">
+        <SegmentedCityHero
+          destination={trip.destination}
+          title={name}
+          subtitle={
+            waiting
+              ? "Waiting for your first confirmation"
+              : isPlan
+                ? "Planning from booking evidence"
+                : `${bookings.length} booking${bookings.length === 1 ? "" : "s"} in`
+          }
+          heightClass="h-44 sm:h-56"
+        />
       </header>
 
-      {mailbox ? (
-        <section className="rounded-[14px] border border-[#E1E5F0] bg-white p-4">
-          <p className="text-xs font-semibold uppercase text-[#6B7280]">
-            Forward confirmations to
-          </p>
-          <code className="mt-2 block text-sm text-[#080B3A]">{mailbox}</code>
+      <section className="rounded-[18px] border border-[#E1E5F0] bg-white p-5 sm:p-6">
+        <Label htmlFor="why-going">Why are you going?</Label>
+        <textarea
+          id="why-going"
+          value={why}
+          onChange={(e) => setWhy(e.target.value)}
+          onBlur={() => void saveWhy()}
+          rows={2}
+          placeholder={whyHint ?? undefined}
+          className="mt-2 w-full resize-none rounded-[12px] border border-[#E1E5F0] bg-[#FAFBFF] px-3.5 py-2.5 text-sm leading-relaxed text-[#080B3A] outline-none transition focus:border-[#0400FF] focus:bg-white"
+        />
+        <div className="mt-3 flex justify-end">
           <Button
             type="button"
             variant="secondary"
-            className="mt-3"
-            onClick={() => void loadBookings()}
+            disabled={whySaving}
+            onClick={() => void saveWhy()}
           >
-            Check for new forwards
+            {whySaving ? "Saving…" : "Save"}
           </Button>
-        </section>
-      ) : null}
+        </div>
+      </section>
 
-      <PasteDropZone
-        preferredFutureTripId={id}
-        onDone={async (result) => {
-          const booking = result.booking as DreamerBooking | undefined;
-          if (booking?.id?.startsWith("local-")) {
-            const raw =
-              typeof window !== "undefined"
-                ? sessionStorage.getItem(`waypoint:last-paste:${id}`)
-                : null;
-            void raw;
-            const next = [...listDreamerBookings(id), booking];
-            setDreamerBookings(id, next);
-            setBookings(next);
-            refreshSuggestions(next, trip);
-            updateFutureTrip(id, { status: "planning" });
-            setTrip(getFutureTrip(id));
-          } else {
-            const list = await loadBookings();
-            refreshSuggestions(list, trip);
-            updateFutureTrip(id, { status: "planning" });
-            setTrip(getFutureTrip(id));
-          }
-          void runStayAdvise();
-          void loadPlaces();
-          setTab("plan");
-        }}
-      />
+      <section className="rounded-[18px] border border-[#E1E5F0] bg-white p-5 sm:p-6">
+        <h2 className="text-base font-semibold tracking-tight text-[#080B3A]">
+          Add booking evidence
+        </h2>
+        <p className="mt-1 text-sm text-[#6B7280]">
+          Forward email in any language, or paste / screenshot a confirmation.
+        </p>
+        {mailbox ? (
+          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-[12px] bg-[#F5F7FF] px-3 py-2.5">
+            <code className="min-w-0 flex-1 truncate text-xs text-[#080B3A]">
+              {mailbox}
+            </code>
+            <button
+              type="button"
+              className="text-xs font-semibold text-[#0400FF] hover:underline"
+              onClick={() => void navigator.clipboard.writeText(mailbox)}
+            >
+              Copy
+            </button>
+            <button
+              type="button"
+              className="text-xs font-semibold text-[#6B7280] hover:text-[#080B3A]"
+              onClick={() => void loadBookings()}
+            >
+              Refresh
+            </button>
+          </div>
+        ) : null}
+        <div className="mt-4">
+          <PasteDropZone preferredFutureTripId={id} onDone={pasteDone} />
+        </div>
+      </section>
 
-      <div className="flex gap-2 border-b border-[#E1E5F0]">
+      <section className="rounded-[18px] border border-[#E1E5F0] bg-white p-5 sm:p-6">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold tracking-tight text-[#080B3A]">
+            Wishlist
+          </h2>
+          <Link
+            href="/wishlist"
+            className="text-xs font-semibold text-[#0400FF] hover:underline"
+          >
+            Manage
+          </Link>
+        </div>
+        {wishlist.length === 0 ? (
+          <p className="mt-3 text-sm leading-relaxed text-[#6B7280]">
+            Places saved for {name} appear here automatically.
+          </p>
+        ) : (
+          <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+            {wishlist.map((item) => (
+              <li
+                key={item.id}
+                className="flex gap-3 overflow-hidden rounded-[12px] bg-[#FAFBFF]"
+              >
+                {item.photoUrl || hasCuratedCityImage(item.location || name) ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={
+                      item.photoUrl ||
+                      destinationImageUrl(item.location || name)
+                    }
+                    alt=""
+                    className="h-14 w-14 shrink-0 object-cover"
+                  />
+                ) : (
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center bg-[#EEF2FF] text-sm font-semibold text-[#3730A3]">
+                    {item.name.slice(0, 1)}
+                  </div>
+                )}
+                <div className="min-w-0 py-2.5 pr-3">
+                  <p className="truncate text-sm font-medium text-[#080B3A]">
+                    {item.name}
+                  </p>
+                  <p className="truncate text-xs text-[#6B7280]">
+                    {item.location || item.category}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <div className="flex gap-1 border-b border-[#E1E5F0]">
         {(
           [
             ["bookings", "Bookings"],
-            ["plan", "Plan & AI"],
+            ["plan", "Plan"],
             ["places", "Places"],
           ] as const
         ).map(([key, label]) => (
           <button
             key={key}
             type="button"
-            className={`px-3 py-2 text-sm font-semibold ${
+            className={`px-4 py-2.5 text-sm font-medium transition ${
               tab === key
                 ? "border-b-2 border-[#0400FF] text-[#0400FF]"
-                : "text-[#6B7280]"
+                : "border-b-2 border-transparent text-[#6B7280] hover:text-[#080B3A]"
             }`}
             onClick={() => setTab(key)}
           >
@@ -375,9 +567,9 @@ export function DreamerDetail({ id }: { id: string }) {
       </div>
 
       {tab === "bookings" ? (
-        <section className="rounded-[14px] border border-[#E1E5F0] bg-white p-4">
+        <section className="rounded-[18px] border border-[#E1E5F0] bg-white p-5 sm:p-6">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-[#080B3A]">Bookings</h2>
+            <h2 className="text-base font-semibold text-[#080B3A]">Bookings</h2>
             <span className="text-xs text-[#9CA3AF]">
               {waiting
                 ? "None yet"
@@ -385,24 +577,24 @@ export function DreamerDetail({ id }: { id: string }) {
             </span>
           </div>
           {waiting ? (
-            <div className="mt-4 rounded-[12px] border border-dashed border-[#D1D7E5] bg-[#FAFBFF] px-4 py-8 text-center">
+            <div className="mt-5 rounded-[12px] border border-dashed border-[#D1D7E5] bg-[#FAFBFF] px-4 py-10 text-center">
               <p className="text-sm font-semibold text-[#080B3A]">
-                Empty itinerary
+                No bookings yet
               </p>
               <p className="mt-1 text-sm text-[#6B7280]">
-                Paste, screenshot, or forward a confirmation to add evidence.
+                Paste, screenshot, or forward a confirmation above.
               </p>
             </div>
           ) : (
-            <ul className="mt-3 space-y-2">
+            <ul className="mt-4 divide-y divide-[#F0F2F8]">
               {bookings.map((b) => (
                 <li
                   key={b.id}
-                  className="flex items-stretch gap-2 rounded-[10px] border border-[#F0F2F8] px-2 py-1.5"
+                  className="flex items-stretch gap-2 py-3 first:pt-0 last:pb-0"
                 >
                   <button
                     type="button"
-                    className="flex min-w-0 flex-1 items-start justify-between gap-3 px-1 py-1 text-left hover:opacity-90"
+                    className="flex min-w-0 flex-1 items-start justify-between gap-3 text-left"
                     onClick={() => {
                       setSelected(b);
                       setShowEmail(false);
@@ -412,7 +604,7 @@ export function DreamerDetail({ id }: { id: string }) {
                       <p className="text-sm font-medium text-[#080B3A]">
                         {b.title}
                       </p>
-                      <p className="text-xs text-[#6B7280]">
+                      <p className="mt-0.5 text-xs text-[#6B7280]">
                         {b.summary ||
                           [
                             b.kind,
@@ -425,16 +617,16 @@ export function DreamerDetail({ id }: { id: string }) {
                             .join(" · ")}
                       </p>
                     </div>
-                    <span className="shrink-0 rounded-full bg-[#ECFDF5] px-2 py-0.5 text-[10px] font-semibold text-[#047857]">
-                      {b.source === "paste" ? "Pasted" : "From email"}
+                    <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-[#047857]">
+                      {b.source === "paste" ? "Pasted" : "Email"}
                     </span>
                   </button>
                   <button
                     type="button"
-                    className="shrink-0 self-center rounded-[8px] px-2 py-1 text-xs font-semibold text-[#B91C1C] hover:bg-[#FEF2F2]"
+                    className="shrink-0 self-center px-1 text-xs font-medium text-[#9CA3AF] hover:text-[#B91C1C]"
                     onClick={() => void deleteBooking(b)}
                   >
-                    Delete
+                    Remove
                   </button>
                 </li>
               ))}
@@ -444,62 +636,38 @@ export function DreamerDetail({ id }: { id: string }) {
       ) : null}
 
       {tab === "plan" ? (
-        <section className="space-y-4 rounded-[14px] border border-[#E1E5F0] bg-white p-4">
-          <h2 className="text-sm font-semibold text-[#080B3A]">
+        <section className="space-y-4 rounded-[18px] border border-[#E1E5F0] bg-white p-5 sm:p-6">
+          <h2 className="text-base font-semibold text-[#080B3A]">
             Plan from evidence
           </h2>
           {waiting ? (
-            <p className="text-sm text-[#6B7280]">
-              Forward a confirmation email (or paste it on Bookings) first. Once
-              evidence lands, this tab suggests stay length and places from those
-              bookings — separate from generating a full Trip Wizard itinerary.
+            <p className="text-sm leading-relaxed text-[#6B7280]">
+              Add a confirmation first. Stay length and places unlock from that
+              evidence, then a calendar trip opens automatically.
             </p>
           ) : (
             <>
-              <p className="text-sm text-[#4B5563]">
-                Bookings are in. Stay length is researched from that evidence;
-                then AI suggests places for you to review on the Places tab.
-              </p>
-
-              <div className="rounded-[10px] border border-[#EEF2FF] bg-[#F8F9FF] px-3 py-3">
-                <p className="text-xs font-semibold uppercase text-[#3730A3]">
-                  Stay length (cited events only)
+              <div className="rounded-[12px] bg-[#F5F7FF] px-4 py-3.5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B7280]">
+                  Stay length
                 </p>
                 {stayAdvise ? (
                   <>
-                    <p className="mt-2 text-sm text-[#080B3A]">
+                    <p className="mt-2 text-sm leading-relaxed text-[#080B3A]">
                       {stayAdvise.rationale}
                     </p>
-                    {stayAdvise.stayUntil ? (
-                      <p className="mt-1 text-sm font-semibold text-[#0400FF]">
-                        Suggested stay until {stayAdvise.stayUntil}
+                    {trip.estimatedDurationDays ? (
+                      <p className="mt-2 text-sm font-semibold text-[#0400FF]">
+                        Suggested {trip.estimatedDurationDays} day
+                        {trip.estimatedDurationDays === 1 ? "" : "s"}
+                        {stayAdvise.stayUntil
+                          ? ` · until ${stayAdvise.stayUntil}`
+                          : ""}
                       </p>
-                    ) : (
-                      <p className="mt-1 text-sm text-[#6B7280]">
-                        No stay-until date — no dated evidence found.
+                    ) : stayAdvise.stayUntil ? (
+                      <p className="mt-2 text-sm font-semibold text-[#0400FF]">
+                        Suggested until {stayAdvise.stayUntil}
                       </p>
-                    )}
-                    {stayAdvise.catalogStayHint ? (
-                      <p className="mt-1 text-xs text-[#9CA3AF]">
-                        {stayAdvise.catalogStayHint}
-                      </p>
-                    ) : null}
-                    {stayAdvise.events.length ? (
-                      <ul className="mt-2 space-y-1">
-                        {stayAdvise.events.map((ev) => (
-                          <li key={`${ev.sourceUrl}-${ev.date}`} className="text-xs">
-                            <a
-                              href={ev.sourceUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="font-semibold text-[#0400FF] underline"
-                            >
-                              {ev.title}
-                            </a>{" "}
-                            · {ev.date}
-                          </li>
-                        ))}
-                      </ul>
                     ) : null}
                   </>
                 ) : (
@@ -513,54 +681,35 @@ export function DreamerDetail({ id }: { id: string }) {
                   className="mt-3"
                   onClick={() => void runStayAdvise()}
                 >
-                  Refresh stay advice
+                  Refresh
                 </Button>
               </div>
 
               {suggestions.map((s) => {
                 const status = detourState[s.id] ?? s.reviewStatus ?? "pending";
                 return (
-                  <article
-                    key={s.id}
-                    className="rounded-[10px] border border-[#F0F2F8] px-3 py-2"
-                  >
+                  <article key={s.id} className="border-t border-[#F0F2F8] pt-4">
                     <p className="text-sm font-semibold text-[#080B3A]">
                       {s.title}
                     </p>
-                    <p className="mt-1 text-sm text-[#4B5563]">{s.body}</p>
-                    {s.kind === "detour" ? (
-                      <div className="mt-2 space-y-1">
-                        {s.transportMethod ? (
-                          <p className="text-xs text-[#6B7280]">
-                            Transport: {s.transportMethod}
-                          </p>
-                        ) : null}
-                        {s.costEstimateLabel ? (
-                          <p className="text-xs text-[#6B7280]">
-                            {s.costEstimateLabel}
-                          </p>
-                        ) : null}
-                        {status === "pending" ? (
-                          <div className="flex gap-2 pt-1">
-                            <Button
-                              type="button"
-                              onClick={() => void reviewDetour(s.id, "accepted")}
-                            >
-                              Accept detour
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              onClick={() => void reviewDetour(s.id, "dismissed")}
-                            >
-                              Dismiss
-                            </Button>
-                          </div>
-                        ) : (
-                          <p className="text-xs font-semibold uppercase text-[#047857]">
-                            {status}
-                          </p>
-                        )}
+                    <p className="mt-1 text-sm leading-relaxed text-[#4B5563]">
+                      {s.body}
+                    </p>
+                    {s.kind === "detour" && status === "pending" ? (
+                      <div className="mt-3 flex gap-2">
+                        <Button
+                          type="button"
+                          onClick={() => void reviewDetour(s.id, "accepted")}
+                        >
+                          Accept
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => void reviewDetour(s.id, "dismissed")}
+                        >
+                          Dismiss
+                        </Button>
                       </div>
                     ) : null}
                   </article>
@@ -572,32 +721,22 @@ export function DreamerDetail({ id }: { id: string }) {
       ) : null}
 
       {tab === "places" ? (
-        <section className="rounded-[14px] border border-[#E1E5F0] bg-white p-4">
-          <h2 className="text-sm font-semibold text-[#080B3A]">
-            AI place suggestions
-          </h2>
-          <p className="mt-1 text-sm text-[#6B7280]">
-            After you forward bookings, Waypoint suggests catalog places for{" "}
-            {name}. Confirm hours locally before you go.
-          </p>
+        <section className="rounded-[18px] border border-[#E1E5F0] bg-white p-5 sm:p-6">
+          <h2 className="text-base font-semibold text-[#080B3A]">Places</h2>
           {waiting ? (
             <p className="mt-3 text-sm text-[#6B7280]">
-              Forward or paste a confirmation first — place suggestions unlock
-              from that evidence.
+              Add a confirmation first.
             </p>
           ) : places.length === 0 ? (
             <p className="mt-3 text-sm text-[#6B7280]">
               No catalog places for this city yet.
             </p>
           ) : (
-            <ul className="mt-3 space-y-2">
+            <ul className="mt-4 divide-y divide-[#F0F2F8]">
               {places.map((p) => (
-                <li
-                  key={p.name}
-                  className="rounded-[10px] border border-[#F0F2F8] px-3 py-2"
-                >
+                <li key={p.name} className="py-3 first:pt-0 last:pb-0">
                   <p className="text-sm font-medium text-[#080B3A]">{p.name}</p>
-                  <p className="text-xs text-[#6B7280]">{p.note}</p>
+                  <p className="mt-0.5 text-xs text-[#6B7280]">{p.note}</p>
                 </li>
               ))}
             </ul>
@@ -605,14 +744,14 @@ export function DreamerDetail({ id }: { id: string }) {
         </section>
       ) : null}
 
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap items-center gap-3 border-t border-[#F0F2F8] pt-2">
         <Button
           type="button"
-          disabled={busy || waiting}
+          disabled={busy || waiting || materializing}
           onClick={() => void materialize()}
         >
-          {busy
-            ? "Building…"
+          {busy || materializing
+            ? "Opening calendar…"
             : waiting
               ? "Waiting for first booking"
               : "Open day-by-day itinerary"}
@@ -626,11 +765,6 @@ export function DreamerDetail({ id }: { id: string }) {
           </LeavePageLink>
         ) : null}
       </div>
-      <p className="text-xs text-[#6B7280]">
-        {waiting
-          ? "Waypoint won’t invent a trip — paste a confirmation so dates and flights come from evidence."
-          : "This itinerary is built from your confirmation evidence (times, route, hotel), not a guessed schedule."}
-      </p>
       {message ? <p className="text-sm text-[#B91C1C]">{message}</p> : null}
 
       <BookingEmailModal

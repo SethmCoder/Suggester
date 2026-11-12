@@ -48,6 +48,16 @@ export function IconUser(p: IconProps) {
     </svg>
   );
 }
+export function IconUsers(p: IconProps) {
+  return (
+    <svg {...base(p)}>
+      <circle cx="9" cy="8" r="3" />
+      <circle cx="17" cy="9" r="2.5" />
+      <path d="M3 19.5a5.5 5.5 0 0 1 8.5-1" />
+      <path d="M14.5 18a4.5 4.5 0 0 1 5.5 1.5" />
+    </svg>
+  );
+}
 export function IconHelp(p: IconProps) {
   return (
     <svg {...base(p)}>

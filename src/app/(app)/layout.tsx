@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { cookies } from "next/headers";
 import { AppShell } from "@/components/layout/AppShell";
+import { DEMO_AVATAR_USER_ID } from "@/lib/avatar";
 import { DEMO_COOKIE, isDemoCookie } from "@/lib/demo/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -19,11 +20,18 @@ export default async function AppLayout({
   if (demo) {
     // Demo account wins — never show a personal email while demo is active.
     return (
-      <AppShell userEmail="demo@waypoint.app" displayName="Demo traveler">
+      <AppShell
+        userEmail="demo@waypoint.app"
+        displayName="Demo traveler"
+        userId={DEMO_AVATAR_USER_ID}
+        isDemo
+      >
         {children}
       </AppShell>
     );
   }
+
+  let userId: string | null = null;
 
   try {
     const supabase = await createSupabaseServerClient();
@@ -31,6 +39,7 @@ export default async function AppLayout({
       data: { user },
     } = await supabase.auth.getUser();
     email = user?.email ?? null;
+    userId = user?.id ?? null;
     if (user) {
       const { data: profile } = await supabase
         .from("profiles")
@@ -44,7 +53,7 @@ export default async function AppLayout({
   }
 
   return (
-    <AppShell userEmail={email} displayName={displayName}>
+    <AppShell userEmail={email} displayName={displayName} userId={userId}>
       {children}
     </AppShell>
   );

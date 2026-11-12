@@ -273,6 +273,12 @@ export function ThingsSearch() {
         ) : null}
         {notice ? <p className="mt-2 text-xs text-[#4B5563]">{notice}</p> : null}
         {error ? <p className="mt-2 text-sm text-[#DC2626]">{error}</p> : null}
+        {status === "idle" && thread.length === 0 ? (
+          <p className="mt-3 rounded-[12px] border border-dashed border-[#D1D7E5] bg-[#FAFBFF] px-3 py-4 text-sm text-[#6B7280]">
+            Search museums, parks, viewpoints, markets — then add a stop to any
+            trip day. Try a prompt below to start.
+          </p>
+        ) : null}
         <div className="mt-3 flex gap-2 overflow-x-auto">
           {PROMPTS.map((prompt) => (
             <button

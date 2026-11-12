@@ -9,10 +9,11 @@ import {
 import type { MatchCandidate } from "@/lib/dreamer/match-booking";
 import {
   bookingHasConcreteEvidence,
-  parseAndSummarize,
+  parseAndSummarizeAsync,
   resolveMatch,
 } from "@/lib/dreamer/ingest";
 import { verifyInboundSignature } from "@/lib/dreamer/parse-email";
+import { confirmationPlainText } from "@/lib/dreamer/redact-secrets";
 import { datesFromDreamAndBooking } from "@/lib/dreamer/materialize";
 import { recordConfirmationEvidence } from "@/lib/dreamer/record-evidence";
 
@@ -48,7 +49,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "message_id required" }, { status: 400 });
   }
 
-  const textBody = String(
+  const rawText = String(
     data.text ?? data.text_body ?? data.body ?? "",
   ).slice(0, 50_000);
   const htmlBody = data.html
@@ -56,6 +57,7 @@ export async function POST(req: Request) {
     : data.html_body
       ? String(data.html_body).slice(0, 100_000)
       : null;
+  const textBody = confirmationPlainText({ text: rawText, html: htmlBody });
   const senders = extractSenderCandidates({
     from: data.from ? String(data.from) : null,
     replyTo: data.reply_to
@@ -75,7 +77,11 @@ export async function POST(req: Request) {
 
   const svc = createServiceClient();
   if (!svc) {
-    const { parsed, summary } = parseAndSummarize({ subject, text: textBody });
+    const { parsed, summary } = await parseAndSummarizeAsync({
+      subject,
+      text: textBody,
+      html: htmlBody,
+    });
     return NextResponse.json({
       offline: true,
       messageId,
@@ -123,7 +129,11 @@ export async function POST(req: Request) {
   }
 
   const status = ownerId ? "received" : "unassigned";
-  const early = parseAndSummarize({ subject, text: textBody });
+  const early = await parseAndSummarizeAsync({
+    subject,
+    text: textBody,
+    html: htmlBody,
+  });
   const parsedEarly = early.parsed;
 
   const { data: row, error } = await svc
@@ -172,9 +182,10 @@ export async function POST(req: Request) {
     .limit(20);
 
   const primaryFlight = (priorForOwner ?? []).find((b) => b.kind === "flight");
-  const { parsed, title, summary } = parseAndSummarize({
+  const { parsed, title, summary } = await parseAndSummarizeAsync({
     subject,
     text: textBody,
+    html: htmlBody,
     primaryContext: primaryFlight?.parsed ?? null,
   });
 

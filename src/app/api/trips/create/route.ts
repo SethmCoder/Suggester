@@ -167,14 +167,7 @@ const bodySchema = z.object({
 export async function POST(req: Request) {
   try {
     const jar = await cookies();
-    const billing = readPlan((name) => jar.get(name)?.value);
-    if (!canCreateTrip(billing)) {
-      return NextResponse.json(
-        { error: PLAN_LIMIT_MESSAGE, code: "plan_limit" },
-        { status: 402 },
-      );
-    }
-    const { gateFeature, PRO_REQUIRED_MESSAGE } = await import(
+    const { gateFeature, isProEntitled, PRO_REQUIRED_MESSAGE } = await import(
       "@/lib/billing/entitlements"
     );
     const { withProfileEntitlement } = await import("@/lib/billing/access");
@@ -194,10 +187,20 @@ export async function POST(req: Request) {
       );
     }
 
-    const gate = gateFeature(
-      "generate",
-      await withProfileEntitlement((name) => jar.get(name)?.value, { id: user.id, email: user.email }),
+    const access = await withProfileEntitlement(
+      (name) => jar.get(name)?.value,
+      { id: user.id, email: user.email },
     );
+    const billing = readPlan(access);
+    // Entitled Pro accounts skip the Free trip cap even if waypoint_plan lags.
+    if (!isProEntitled(access) && !canCreateTrip(billing)) {
+      return NextResponse.json(
+        { error: PLAN_LIMIT_MESSAGE, code: "plan_limit" },
+        { status: 402 },
+      );
+    }
+
+    const gate = gateFeature("generate", access);
     if (!gate.allowed) {
       return NextResponse.json(
         {

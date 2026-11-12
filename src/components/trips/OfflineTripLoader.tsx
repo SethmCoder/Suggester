@@ -10,7 +10,7 @@ import {
 } from "@/lib/demo/data";
 import { loadOfflineTrip, saveOfflineTrip } from "@/lib/offline/trips";
 import type { BudgetPlan } from "@/lib/trips/budget";
-import type { TripExpense } from "@/lib/trips/expenses";
+import type { ExpenseCategorySplit, TripExpense } from "@/lib/trips/expenses";
 import { expandLegsToDays, type DayCityAssignment } from "@/lib/trips/legs";
 
 export function OfflineTripLoader({ tripId }: { tripId: string }) {
@@ -31,6 +31,7 @@ export function OfflineTripLoader({ tripId }: { tripId: string }) {
         interests?: string[];
         budget?: BudgetPlan;
         expenses?: TripExpense[];
+        expenseCategorySplit?: ExpenseCategorySplit;
         tripStatus?: string;
         pendingBuild?: Record<string, unknown>;
       }
@@ -70,6 +71,9 @@ export function OfflineTripLoader({ tripId }: { tripId: string }) {
         interests: data.preferences.interests,
         budget: offlineFresh ? offline?.budget : undefined,
         expenses: offlineFresh ? offline?.expenses : undefined,
+        expenseCategorySplit: offlineFresh
+          ? offline?.expenseCategorySplit
+          : undefined,
       });
       return;
     }
@@ -93,6 +97,7 @@ export function OfflineTripLoader({ tripId }: { tripId: string }) {
       interests: undefined,
       budget: snap.budget,
       expenses: snap.expenses,
+      expenseCategorySplit: snap.expenseCategorySplit,
       tripStatus: snap.trip.status,
       pendingBuild: snap.pendingBuild,
     });
@@ -139,6 +144,7 @@ export function OfflineTripLoader({ tripId }: { tripId: string }) {
       interests={state.interests}
       budgetPlan={state.budget}
       initialExpenses={state.expenses}
+      initialCategorySplit={state.expenseCategorySplit}
       initialStatus={state.tripStatus}
       pendingBuild={state.pendingBuild}
     />

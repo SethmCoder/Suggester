@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { clearMismatchedAvatarKeys } from "@/lib/avatar";
+import { clearDemoLocalStorage } from "@/lib/demo/cleanup";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 export function AvatarMenu({
@@ -25,7 +27,10 @@ export function AvatarMenu({
   }, []);
 
   async function signOut() {
-    await fetch("/api/demo/end", { method: "POST" }).catch(() => null);
+    const res = await fetch("/api/demo/end", { method: "POST" }).catch(() => null);
+    const body = (await res?.json().catch(() => null)) as { clearLocal?: boolean } | null;
+    if (body?.clearLocal) clearDemoLocalStorage();
+    clearMismatchedAvatarKeys(null);
     if (isSupabaseConfigured()) {
       try {
         const supabase = createClient();

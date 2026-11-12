@@ -53,31 +53,44 @@ export async function saveWishlistItem(input: WishlistItemInput): Promise<Wishli
       }),
     )
     .catch(() => undefined);
+
+  let saved = local;
   try {
     const res = await fetch("/api/wishlist/items", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     });
-    if (!res.ok) return local;
-    const data = (await res.json()) as { offline?: boolean; item?: WishlistItem };
-    if (data.offline || !data.item) return local;
-    store.updateItem(local.id, data.item);
-    // Keep remote id if server created a new row
-    if (data.item.id !== local.id) {
-      store.removeItem(local.id);
-      store.replaceWishlistState({
-        collections: store.listCollections(),
-        items: [
-          data.item,
-          ...store.listItems().filter((item) => item.id !== data.item!.id),
-        ],
-      });
+    if (res.ok) {
+      const data = (await res.json()) as { offline?: boolean; item?: WishlistItem };
+      if (data.item && !data.offline) {
+        store.updateItem(local.id, data.item);
+        if (data.item.id !== local.id) {
+          store.removeItem(local.id);
+          store.replaceWishlistState({
+            collections: store.listCollections(),
+            items: [
+              data.item,
+              ...store.listItems().filter((item) => item.id !== data.item!.id),
+            ],
+          });
+        }
+        saved = data.item;
+      }
     }
-    return data.item;
   } catch {
-    return local;
+    /* keep local */
   }
+
+  try {
+    const { ensureFutureTripForWishlistItem } = await import(
+      "@/lib/wishlist/future-link"
+    );
+    await ensureFutureTripForWishlistItem(saved);
+  } catch {
+    /* offline */
+  }
+  return store.getItem(saved.id) ?? saved;
 }
 
 export async function patchWishlistItem(

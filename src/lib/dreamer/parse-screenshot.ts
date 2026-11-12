@@ -1,5 +1,9 @@
 import { groqVisionChat, groqVisionModel } from "@/lib/ai/groq";
-import { parseAndSummarize, type IngestParseResult } from "@/lib/dreamer/ingest";
+import {
+  parseAndSummarizeAsync,
+  type IngestParseResult,
+} from "@/lib/dreamer/ingest";
+import { redactSecretsForLlm } from "@/lib/dreamer/redact-secrets";
 
 const DATA_URL_RE =
   /^data:(image\/(?:jpeg|jpg|png|webp|gif));base64,([A-Za-z0-9+/=\s]+)$/i;
@@ -42,9 +46,10 @@ export function normalizeScreenshotDataUrl(
   };
 }
 
-const TRANSCRIBE_PROMPT = `Transcribe ALL visible booking-confirmation text from this screenshot exactly.
-Include flight numbers, airline names, airport codes (IATA), cities, dates, times, confirmation/PNR codes, hotel names, and addresses when visible.
-Do not invent, guess, or complete missing fields. If a value is unreadable, omit it.
+const TRANSCRIBE_PROMPT = `Transcribe travel booking fields visible in this confirmation screenshot.
+Include ONLY: flight numbers, airline names, airport IATA codes, cities, travel dates, local times, hotel names, train/rail details, and booking/PNR/reference codes when clearly visible.
+Do NOT transcribe: credit/debit card numbers, CVV, bank details, passwords, government ID numbers, full street addresses beyond city, phone numbers, or email addresses.
+Do not invent missing fields. If unreadable, omit them.
 Output plain text only — no markdown, no commentary.`;
 
 /** Strip markdown fences / model chatter so deterministic parsers see plain text. */
@@ -56,7 +61,7 @@ export function cleanScreenshotTranscript(raw: string): string {
   text = text
     .replace(/^(here(?:'s| is) (?:the )?(?:transcription|text|content)[:\s]*)/i, "")
     .trim();
-  return text.slice(0, 50_000);
+  return redactSecretsForLlm(text).slice(0, 50_000);
 }
 
 export async function extractTextFromConfirmationScreenshot(
@@ -90,7 +95,7 @@ export async function extractTextFromConfirmationScreenshot(
 export async function parseBookingFromScreenshot(input: {
   dataUrl: string;
   subject?: string | null;
-  primaryContext?: Parameters<typeof parseAndSummarize>[0]["primaryContext"];
+  primaryContext?: Parameters<typeof parseAndSummarizeAsync>[0]["primaryContext"];
 }): Promise<
   | (IngestParseResult & { text: string })
   | { error: string; status: number }
@@ -117,7 +122,7 @@ export async function parseBookingFromScreenshot(input: {
     };
   }
 
-  const summarized = parseAndSummarize({
+  const summarized = await parseAndSummarizeAsync({
     subject: input.subject ?? "Screenshot booking",
     text,
     primaryContext: input.primaryContext,

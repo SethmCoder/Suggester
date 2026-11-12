@@ -71,8 +71,21 @@ Changes show as a **proposed patch** — nothing applies until you approve.
 - Day regenerate actions
 - First-party signup → plan funnel (Settings → Product funnel)
 
+## Upgrade a single account to Pro
+
+Without charging Stripe for one traveler:
+
+1. **Allowlist** — set `WAYPOINT_PRO_EMAILS=you@example.com` (comma-separated).
+2. **Self unlock** — set `WAYPOINT_ALLOW_SELF_PRO_GRANT=1`, sign in, open **Settings → Billing → Unlock Pro for me**.
+3. **Admin grant** — set `WAYPOINT_GRANT_SECRET` (8+ chars), then either use the **Grant by email** form in Settings, or:
+
+```bash
+node scripts/grant-pro.mjs traveler@email.com
+```
+
 ## Scripts
 
 - `npm run dev` — local server
 - `npm run build` — production build (same as Vercel)
 - `npm run test` — Vitest
+- `node scripts/grant-pro.mjs email@example.com` — grant Pro to one account

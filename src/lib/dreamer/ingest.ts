@@ -1,5 +1,11 @@
 import { pickBestMatch, type MatchCandidate } from "./match-booking";
+import {
+  assistParseBookingFromText,
+  mergeBookingParse,
+  needsLlmBookingAssist,
+} from "./llm-booking-assist";
 import { inheritBookingContext, parseBookingFromEmailText } from "./parse-email";
+import { confirmationPlainText } from "./redact-secrets";
 import { summarizeParsedBooking } from "./summary";
 import type { DreamerBookingSource, ParsedBooking } from "./types";
 
@@ -9,27 +15,68 @@ export type IngestParseResult = {
   summary: string;
 };
 
+function titleFor(parsed: ParsedBooking, subject?: string | null) {
+  return parsed.kind === "flight" && parsed.fromIata && parsed.toIata
+    ? `${parsed.fromIata} → ${parsed.toIata}`
+    : parsed.hotelName || subject || "Confirmation";
+}
+
 export function parseAndSummarize(input: {
   subject?: string | null;
   text?: string | null;
+  html?: string | null;
   primaryContext?: ParsedBooking | null;
 }): IngestParseResult {
+  const text = confirmationPlainText({
+    text: input.text,
+    html: input.html,
+  });
   let parsed = parseBookingFromEmailText({
     subject: input.subject,
-    text: input.text,
+    text,
   });
   if (input.primaryContext) {
     parsed = inheritBookingContext(parsed, input.primaryContext);
   }
-  const title =
-    parsed.kind === "flight" && parsed.fromIata && parsed.toIata
-      ? `${parsed.fromIata} → ${parsed.toIata}`
-      : parsed.hotelName || input.subject || "Confirmation";
   return {
     parsed,
-    title,
+    title: titleFor(parsed, input.subject),
     summary: summarizeParsedBooking(parsed),
   };
+}
+
+/** Deterministic parse, then optional redacted LLM assist for weak results. */
+export async function parseAndSummarizeAsync(input: {
+  subject?: string | null;
+  text?: string | null;
+  html?: string | null;
+  primaryContext?: ParsedBooking | null;
+}): Promise<IngestParseResult> {
+  const text = confirmationPlainText({
+    text: input.text,
+    html: input.html,
+  });
+  let result = parseAndSummarize({
+    subject: input.subject,
+    text,
+    primaryContext: input.primaryContext,
+  });
+  if (needsLlmBookingAssist(result.parsed) && text.trim().length >= 20) {
+    const assist = await assistParseBookingFromText({
+      subject: input.subject,
+      text,
+    });
+    const merged = mergeBookingParse(result.parsed, assist);
+    const withContext = input.primaryContext
+      ? inheritBookingContext(merged, input.primaryContext)
+      : merged;
+    result = {
+      parsed: withContext,
+      title: titleFor(withContext, input.subject),
+      summary: summarizeParsedBooking(withContext),
+    };
+  }
+  return result;
 }
 
 export function resolveMatch(input: {

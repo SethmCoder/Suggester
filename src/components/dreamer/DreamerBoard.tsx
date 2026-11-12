@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
-import { Input, Label } from "@/components/ui/Input";
+import { Input } from "@/components/ui/Input";
 import { PasteDropZone } from "@/components/dreamer/PasteDropZone";
+import { TripCollage, type CollageTripMeta } from "@/components/dreamer/TripCollage";
 import {
   dreamBookingCount,
   listDreamerBookings,
@@ -15,26 +16,41 @@ import type { DreamerBooking } from "@/lib/dreamer/types";
 import { listFutureTrips, updateFutureTrip } from "@/lib/future-trips/store";
 import { removeFutureTrip, saveFutureTrip } from "@/lib/future-trips/sync";
 import type { FutureTrip } from "@/lib/future-trips/types";
-import {
-  destinationImageUrl,
-  hasCuratedCityImage,
-} from "@/lib/destination-image";
+import { listItems } from "@/lib/wishlist/store";
 
 export function DreamerBoard() {
   const [trips, setTrips] = useState<FutureTrip[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [wishCounts, setWishCounts] = useState<Record<string, number>>({});
   const [destination, setDestination] = useState("");
   const [mailbox, setMailbox] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
 
   function refresh() {
     const list = listFutureTrips();
     setTrips(list);
     const next: Record<string, number> = {};
+    const wishes: Record<string, number> = {};
+    const items = listItems();
     for (const trip of list) {
       next[trip.id] = dreamBookingCount(trip.id);
+      const attached = trip.wishlistItemIds?.length ?? 0;
+      const tripDest = trip.destination.toLowerCase();
+      const matched = items.filter((item) => {
+        const dest = (item.location || item.address || item.name || "").toLowerCase();
+        return (
+          Boolean(dest) &&
+          (tripDest.includes(dest.split(",")[0]?.trim() || "___") ||
+            dest.includes(tripDest.split(/[,→]/)[0]?.trim() || "___") ||
+            trip.wishlistItemIds.includes(item.id))
+        );
+      }).length;
+      wishes[trip.id] = Math.max(attached, matched);
     }
     setCounts(next);
+    setWishCounts(wishes);
   }
 
   useEffect(() => {
@@ -90,185 +106,199 @@ export function DreamerBoard() {
     }
   }
 
+  const collageItems: CollageTripMeta[] = useMemo(
+    () =>
+      trips.map((trip) => ({
+        trip,
+        bookingCount: counts[trip.id] ?? 0,
+        wishlistCount: wishCounts[trip.id] ?? 0,
+      })),
+    [trips, counts, wishCounts],
+  );
+
   return (
-    <div className="mx-auto max-w-4xl space-y-6 px-4 py-8">
-      <header>
-        <h1 className="text-3xl font-bold text-[#080B3A]">Future Plans</h1>
-        <p className="mt-2 max-w-2xl text-sm text-[#6B7280]">
-          Plan a future trip here first. Forward booking emails (or paste a
-          confirmation), then Waypoint turns that evidence into bookings and AI
-          place suggestions — before you open the full Trip Wizard.
+    <div className="mx-auto max-w-5xl space-y-8 px-4 py-10 sm:px-6">
+      <header className="max-w-2xl">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#0400FF]">
+          Planning
         </p>
-        <ol className="mt-3 max-w-2xl list-decimal space-y-1 pl-5 text-sm text-[#4B5563]">
-          <li>Start a plan with a destination</li>
-          <li>Forward or paste flight/hotel confirmations</li>
-          <li>Review AI stay tips and place suggestions on the plan</li>
-        </ol>
+        <h1 className="mt-2 text-[2rem] font-semibold tracking-tight text-[#080B3A] sm:text-[2.25rem]">
+          Future Trips
+        </h1>
+        <p className="mt-2 text-[15px] leading-relaxed text-[#6B7280]">
+          Hold destinations before tickets exist. Forward or paste a confirmation
+          and Waypoint opens a calendar from the evidence.
+        </p>
       </header>
 
-      {mailbox ? (
-        <section className="rounded-[16px] border border-[#E1E5F0] bg-white p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
-            Forward confirmations to
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <code className="rounded-[8px] bg-[#F5F7FF] px-3 py-2 text-sm text-[#080B3A]">
-              {mailbox}
-            </code>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => void navigator.clipboard.writeText(mailbox)}
+      <section className="rounded-[18px] border border-[#E1E5F0] bg-white p-5 sm:p-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0 flex-1">
+            <label
+              htmlFor="future-dest"
+              className="text-sm font-medium text-[#080B3A]"
             >
-              Copy
-            </Button>
+              New destination
+            </label>
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Input
+                id="future-dest"
+                value={destination}
+                onChange={(e) => setDestination(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void createDream();
+                  }
+                }}
+                placeholder="Tokyo, Munich, London…"
+                className="sm:max-w-md"
+              />
+              <Button
+                type="button"
+                disabled={creating || destination.trim().length < 2}
+                onClick={() => void createDream()}
+              >
+                {creating ? "Saving…" : "Add trip"}
+              </Button>
+            </div>
           </div>
-          <p className="mt-2 text-xs text-[#6B7280]">
-            Forward from the email on your Waypoint account. Or paste text /
-            drop a screenshot onto a city card below.
-          </p>
-        </section>
-      ) : null}
-
-      <section className="rounded-[16px] border border-[#E1E5F0] bg-white p-4">
-        <Label>Where do you want to go?</Label>
-        <div className="mt-2 flex flex-wrap gap-2">
-          <Input
-            value={destination}
-            onChange={(e) => setDestination(e.target.value)}
-            placeholder="Tokyo, Paris, Cairo…"
-            className="max-w-sm"
-          />
-          <Button type="button" disabled={creating} onClick={() => void createDream()}>
-            {creating ? "Saving…" : "Start planning"}
-          </Button>
+          {mailbox ? (
+            <div className="min-w-0 shrink-0 border-t border-[#F0F2F8] pt-4 lg:max-w-sm lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+              <p className="text-xs font-medium text-[#6B7280]">
+                Forward confirmations
+              </p>
+              <div className="mt-1.5 flex items-center gap-2">
+                <code className="truncate rounded-[8px] bg-[#F5F7FF] px-2.5 py-1.5 text-xs text-[#080B3A]">
+                  {mailbox}
+                </code>
+                <button
+                  type="button"
+                  className="shrink-0 text-xs font-semibold text-[#0400FF] hover:underline"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(mailbox).then(() => {
+                      setCopied(true);
+                      window.setTimeout(() => setCopied(false), 1500);
+                    });
+                  }}
+                >
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </section>
 
       {trips.length === 0 ? (
-        <div className="rounded-[16px] border border-dashed border-[#D1D7E5] bg-white px-5 py-10 text-center">
-          <p className="text-sm font-semibold text-[#080B3A]">No future plans yet</p>
-          <p className="mt-1 text-sm text-[#6B7280]">
-            Add a destination above. It stays blank until the first booking
-            email arrives.
+        <div className="rounded-[18px] border border-dashed border-[#D1D7E5] bg-[#FAFBFF] px-6 py-16 text-center">
+          <p className="text-base font-semibold text-[#080B3A]">
+            No trips yet
+          </p>
+          <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-[#6B7280]">
+            Add a city above. Your destinations will appear here as a visual
+            collage.
           </p>
         </div>
       ) : (
-        <ul className="space-y-4">
-          {trips.map((trip) => {
-            const name = titleCasePlace(trip.title || trip.destination);
-            const bookingCount = counts[trip.id] ?? 0;
-            const waiting = bookingCount === 0;
-            const planning = trip.status === "planning" || Boolean(trip.convertedTripId);
-            const photo = hasCuratedCityImage(name);
-            return (
-              <li
-                key={trip.id}
-                className="overflow-hidden rounded-[14px] border border-[#E1E5F0] bg-white"
-              >
-                <Link
-                  href={`/future-plans/${trip.id}`}
-                  className="flex hover:bg-[#FAFBFF]"
-                >
-                  {photo ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={destinationImageUrl(name)}
-                      alt=""
-                      className="h-28 w-28 shrink-0 object-cover sm:h-32 sm:w-40"
-                    />
-                  ) : (
-                    <div className="flex h-28 w-28 shrink-0 items-center justify-center bg-[#080B3A] text-2xl font-bold text-white sm:h-32 sm:w-40">
-                      {name.slice(0, 1)}
-                    </div>
-                  )}
-                  <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 px-4 py-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-lg font-semibold text-[#080B3A]">
-                        {name}
-                      </p>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                          planning
-                            ? "bg-[#EEF2FF] text-[#3730A3]"
-                            : waiting
-                              ? "bg-[#F5F7FF] text-[#0400FF]"
-                              : "bg-[#ECFDF5] text-[#047857]"
-                        }`}
-                      >
-                        {planning
-                          ? "Plan"
-                          : waiting
-                            ? "Waiting for bookings"
-                            : "Bookings in"}
-                      </span>
-                    </div>
-                    <p className="text-sm text-[#6B7280]">
-                      {waiting
-                        ? "Empty plan — paste or forward a confirmation to fill this in."
-                        : `${bookingCount} booking${bookingCount === 1 ? "" : "s"} attached`}
-                    </p>
-                    <p className="text-xs text-[#9CA3AF]">
-                      {waiting
-                        ? "No dates · No itinerary yet"
-                        : trip.potentialStart
-                          ? `${trip.potentialStart}${trip.potentialEnd ? ` – ${trip.potentialEnd}` : ""}`
-                          : "Dates from your bookings"}
-                    </p>
-                  </div>
-                </Link>
-                <div className="space-y-3 border-t border-[#F0F2F8] px-4 py-3">
-                  <PasteDropZone
-                    preferredFutureTripId={trip.id}
-                    compact
-                    onDone={(result) => {
-                      const booking = result.booking as DreamerBooking | undefined;
-                      if (booking) {
-                        const matchedId =
-                          booking.futureTripId ||
-                          (result.match?.kind === "dream"
-                            ? result.match.id
-                            : trip.id);
-                        const list = [
-                          ...listDreamerBookings(matchedId),
-                          booking,
-                        ];
-                        setDreamerBookings(matchedId, list);
-                        if (result.planShift?.shifted) {
-                          updateFutureTrip(matchedId, {
-                            status: "planning",
-                            potentialStart:
-                              booking.parsed.startDate ?? undefined,
-                          });
-                        }
-                      }
-                      refresh();
-                    }}
-                  />
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      className="text-xs font-semibold text-[#B91C1C] hover:underline"
-                      onClick={() => {
-                        if (
-                          !window.confirm(
-                            `Delete ${name}? Attached bookings on this device will be removed too.`,
-                          )
-                        ) {
-                          return;
-                        }
-                        void removeFutureTrip(trip.id).then(() => refresh());
-                      }}
-                    >
-                      Delete plan
-                    </button>
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        <div className="space-y-3">
+          <div className="flex items-end justify-between gap-3">
+            <h2 className="text-sm font-semibold text-[#080B3A]">
+              Your destinations
+            </h2>
+            <p className="text-xs text-[#9CA3AF]">
+              {trips.length} trip{trips.length === 1 ? "" : "s"}
+            </p>
+          </div>
+          <TripCollage items={collageItems} />
+        </div>
       )}
+
+      {trips.length > 0 ? (
+        <section className="rounded-[18px] border border-[#E1E5F0] bg-white">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between px-5 py-4 text-left"
+            onClick={() => setManageOpen((v) => !v)}
+          >
+            <div>
+              <p className="text-sm font-semibold text-[#080B3A]">
+                Paste confirmations
+              </p>
+              <p className="mt-0.5 text-xs text-[#6B7280]">
+                Drop text or a screenshot onto a trip without opening it
+              </p>
+            </div>
+            <span className="text-xs font-semibold text-[#0400FF]">
+              {manageOpen ? "Hide" : "Show"}
+            </span>
+          </button>
+          {manageOpen ? (
+            <ul className="divide-y divide-[#F0F2F8] border-t border-[#F0F2F8]">
+              {trips.map((trip) => {
+                const name = titleCasePlace(trip.title || trip.destination);
+                return (
+                  <li key={trip.id} className="px-5 py-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <Link
+                        href={`/future-plans/${trip.id}`}
+                        className="text-sm font-semibold text-[#080B3A] hover:text-[#0400FF]"
+                      >
+                        {name}
+                      </Link>
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-[#9CA3AF] hover:text-[#B91C1C]"
+                        onClick={() => {
+                          if (
+                            !window.confirm(
+                              `Delete ${name}? Bookings on this device will be removed too.`,
+                            )
+                          ) {
+                            return;
+                          }
+                          void removeFutureTrip(trip.id).then(() => refresh());
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                    <PasteDropZone
+                      preferredFutureTripId={trip.id}
+                      compact
+                      onDone={(result) => {
+                        const booking = result.booking as
+                          | DreamerBooking
+                          | undefined;
+                        if (booking) {
+                          const matchedId =
+                            booking.futureTripId ||
+                            (result.match?.kind === "dream"
+                              ? result.match.id
+                              : trip.id);
+                          const list = [
+                            ...listDreamerBookings(matchedId),
+                            booking,
+                          ];
+                          setDreamerBookings(matchedId, list);
+                          if (result.planShift?.shifted) {
+                            updateFutureTrip(matchedId, {
+                              status: "planning",
+                              potentialStart:
+                                booking.parsed.startDate ?? undefined,
+                            });
+                          }
+                        }
+                        refresh();
+                      }}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+        </section>
+      ) : null}
     </div>
   );
 }

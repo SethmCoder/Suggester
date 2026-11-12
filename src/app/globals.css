@@ -43,10 +43,15 @@
 }
 
 body {
-  background: var(--wp-page);
+  background:
+    radial-gradient(1200px 480px at 12% -10%, rgba(221, 225, 255, 0.7), transparent 60%),
+    radial-gradient(900px 420px at 100% 0%, rgba(4, 0, 255, 0.04), transparent 55%),
+    var(--wp-page);
   color: var(--wp-text);
   font-family: var(--font-inter), system-ui, sans-serif;
   margin: 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 a {

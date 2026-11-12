@@ -49,14 +49,28 @@ import { PopularityBadge } from "./PopularityBadge";
 import { TripMap, type MapPin } from "./TripMap";
 import { AssistantPanel } from "./AssistantPanel";
 import { BudgetPanel } from "./BudgetPanel";
+import { PackingChecklist } from "./PackingChecklist";
+import {
+  normalizePacking,
+  type PackingItem,
+} from "@/lib/trips/packing";
 import { TripIntelligence } from "./TripIntelligence";
 import {
   WeekCalendarView,
   type CalendarNewStop,
 } from "./WeekCalendarView";
+import { StayAdviseBanner } from "./StayAdviseBanner";
+import {
+  LockedTimedStopForm,
+} from "./LockedTimedStopForm";
+import { calendarStopFromLockedInput } from "@/lib/trips/locked-stop";
+import { itineraryToMarkdown } from "@/lib/trips/export-plan";
+import { bookedHotelForDay } from "@/lib/trips/calendar-hotel";
 import type { BudgetPlan } from "@/lib/trips/budget";
 import {
+  normalizeCategorySplit,
   normalizeExpenses,
+  type ExpenseCategorySplit,
   type TripExpense,
 } from "@/lib/trips/expenses";
 import { rememberAddedPlace, rememberRemovedPlace } from "@/lib/trips/place-feedback";
@@ -73,6 +87,7 @@ import {
   stopColorForKey,
 } from "@/lib/trips/stop-colors";
 import { useLanguage } from "@/components/i18n/LanguageProvider";
+import { ShareInviteButton } from "@/components/social/ShareInviteButton";
 
 function transitModeFromActivity(activity: ActivityRow): IntercityMode | "flight_arrive" | null {
   if (activity.place_id?.startsWith("flight:arrive:")) return "flight_arrive";
@@ -128,6 +143,7 @@ export function ItineraryEditor({
   interests = [],
   budgetPlan,
   initialExpenses = [],
+  initialCategorySplit,
   initialStatus,
   pendingBuild,
 }: {
@@ -144,6 +160,7 @@ export function ItineraryEditor({
   interests?: string[];
   budgetPlan?: BudgetPlan;
   initialExpenses?: TripExpense[];
+  initialCategorySplit?: ExpenseCategorySplit;
   initialStatus?: string | null;
   pendingBuild?: Record<string, unknown> | null;
 }) {
@@ -184,6 +201,7 @@ export function ItineraryEditor({
       return changed ? next : prev;
     });
   }, [days]);
+
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
   );
@@ -197,7 +215,64 @@ export function ItineraryEditor({
   const [expenses, setExpenses] = useState<TripExpense[]>(() =>
     normalizeExpenses(initialExpenses),
   );
+  const [categorySplit, setCategorySplit] = useState<ExpenseCategorySplit>(() =>
+    normalizeCategorySplit(initialCategorySplit, budgetPlan?.allocation),
+  );
   const [expensesHydrated, setExpensesHydrated] = useState(false);
+  const [liveBudget, setLiveBudget] = useState<BudgetPlan | undefined>(budgetPlan);
+  const [wetWeather, setWetWeather] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+  const [packing, setPacking] = useState<PackingItem[]>([]);
+
+  // Wet-weather signal for packing reseed (Open-Meteo via /api/weather).
+  useEffect(() => {
+    if (!startDate || !endDate) return;
+    const city =
+      dayCities?.find((d) => d.city)?.city ||
+      legs.find((l) => l.city)?.city ||
+      destination.replace(/\s*\(Demo\)\s*$/i, "").trim();
+    const lat =
+      dayCities?.find((d) => d.anchorLat)?.anchorLat ??
+      legs.find((l) => l.lat != null)?.lat;
+    const lng =
+      dayCities?.find((d) => d.anchorLng)?.anchorLng ??
+      legs.find((l) => l.lng != null)?.lng;
+    const params = new URLSearchParams({
+      startDate,
+      endDate,
+      date: startDate,
+    });
+    if (lat != null && lng != null) {
+      params.set("lat", String(lat));
+      params.set("lng", String(lng));
+    } else if (city) {
+      params.set("city", city);
+    } else {
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/weather?${params}`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error("weather");
+        return res.json() as Promise<{
+          focus?: { wet?: boolean } | null;
+          days?: { wet?: boolean }[];
+        }>;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        const wet =
+          Boolean(data.focus?.wet) ||
+          (Array.isArray(data.days) && data.days.some((d) => d.wet));
+        setWetWeather(wet);
+      })
+      .catch(() => {
+        /* keep dry default */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [startDate, endDate, destination, dayCities, legs]);
   const [buildStatus, setBuildStatus] = useState<
     "idle" | "generating" | "ready" | "failed"
   >(() => {
@@ -288,6 +363,8 @@ export function ItineraryEditor({
   }, [tripId, buildStatus]);
 
   // Offline / demo shell: run demo-create in the background, then fill the page.
+  // Only key off tripId + pendingBuild — wider deps remount/cancel mid-request
+  // and leave buildStarted stuck so generation never retries.
   useEffect(() => {
     if (!pendingBuild || !tripId.startsWith("offline-")) return;
     if (buildStarted.current) return;
@@ -305,6 +382,7 @@ export function ItineraryEditor({
         const data = await res.json().catch(() => ({}));
         if (cancelled) return;
         if (!res.ok || !Array.isArray(data.days)) {
+          buildStarted.current = false;
           setBuildStatus("failed");
           setBuildError(
             typeof data.error === "string"
@@ -313,6 +391,30 @@ export function ItineraryEditor({
           );
           return;
         }
+        const builtBudget = {
+          total:
+            typeof data.budget === "number" && data.budget > 0
+              ? data.budget
+              : budgetPlan?.total,
+          currency:
+            typeof data.currency === "string"
+              ? data.currency
+              : budgetPlan?.currency,
+          allocation:
+            data.budgetAllocation === "sights" ||
+            data.budgetAllocation === "food" ||
+            data.budgetAllocation === "getting-around" ||
+            data.budgetAllocation === "mostly-free"
+              ? data.budgetAllocation
+              : budgetPlan?.allocation,
+          restaurantStyle:
+            data.restaurantStyle === "street" ||
+            data.restaurantStyle === "casual" ||
+            data.restaurantStyle === "sit-down" ||
+            data.restaurantStyle === "mix"
+              ? data.restaurantStyle
+              : budgetPlan?.restaurantStyle,
+        };
         const snap = offlineSnapshotFromGenerated({
           tripId,
           destination: data.destination || destination,
@@ -321,7 +423,7 @@ export function ItineraryEditor({
           days: data.days as GeneratedDay[],
           legs: (data.legs as TripLeg[] | undefined) ?? initialLegs,
           title: tripTitle,
-          budget: budgetPlan,
+          budget: builtBudget,
         });
         saveOfflineTrip({ ...snap, pendingBuild: undefined });
         applyFetchedPlan({
@@ -329,9 +431,16 @@ export function ItineraryEditor({
           activities: snap.activities,
         });
         if (snap.legs?.length) setLegs(snap.legs);
+        if (builtBudget.total && builtBudget.total > 0) {
+          setLiveBudget(builtBudget);
+        }
         setBuildStatus("ready");
       } catch (e) {
-        if (cancelled) return;
+        if (cancelled) {
+          buildStarted.current = false;
+          return;
+        }
+        buildStarted.current = false;
         setBuildStatus("failed");
         setBuildError(
           e instanceof Error ? e.message : "Could not generate this trip",
@@ -341,16 +450,8 @@ export function ItineraryEditor({
     return () => {
       cancelled = true;
     };
-  }, [
-    pendingBuild,
-    tripId,
-    destination,
-    startDate,
-    endDate,
-    initialLegs,
-    tripTitle,
-    budgetPlan,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- stable shell fill
+  }, [pendingBuild, tripId]);
   const router = useRouter();
 
   async function removeTrip() {
@@ -397,6 +498,11 @@ export function ItineraryEditor({
           if (snap.expenses?.length) {
             setExpenses(normalizeExpenses(snap.expenses));
           }
+          if (snap.expenseCategorySplit) {
+            setCategorySplit(
+              normalizeCategorySplit(snap.expenseCategorySplit, budgetPlan?.allocation),
+            );
+          }
           setOfflineSaved(true);
         } else if (isDemoTripId(tripId) && initialLegs?.length) {
           // Stale demo cache — use fresh legs from payload
@@ -406,11 +512,22 @@ export function ItineraryEditor({
         setLegs(initialLegs);
       }
       if (!expensesHydrated) {
-        const localExpenses = loadOfflineTrip(tripId)?.expenses;
-        if (localExpenses?.length) {
-          setExpenses(normalizeExpenses(localExpenses));
+        const local = loadOfflineTrip(tripId);
+        if (local?.expenses?.length) {
+          setExpenses(normalizeExpenses(local.expenses));
+        }
+        if (local?.expenseCategorySplit) {
+          setCategorySplit(
+            normalizeCategorySplit(local.expenseCategorySplit, budgetPlan?.allocation),
+          );
         }
         setExpensesHydrated(true);
+      }
+      try {
+        const raw = localStorage.getItem(`waypoint:packing:${tripId}`);
+        if (raw) setPacking(normalizePacking(JSON.parse(raw)));
+      } catch {
+        /* ignore */
       }
     } catch {
       /* ignore */
@@ -418,10 +535,57 @@ export function ItineraryEditor({
     setHydratedOffline(true);
   }, [tripId, hydratedOffline, initialLegs, expensesHydrated]);
 
+  useEffect(() => {
+    if (isDemo || tripId.startsWith("offline-")) return;
+    void fetch(`/api/trips/${tripId}/preferences`)
+      .then((r) => r.json())
+      .then((data: { preferences?: { packing?: unknown } }) => {
+        const remote = normalizePacking(data.preferences?.packing);
+        if (remote.length) setPacking(remote);
+      })
+      .catch(() => null);
+  }, [tripId, isDemo]);
+
+  function pushBudgetPreferences(
+    nextExpenses: TripExpense[],
+    nextSplit: ExpenseCategorySplit,
+    nextPacking: PackingItem[] = packing,
+  ) {
+    if (isDemo || tripId.startsWith("offline-") || !navigator.onLine) return;
+    void fetch(`/api/trips/${tripId}/preferences`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        payload: {
+          expenses: nextExpenses,
+          expenseCategorySplit: nextSplit,
+          packing: nextPacking,
+          ...(budgetPlan?.total != null ? { budget: budgetPlan.total } : {}),
+          ...(budgetPlan?.currency ? { currency: budgetPlan.currency } : {}),
+        },
+      }),
+    }).catch(() => {
+      /* offline ok */
+    });
+  }
+
+  function persistPacking(next: PackingItem[]) {
+    setPacking(next);
+    try {
+      localStorage.setItem(
+        `waypoint:packing:${tripId}`,
+        JSON.stringify(next),
+      );
+    } catch {
+      /* ignore */
+    }
+    pushBudgetPreferences(expenses, categorySplit, next);
+  }
+
   function persistExpenses(next: TripExpense[]) {
     setExpenses(next);
     try {
-      saveOfflineExpenses(tripId, next);
+      saveOfflineExpenses(tripId, next, categorySplit);
       // Ensure a snapshot exists for cloud trips that never edited the schedule.
       const snap = loadOfflineTrip(tripId);
       if (!snap) {
@@ -449,25 +613,27 @@ export function ItineraryEditor({
               }
             : undefined,
           expenses: next,
+          expenseCategorySplit: categorySplit,
         });
       }
     } catch {
       /* localStorage may be unavailable */
     }
-    if (isDemo || tripId.startsWith("offline-") || !navigator.onLine) return;
-    void fetch(`/api/trips/${tripId}/preferences`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        payload: {
-          expenses: next,
-          ...(budgetPlan?.total != null ? { budget: budgetPlan.total } : {}),
-          ...(budgetPlan?.currency ? { currency: budgetPlan.currency } : {}),
-        },
-      }),
-    }).catch(() => {
-      /* offline ok */
-    });
+    pushBudgetPreferences(next, categorySplit);
+  }
+
+  function persistCategorySplit(next: ExpenseCategorySplit) {
+    setCategorySplit(next);
+    try {
+      saveOfflineExpenses(tripId, expenses, next);
+      const snap = loadOfflineTrip(tripId);
+      if (snap) {
+        saveOfflineTrip({ ...snap, expenseCategorySplit: next });
+      }
+    } catch {
+      /* localStorage may be unavailable */
+    }
+    pushBudgetPreferences(expenses, next);
   }
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
@@ -891,6 +1057,13 @@ export function ItineraryEditor({
 
   function addTimedStop(stop: CalendarNewStop) {
     const id = `stop-${crypto.randomUUID()}`;
+    const endTime =
+      stop.endTime ??
+      (() => {
+        const [h, m] = stop.startTime.slice(0, 5).split(":").map(Number);
+        const total = (h * 60 + m + stop.durationMinutes) % (24 * 60);
+        return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}:00`;
+      })();
     setDays((prev) => {
       const copy = prev.map((d) => ({ ...d, activities: [...d.activities] }));
       const day = copy[stop.dayIndex];
@@ -901,12 +1074,12 @@ export function ItineraryEditor({
           id,
           day_id: day.dayId,
           name: stop.name,
-          place_id: null,
+          place_id: stop.place_id ?? null,
           address: stop.address ?? null,
           lat: stop.lat ?? null,
           lng: stop.lng ?? null,
           start_time: stop.startTime,
-          end_time: null,
+          end_time: endTime,
           duration_minutes: stop.durationMinutes,
           travel_minutes_from_prev: 0,
           priority: "preferred" as const,
@@ -923,7 +1096,14 @@ export function ItineraryEditor({
           sort_order: day.activities.length,
           user_locked: true,
           completed: false,
-          source: stop.useAi ? "ai" : "user",
+          source:
+            stop.stopKind === "meeting" ||
+            stop.stopKind === "transport" ||
+            stop.stopKind === "attraction"
+              ? "user"
+              : stop.useAi
+                ? "ai"
+                : "user",
         },
       ];
       copy[stop.dayIndex] = {
@@ -1078,6 +1258,56 @@ export function ItineraryEditor({
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
+            onClick={() => {
+              const md = itineraryToMarkdown({
+                destination: destName,
+                startDate,
+                endDate,
+                days: days.map((day) => ({
+                  dayIndex: day.dayIndex,
+                  city: dayCities?.[day.dayIndex]?.city,
+                  activities: day.activities,
+                })),
+              });
+              const mark = (ok: boolean) => {
+                setCopyState(ok ? "copied" : "error");
+                window.setTimeout(() => setCopyState("idle"), 2000);
+              };
+              const fallbackCopy = () => {
+                try {
+                  const ta = document.createElement("textarea");
+                  ta.value = md;
+                  ta.setAttribute("readonly", "");
+                  ta.style.position = "fixed";
+                  ta.style.left = "-9999px";
+                  document.body.appendChild(ta);
+                  ta.select();
+                  const ok = document.execCommand("copy");
+                  document.body.removeChild(ta);
+                  mark(ok);
+                } catch {
+                  mark(false);
+                }
+              };
+              if (navigator.clipboard?.writeText) {
+                void navigator.clipboard.writeText(md).then(() => mark(true)).catch(fallbackCopy);
+              } else {
+                fallbackCopy();
+              }
+            }}
+            className="rounded-[10px] border border-[#E1E5F0] bg-white px-3 py-1.5 text-sm font-semibold text-[#080B3A] shadow-sm transition hover:border-[#0400FF]/25 hover:bg-[#F5F7FF]"
+          >
+            {copyState === "copied"
+              ? "Copied"
+              : copyState === "error"
+                ? "Copy failed"
+                : "Copy itinerary"}
+          </button>
+          {!isDemo && /^[0-9a-f-]{36}$/i.test(tripId) ? (
+            <ShareInviteButton kind="trip" resourceId={tripId} />
+          ) : null}
+          <button
+            type="button"
             onClick={() => void removeTrip()}
             disabled={deleting}
             className="rounded-[10px] px-3 py-1.5 text-sm font-semibold text-[#B91C1C] hover:bg-[#FEF2F2] disabled:opacity-60"
@@ -1117,6 +1347,7 @@ export function ItineraryEditor({
           </p>
         </div>
       ) : null}
+      <StayAdviseBanner tripId={tripId} />
       {buildStatus === "failed" ? (
         <div className="rounded-[14px] border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-sm text-[#991B1B]">
           <p className="font-semibold">{t("itinerary.buildFailed")}</p>
@@ -1140,14 +1371,58 @@ export function ItineraryEditor({
       ) : null}
 
       <BudgetPanel
-        plan={budgetPlan}
+        tripId={tripId}
+        isDemo={isDemo}
+        plan={liveBudget ?? budgetPlan}
+        onPlanChange={(next) => {
+          setLiveBudget(next);
+          const snap = loadOfflineTrip(tripId);
+          if (snap) {
+            saveOfflineTrip({
+              ...snap,
+              budget: {
+                total: next.total,
+                currency: next.currency,
+                allocation: next.allocation,
+                restaurantStyle: next.restaurantStyle,
+              },
+            });
+          }
+          if (!isDemo && !tripId.startsWith("offline-") && navigator.onLine) {
+            void fetch(`/api/trips/${tripId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                preferences: {
+                  budget: next.total,
+                  currency: next.currency,
+                  budgetAllocation: next.allocation,
+                  restaurantStyle: next.restaurantStyle,
+                },
+              }),
+            }).catch(() => null);
+          }
+        }}
         expenses={expenses}
+        categorySplit={categorySplit}
+        onCategorySplitChange={persistCategorySplit}
         onExpensesChange={persistExpenses}
         stops={(days[selectedDay]?.activities ?? []).map((activity) => ({
           id: activity.id,
           name: activity.name,
           note: activity.planning_note,
         }))}
+      />
+      <PackingChecklist
+        items={packing}
+        onChange={persistPacking}
+        party={liveBudget?.party ?? budgetPlan?.party}
+        wetWeather={wetWeather}
+        durationDays={
+          startDate && endDate
+            ? nightsBetween(startDate, endDate) + 1
+            : days.length
+        }
       />
       <TripIntelligence
         activities={days[selectedDay]?.activities ?? []}
@@ -1160,6 +1435,7 @@ export function ItineraryEditor({
         <WeekCalendarView
           startDate={startDate}
           dayCities={dayCities}
+          legs={legs}
           days={days.map((day) => ({
             dayId: day.dayId,
             dayIndex: day.dayIndex,
@@ -1169,6 +1445,7 @@ export function ItineraryEditor({
             activities: day.activities,
           }))}
           onAddStop={(stop) => addTimedStop(stop)}
+          onUpdateLeg={updateLeg}
           onSelectActivity={(dayIndex) => {
             setSelectedDay(dayIndex);
             setExpanded((e) => ({ ...e, [dayIndex]: true }));
@@ -1240,6 +1517,12 @@ export function ItineraryEditor({
             ) : null}
             {days.map((day, dayIndex) => {
               const isOpen = Boolean(expanded[dayIndex]);
+              const bookedHotel = bookedHotelForDay({
+                dayIndex: day.dayIndex,
+                dayCities,
+                legs,
+                activities: day.activities,
+              });
               return (
               <section
                 key={day.dayId}
@@ -1349,6 +1632,11 @@ export function ItineraryEditor({
                 </div>
                 {isOpen ? (
                   <div className="border-t border-[#E1E5F0] bg-[#FAFBFF] px-3 pb-3">
+                    {bookedHotel ? (
+                      <p className="mt-2 rounded-[8px] bg-[#080B3A] px-3 py-1.5 text-center text-[11px] font-semibold text-white">
+                        {bookedHotel.name}
+                      </p>
+                    ) : null}
                     <DndContext
                       sensors={sensors}
                       collisionDetection={closestCenter}
@@ -1423,6 +1711,17 @@ export function ItineraryEditor({
                         );
                       }}
                     />
+                    <div className="mt-3 border-t border-[#E1E5F0] pt-3">
+                      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[#6B7280]">
+                        Before AI refill
+                      </p>
+                      <LockedTimedStopForm
+                        dayLabel={`Day ${day.dayIndex + 1}`}
+                        onSubmit={(input) =>
+                          addTimedStop(calendarStopFromLockedInput(dayIndex, input))
+                        }
+                      />
+                    </div>
                     {!isDemo ? (
                       <RegenerateDayButton
                         tripId={tripId}

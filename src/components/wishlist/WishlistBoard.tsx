@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { ShareInviteButton } from "@/components/social/ShareInviteButton";
 import { Button } from "@/components/ui/Button";
 import { ExternalLink } from "@/components/ui/ExternalLink";
 import { LeavePageLink } from "@/components/ui/LeavePageLink";
@@ -27,6 +28,7 @@ import {
   saveWishlistItem,
 } from "@/lib/wishlist/sync";
 import { moveItem } from "@/lib/wishlist/store";
+import { ReelImportPanel } from "@/components/wishlist/ReelImportPanel";
 
 const CATEGORY_LABEL: Record<WishlistCategory, string> = {
   destination: "Destination",
@@ -152,13 +154,16 @@ export function WishlistBoard() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[28px] font-bold tracking-tight text-[#1F2937]">Wishlist</h1>
-          <p className="mt-1 max-w-2xl text-sm text-[#6B7280]">
-            Save destinations, places, and ideas for later. Organize them into collections and attach them to a future trip when you are ready.
+          <h1 className="text-[28px] font-semibold tracking-tight text-[#080B3A]">
+            Wishlist
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-[#6B7280]">
+            Save places from Reels or type them in. They attach to Future Trips
+            when the city matches.
           </p>
         </div>
-        <LeavePageLink href="/future-trips" variant="secondary">
-          Future trips
+        <LeavePageLink href="/future-plans" variant="secondary">
+          Future Trips
         </LeavePageLink>
       </div>
 
@@ -228,25 +233,63 @@ export function WishlistBoard() {
         </aside>
 
         <div className="space-y-4">
-          <div className="rounded-[16px] border border-[#E1E5F0] bg-white p-4 shadow-[0_4px_20px_rgba(8,11,58,0.04)]">
-            <h2 className="text-sm font-semibold text-[#080B3A]">Add a travel idea</h2>
-            <div className="mt-3 grid gap-2 sm:grid-cols-4">
+          {collectionFilter !== "all" &&
+          collectionFilter !== "none" &&
+          /^[0-9a-f-]{36}$/i.test(collectionFilter) ? (
+            <ShareInviteButton
+              kind="wishlist_collection"
+              resourceId={collectionFilter}
+            />
+          ) : null}
+          <ReelImportPanel
+            collectionId={
+              collectionFilter !== "all" && collectionFilter !== "none"
+                ? collectionFilter
+                : null
+            }
+            onSaved={(saved) => {
+              setItems((current) => {
+                const next = [...saved];
+                for (const row of current) {
+                  if (!saved.some((s) => s.id === row.id)) next.push(row);
+                }
+                return next;
+              });
+            }}
+          />
+
+          <div className="rounded-[18px] border border-[#E1E5F0] bg-white p-5">
+            <h2 className="text-base font-semibold tracking-tight text-[#080B3A]">
+              Or type it in
+            </h2>
+            <p className="mt-1 text-sm text-[#6B7280]">
+              Name is enough — city and category are optional.
+            </p>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
               <input
                 value={draftName}
                 onChange={(event) => setDraftName(event.target.value)}
-                placeholder="Name"
-                className="rounded-[10px] border border-[#E1E5F0] px-3 py-2 text-sm sm:col-span-2"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void addCustomIdea();
+                  }
+                }}
+                placeholder="Tokyo Tower, ramen spot, neighborhood…"
+                className="min-w-0 flex-1 rounded-[12px] border border-[#E1E5F0] bg-[#FAFBFF] px-3.5 py-2.5 text-sm outline-none focus:border-[#0400FF] focus:bg-white"
               />
               <input
                 value={draftLocation}
                 onChange={(event) => setDraftLocation(event.target.value)}
-                placeholder="Destination"
-                className="rounded-[10px] border border-[#E1E5F0] px-3 py-2 text-sm"
+                placeholder="City (optional)"
+                className="rounded-[12px] border border-[#E1E5F0] bg-[#FAFBFF] px-3.5 py-2.5 text-sm sm:w-40 outline-none focus:border-[#0400FF] focus:bg-white"
               />
               <select
                 value={draftCategory}
-                onChange={(event) => setDraftCategory(event.target.value as WishlistCategory)}
-                className="rounded-[10px] border border-[#E1E5F0] px-3 py-2 text-sm"
+                onChange={(event) =>
+                  setDraftCategory(event.target.value as WishlistCategory)
+                }
+                className="rounded-[12px] border border-[#E1E5F0] bg-[#FAFBFF] px-3 py-2.5 text-sm sm:w-36 outline-none focus:border-[#0400FF]"
               >
                 {WISHLIST_CATEGORIES.map((value) => (
                   <option key={value} value={value}>
@@ -254,10 +297,12 @@ export function WishlistBoard() {
                   </option>
                 ))}
               </select>
-            </div>
-            <div className="mt-3">
-              <Button type="button" onClick={() => void addCustomIdea()} disabled={busy || !draftName.trim()}>
-                Save idea
+              <Button
+                type="button"
+                onClick={() => void addCustomIdea()}
+                disabled={busy || !draftName.trim()}
+              >
+                Save
               </Button>
             </div>
           </div>

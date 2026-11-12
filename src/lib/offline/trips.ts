@@ -4,7 +4,7 @@
  */
 
 import type { ActivityRow, TripLeg, TripListItem } from "@/lib/types/trip";
-import type { TripExpense } from "@/lib/trips/expenses";
+import type { ExpenseCategorySplit, TripExpense } from "@/lib/trips/expenses";
 
 const INDEX_KEY = "waypoint:offline-trips-index-v1";
 const SNAPSHOT_PREFIX = "waypoint:offline-trip:";
@@ -30,6 +30,8 @@ export type OfflineTripSnapshot = {
   };
   /** Purchases logged against the trip budget. */
   expenses?: TripExpense[];
+  /** Planned share of the trip budget per expense category. */
+  expenseCategorySplit?: ExpenseCategorySplit;
   /** Request body for background demo-create while the empty shell is open. */
   pendingBuild?: Record<string, unknown>;
 };
@@ -156,12 +158,17 @@ export function saveOfflineDayGroups(
 }
 
 /** Merge expense rows into the on-device trip snapshot. */
-export function saveOfflineExpenses(tripId: string, expenses: TripExpense[]) {
+export function saveOfflineExpenses(
+  tripId: string,
+  expenses: TripExpense[],
+  expenseCategorySplit?: ExpenseCategorySplit,
+) {
   const existing = loadOfflineTrip(tripId);
   if (!existing) return;
   saveOfflineTrip({
     ...existing,
     expenses,
+    ...(expenseCategorySplit ? { expenseCategorySplit } : {}),
   });
 }
 

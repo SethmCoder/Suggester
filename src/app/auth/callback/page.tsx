@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import type { EmailOtpType } from "@supabase/supabase-js";
+import { clearMismatchedAvatarKeys } from "@/lib/avatar";
+import { clearDemoLocalStorage } from "@/lib/demo/cleanup";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 const OTP_TYPES = new Set<EmailOtpType>([
@@ -92,7 +94,15 @@ function CallbackInner() {
         }
       }
 
-      await fetch("/api/demo/end", { method: "POST" }).catch(() => null);
+      const demoEnd = await fetch("/api/demo/end", { method: "POST" }).catch(() => null);
+      if (demoEnd?.ok) {
+        const body = (await demoEnd.json().catch(() => null)) as { clearLocal?: boolean } | null;
+        if (body?.clearLocal) clearDemoLocalStorage();
+      }
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user?.id) clearMismatchedAvatarKeys(user.id);
       if (cancelled) return;
       // New email confirmations land on welcome; returning sessions skip it.
       const intro = await fetch("/api/profile/intro")

@@ -82,7 +82,7 @@ describe("major stops / create payload", () => {
     });
     expect(prompt).toMatch(/Colosseum/);
     expect(prompt).toMatch(/Pantheon/);
-    expect(prompt.toLowerCase()).toMatch(/fill remaining/);
+    expect(prompt.toLowerCase()).toMatch(/exactly \d+ sightseeing stops/);
   });
 
   it("caps merged stop lists at 24 entries", () => {
