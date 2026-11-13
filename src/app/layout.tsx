@@ -7,8 +7,9 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "Waypoint — AI Travel Itinerary Planner",
-  description: "Personalized travel itineraries and day plans",
+  title: "Waypoint — Travel Planning",
+  description:
+    "Organize booking emails in one place and let AI build a personalized trip around your reservations and preferences.",
 };
 
 export default function RootLayout({
