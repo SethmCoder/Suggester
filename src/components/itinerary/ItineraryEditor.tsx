@@ -1493,7 +1493,7 @@ export function ItineraryEditor({
         {(
           [
             { id: "budget" as const, label: "Budget" },
-            { id: "packing" as const, label: "Packing" },
+            { id: "packing" as const, label: "Sample lists" },
             { id: "intel" as const, label: "Day check" },
           ] as const
         ).map((tool) => (
@@ -1568,6 +1568,7 @@ export function ItineraryEditor({
           onChange={persistPacking}
           party={liveBudget?.party ?? budgetPlan?.party}
           wetWeather={wetWeather}
+          destination={destName}
           durationDays={
             startDate && endDate
               ? nightsBetween(startDate, endDate) + 1

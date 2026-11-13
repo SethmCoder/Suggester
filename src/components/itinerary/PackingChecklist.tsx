@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import {
   normalizePacking,
+  packingItemsFromLabels,
   seedPackingList,
   type PackingItem,
 } from "@/lib/trips/packing";
@@ -15,15 +16,22 @@ export function PackingChecklist({
   party,
   durationDays,
   wetWeather,
+  destination,
+  interests,
 }: {
   items: PackingItem[];
   onChange: (next: PackingItem[]) => void;
   party?: string | null;
   durationDays?: number | null;
   wetWeather?: boolean;
+  destination?: string | null;
+  interests?: string[];
 }) {
   const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [sampleNote, setSampleNote] = useState<string | null>(null);
   const list = normalizePacking(items);
+  const destLabel = (destination || "").replace(/\s*\(Demo\)\s*$/i, "").trim();
 
   function toggle(id: string) {
     onChange(
@@ -48,6 +56,7 @@ export function PackingChecklist({
   }
 
   function reseeds() {
+    setSampleNote(null);
     onChange(
       seedPackingList({
         party,
@@ -55,6 +64,51 @@ export function PackingChecklist({
         wetWeather,
       }),
     );
+  }
+
+  async function loadSampleList() {
+    if (!destLabel || busy) return;
+    setBusy(true);
+    setSampleNote(null);
+    try {
+      const res = await fetch("/api/trips/sample-lists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "packing",
+          destination: destLabel,
+          durationDays: durationDays ?? undefined,
+          party: party ?? undefined,
+          wetWeather: Boolean(wetWeather),
+          interests: interests?.slice(0, 8),
+        }),
+      });
+      const data = (await res.json()) as {
+        items?: string[];
+        title?: string;
+        note?: string;
+        source?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.items?.length) {
+        setSampleNote(data.error ?? "Could not build a sample list.");
+        return;
+      }
+      onChange(packingItemsFromLabels(data.items));
+      setSampleNote(
+        [
+          data.title,
+          data.source === "ai" ? "AI sample" : "Catalog sample",
+          data.note,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      );
+    } catch {
+      setSampleNote("Could not build a sample list.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   const done = list.filter((i) => i.checked).length;
@@ -73,18 +127,37 @@ export function PackingChecklist({
           <p className="mt-1 text-xs leading-relaxed text-[#6B7280]">
             {list.length
               ? `${done} of ${list.length} packed`
-              : "Seed essentials for this trip"}
+              : "Seed essentials or generate a sample for this destination"}
             {wetWeather ? " · Rain gear included" : ""}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={reseeds}
-          className="text-xs font-semibold text-[#0400FF] hover:underline"
-        >
-          {list.length ? "Reseed" : "Seed list"}
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          {destLabel ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void loadSampleList()}
+              className="text-xs font-semibold text-[#0400FF] hover:underline disabled:opacity-50"
+            >
+              {busy
+                ? "Building sample…"
+                : `Sample list for ${destLabel.split(/→|,/)[0]?.trim() || destLabel}`}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={reseeds}
+            className="text-xs font-semibold text-[#6B7280] hover:underline"
+          >
+            {list.length ? "Basic reseed" : "Seed list"}
+          </button>
+        </div>
       </div>
+      {sampleNote ? (
+        <p className="mt-2 text-[11px] leading-relaxed text-[#9299B5]">
+          {sampleNote}
+        </p>
+      ) : null}
       {list.length ? (
         <ul className="mt-4 space-y-0.5">
           {list.map((item) => (

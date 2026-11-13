@@ -47,3 +47,13 @@ export function normalizePacking(raw: unknown): PackingItem[] {
     }))
     .filter((row) => row.label.trim().length > 0);
 }
+
+/** Turn a destination sample list into packing checklist rows. */
+export function packingItemsFromLabels(items: string[]): PackingItem[] {
+  return items.map((label, i) => ({
+    id: `pack-sample-${i}-${label.slice(0, 12).replace(/\W+/g, "")}`,
+    label,
+    checked: false,
+    auto: true,
+  }));
+}
