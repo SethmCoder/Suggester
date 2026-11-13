@@ -2,8 +2,11 @@
  * GeoNames city subset extracted from allCountries (PPLC/PPLA/PPLA2 + PPL≥50k),
  * plus districts (PPLX/PPLA3/PPLA4, population ≥ 30,000) from cities5000.
  * Source: https://download.geonames.org/export/dump/ — CC BY 4.0 attribution.
+ *
+ * Server-only: reads TSV from disk. Do not import from Client Components.
  */
 
+import "server-only";
 import fs from "fs";
 import path from "path";
 

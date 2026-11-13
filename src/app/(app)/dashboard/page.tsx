@@ -48,6 +48,7 @@ function seedDemoOffline() {
       trip: { ...payload.trip, day_count: payload.days.length },
       days: payload.days,
       activities: payload.activities,
+      legs: payload.legs,
       updatedAt: new Date().toISOString(),
       contentVersion: DEMO_CONTENT_VERSION,
     });
@@ -99,8 +100,11 @@ export default function DashboardPage() {
             /* ignore */
           }
           // Demo account only — hide personal offline / cloud trips.
+          // Keep Paris as the sole canonical demo; drop legacy demo-* ids.
+          const allowedDemoIds = new Set(listDemoTrips().map((t) => t.id));
           const demoOffline = listOfflineTrips().filter(
-            (t) => t.id.startsWith("demo-") || t.id.startsWith("offline-"),
+            (t) =>
+              allowedDemoIds.has(t.id) || t.id.startsWith("offline-"),
           );
           setTrips(
             visibleTrips(
@@ -212,14 +216,14 @@ export default function DashboardPage() {
               <LeavePageLink href={`/trips/${nextTrip.id}`} variant="primary">
                 Open itinerary
               </LeavePageLink>
-              <LeavePageLink href="/future-plans" variant="secondary">
+              <LeavePageLink href="/trips/new" variant="secondary">
                 <span className="inline-flex items-center gap-2">
                   <IconPlane size={16} />
-                  Start another Future Trip
+                  Plan another trip
                 </span>
               </LeavePageLink>
-              <LeavePageLink href="/trips/new" variant="secondary">
-                Already have a date and time?
+              <LeavePageLink href="/future-plans" variant="secondary">
+                Already have bookings?
               </LeavePageLink>
               {upcomingTrips.length > 1 ? (
                 <Link
@@ -243,21 +247,21 @@ export default function DashboardPage() {
             </h1>
             <p className="mt-1 text-sm text-[#6B7280]">
               {trips.length >= 1
-                ? "No upcoming dated trip right now — start another Future Trip whenever inspiration hits. Dates can wait until you book."
-                : "Start with a Future Trip — dates can come later when you book."}
+                ? "No upcoming dated trip right now — open Trip Architect with an idea, or import bookings on Future Trips."
+                : "Open Trip Architect with a travel idea. If you already have confirmations, use Future Trips."}
             </p>
             <div className="mt-3">
               <PlanSummary />
             </div>
             <div className="mt-6 flex flex-wrap items-center gap-3">
-              <LeavePageLink href="/future-plans" variant="primary">
+              <LeavePageLink href="/trips/new" variant="primary">
                 <span className="inline-flex items-center gap-2">
                   <IconPlane size={16} />
-                  {trips.length >= 1 ? "Start another Future Trip" : "Future Trips"}
+                  Plan a trip
                 </span>
               </LeavePageLink>
-              <LeavePageLink href="/trips/new" variant="secondary">
-                Already have a date and time?
+              <LeavePageLink href="/future-plans" variant="secondary">
+                Already have bookings?
               </LeavePageLink>
               {trips.length >= 1 ? (
                 <LeavePageLink href="/archive" variant="secondary">
@@ -348,7 +352,7 @@ export default function DashboardPage() {
               Future Trips
             </LeavePageLink>
             <LeavePageLink href="/trips/new" variant="secondary">
-              Already have a date and time?
+              Plan from an idea
             </LeavePageLink>
           </div>
         </div>
@@ -430,7 +434,7 @@ function TripCard({
         <div className="absolute inset-0 bg-gradient-to-t from-[#080B3A]/50 to-transparent" />
         {trip.id.startsWith("demo-") ? (
           <span className="absolute right-3 top-3 rounded-md bg-[#0400FF] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-            {trip.id === "demo-dubai" ? "Two cities" : "Sample"}
+            Sample
           </span>
         ) : null}
       </div>
@@ -439,9 +443,7 @@ function TripCard({
           {trip.destination.split(",")[0]}
         </h3>
         <p className="text-sm text-[#6B7280]">
-          {trip.id === "demo-dubai"
-            ? "Dubai and Abu Dhabi"
-            : countryFromDestination(trip.destination)}
+          {countryFromDestination(trip.destination)}
         </p>
         <p className="text-sm text-[#6B7280]">
           {formatTripDate(trip.start_date, "short")} –{" "}

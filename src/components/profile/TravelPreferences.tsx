@@ -85,6 +85,9 @@ export function TravelPreferences() {
             Explicit settings always win. Inferred preferences need repeated signals before they
             steer Discover, Trip Wizard, and itinerary generation.
           </p>
+          <p className="mt-2 text-xs font-medium text-[#0400FF]">
+            Used by Trip Architect — pace and interests prefill when you plan a new trip.
+          </p>
         </div>
         <label className="flex items-center gap-2 text-sm text-[#1F2937]">
           <input

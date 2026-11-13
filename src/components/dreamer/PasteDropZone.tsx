@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import {
   isImageFile,
@@ -19,10 +19,18 @@ export function PasteDropZone({
   preferredFutureTripId,
   onDone,
   compact,
+  insertText,
+  insertRevision = 0,
+  hint,
 }: {
   preferredFutureTripId: string;
   onDone?: (result: PasteResult) => void;
   compact?: boolean;
+  /** Fills the paste box when insertRevision changes. */
+  insertText?: string | null;
+  insertRevision?: number;
+  /** Optional short note above the paste controls. */
+  hint?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
@@ -31,6 +39,13 @@ export function PasteDropZone({
   const [message, setMessage] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!insertRevision || !insertText?.trim()) return;
+    setText(insertText);
+    setOpen(true);
+    setPreviewUrl(null);
+  }, [insertRevision, insertText]);
 
   const submit = useCallback(
     async (payload: { text?: string; html?: string; image?: string }) => {
@@ -158,9 +173,8 @@ export function PasteDropZone({
         Paste, drop, or screenshot
       </p>
       <p className="mt-1 text-xs text-[#9CA3AF]">
-        Drop an .eml / text file or a confirmation screenshot, paste email text,
-        or paste an image from the clipboard. AI matches the city from airports
-        (e.g. HND → Tokyo).
+        {hint ??
+          "Drop an .eml / text file or a confirmation screenshot, paste email text, or paste an image from the clipboard. AI matches the city from airports (e.g. CDG → Paris)."}
       </p>
       {!open ? (
         <div className="mt-2 flex flex-wrap gap-2">

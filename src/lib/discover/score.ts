@@ -8,7 +8,8 @@ import type {
 } from "./types";
 import { SCORING_METHODOLOGY } from "./types";
 import { destinationImageUrl } from "@/lib/destination-image";
-import { resolveGeonameCity } from "@/lib/geonames/cities";
+// Intentionally no @/lib/geonames/cities here — that module uses Node `fs`
+// and would break client bundles (InspirationBoard imports rankDestinations).
 
 const WEIGHTS = {
   interest: 0.4,
@@ -192,10 +193,6 @@ export function scoreDestination(
     );
   }
 
-  const geo = resolveGeonameCity(destination.name);
-  const population =
-    geo && geo.countryCode === destination.countryCode ? geo.population : null;
-
   return {
     id: destination.id,
     name: destination.name,
@@ -219,10 +216,8 @@ export function scoreDestination(
     scoreBreakdown: { interest, budget, duration, season, preference },
     lesserKnown: destination.lesserKnown,
     sources: destination.sources,
-    population,
-    populationNote: population
-      ? `Metro population about ${population.toLocaleString()} (public city data).`
-      : "Population estimate unavailable for this match.",
+    population: null,
+    populationNote: "Population estimate unavailable for this match.",
   };
 }
 

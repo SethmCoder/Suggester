@@ -79,7 +79,7 @@ describe("day-neighborhood", () => {
     ];
     const pick = varietyPickIndex(
       leftover,
-      { lat: 35.66, lng: 139.7, priority: "preferred" },
+      { lat: 35.66, lng: 139.7, priority: "preferred", name: "anchor" },
       "museum",
       (item) => (item.name === "far" ? "park" : "museum"),
       4,

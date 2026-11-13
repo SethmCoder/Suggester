@@ -115,6 +115,13 @@ export interface TripPreferencesPayload {
   idealTrip?: string;
   /** Traveler's name for this trip, shown beside the destination. */
   title?: string;
+  /** Restaurant reservations from pasted confirmations — pinned onto the calendar. */
+  bookedRestaurants?: {
+    name: string;
+    date?: string | null;
+    time?: string | null;
+    city?: string | null;
+  }[];
   /** Fact labels from Dreamer confirmations (flight #, arrival, hotel). */
   evidenceProvenance?: string[];
 }

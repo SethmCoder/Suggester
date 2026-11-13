@@ -32,16 +32,16 @@ const STEPS: TourStep[] = [
   },
   {
     title: "Your trips live here",
-    body: "Open a saved or demo itinerary from My trips. Paris and Dubai demos work offline so you can explore without signing in.",
+    body: "Open a saved or demo itinerary from My trips. The Paris demo works offline so you can explore without signing in.",
     href: "/dashboard",
     target: "tour-trips-list",
     placement: "top",
   },
   {
-    title: "Plan a trip",
-    body: "Tell the agent where you are going. The brief fills in beside the chat, and you can generate when it looks right.",
+    title: "Trip Architect",
+    body: "Start with an idea — Waypoint helps with destinations, nights per city, places, and a full itinerary you can edit.",
     href: "/trips/new",
-    target: "tour-create-wizard",
+    target: "tour-create-trip",
     placement: "bottom",
   },
   {

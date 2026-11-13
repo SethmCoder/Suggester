@@ -84,6 +84,7 @@ import {
   TripPlanSidebar,
   type TripDashTab,
 } from "@/components/trips/TripPlanSidebar";
+import { PlanningStages } from "@/components/planner/PlanningStages";
 import { TripBookingsPanel } from "@/components/trips/TripBookingsPanel";
 import {
   stopColorForIndex,
@@ -562,7 +563,7 @@ export function ItineraryEditor({
   }
 
   // Prefer locally saved edits (works offline / after reload).
-  // Demo trips ignore stale snapshots (e.g. old Paris data under demo-dubai).
+  // Demo trips ignore stale snapshots (contentVersion / destination mismatch).
   useEffect(() => {
     if (hydratedOffline) return;
     try {
@@ -1332,6 +1333,9 @@ export function ItineraryEditor({
         }}
       />
       <div className="min-w-0 flex-1 space-y-5">
+      <div className="rounded-[14px] border border-[#E1E5F0] bg-white px-4 py-3">
+        <PlanningStages current="organize" />
+      </div>
       <section id="itinerary" className="flex flex-col gap-3 rounded-[16px] border border-[#E1E5F0] bg-white px-5 py-5 shadow-[0_6px_18px_rgba(8,11,58,0.05)] sm:flex-row sm:items-end sm:justify-between sm:px-7">
         <div>
           <h1 className="text-[28px] font-bold tracking-tight text-[#080B3A]">

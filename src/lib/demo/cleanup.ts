@@ -1,4 +1,4 @@
-import { DEMO_DUBAI_ID, DEMO_TRIP_ID } from "@/lib/demo/data";
+import { DEMO_TRIP_ID } from "@/lib/demo/data";
 
 const SNAPSHOT_PREFIX = "waypoint:offline-trip:";
 const INDEX_KEY = "waypoint:offline-trips-index-v1";
@@ -15,7 +15,8 @@ export const DEMO_LOCAL_STORAGE_TARGETS = [
   WISHLIST_ITEMS_KEY,
   WISHLIST_MIGRATED_KEY,
   `${SNAPSHOT_PREFIX}${DEMO_TRIP_ID}`,
-  `${SNAPSHOT_PREFIX}${DEMO_DUBAI_ID}`,
+  /** Legacy multi-city demo — still cleared so stale copies cannot linger. */
+  `${SNAPSHOT_PREFIX}demo-dubai`,
 ] as const;
 
 const DEMO_SNAPSHOT_PREFIX = `${SNAPSHOT_PREFIX}demo-`;

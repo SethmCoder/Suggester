@@ -28,7 +28,7 @@ const PROTECTED = [
 const PROTECTED_PREFIX = "/trips/";
 
 /** Sample itineraries available without an account (keep in sync with lib/demo/data). */
-const DEMO_TRIP_PATHS = new Set(["/trips/demo-paris", "/trips/demo-dubai"]);
+const DEMO_TRIP_PATHS = new Set(["/trips/demo-paris"]);
 
 function isDemoTripPath(path: string) {
   return DEMO_TRIP_PATHS.has(path);

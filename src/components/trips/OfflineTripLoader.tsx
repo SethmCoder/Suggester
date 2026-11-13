@@ -45,8 +45,8 @@ export function OfflineTripLoader({ tripId }: { tripId: string }) {
         offline &&
         offline.contentVersion === DEMO_CONTENT_VERSION &&
         offline.trip.destination === data.trip.destination;
-      // Always refresh canonical demo into local storage so stale Paris
-      // copies under demo-dubai cannot linger.
+      // Always refresh canonical demo into local storage so stale
+      // snapshots (e.g. old Dubai demo) cannot linger.
       saveOfflineTrip({
         trip: { ...data.trip, day_count: data.days.length },
         days: data.days,

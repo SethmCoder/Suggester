@@ -48,7 +48,7 @@ export type IntelligenceSignal =
   /** Real confirmation paste/forward — stronger than a Discover click. */
   | {
       type: "booking_confirmation";
-      kind: "flight" | "hotel" | "rail" | "other";
+      kind: "flight" | "hotel" | "rail" | "restaurant" | "other";
       cities?: string[];
       cabin?: string | null;
       route?: string | null;

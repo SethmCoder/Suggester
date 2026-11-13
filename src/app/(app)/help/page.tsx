@@ -3,7 +3,7 @@ import Link from "next/link";
 const FAQS = [
   {
     q: "How do I try Waypoint?",
-    a: "Choose Try demo on the start page. You’ll get sample trips for Paris and Dubai, and you can plan a new trip that stays on this device.",
+    a: "Choose Try demo on the start page. You’ll get a sample Paris trip you can edit and paste bookings into, and you can plan a new trip that stays on this device.",
   },
   {
     q: "How does Waypoint pick places?",

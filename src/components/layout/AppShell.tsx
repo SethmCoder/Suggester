@@ -198,19 +198,19 @@ function AppShellInner({
 
       <div className="space-y-2 border-t border-[#292F68] p-3" data-tour="tour-create-trip">
         <Link
-          href="/future-plans"
+          href="/trips/new"
           onClick={closeMobile}
           className="inline-flex w-full items-center justify-center gap-2 rounded-[12px] bg-[#0400FF] px-3 py-2.5 text-sm font-semibold text-white shadow-sm shadow-[#0400FF]/25 transition hover:bg-[#0A0080]"
         >
           <IconPlane size={16} />
-          {t("nav.futurePlans")}
+          {t("nav.tripArchitect")}
         </Link>
         <Link
-          href="/trips/new"
+          href="/future-plans"
           onClick={closeMobile}
           className="block text-center text-[11px] font-medium text-[#9299B5] transition hover:text-white"
         >
-          {t("nav.haveDates")}
+          {t("nav.haveBookings")}
         </Link>
       </div>
     </aside>

@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import type { ActivityRow, TripLeg } from "@/lib/types/trip";
 import { FlightStatusChip } from "@/components/trips/FlightStatusChip";
 import { PasteDropZone } from "@/components/dreamer/PasteDropZone";
+import { DemoEmailPastePanel } from "@/components/demo/DemoEmailPastePanel";
+import { isDemoTripId } from "@/lib/demo/data";
 import {
   createFutureTrip,
   listFutureTrips,
@@ -36,7 +38,10 @@ export function TripBookingsPanel({
 }) {
   const [showPaste, setShowPaste] = useState(false);
   const [ensuredFutureId, setEnsuredFutureId] = useState<string | null>(null);
+  const [insertText, setInsertText] = useState<string | null>(null);
+  const [insertRevision, setInsertRevision] = useState(0);
 
+  const isDemo = Boolean(tripId && isDemoTripId(tripId));
   const bookedHotels = legs.filter((leg) => leg.hotelBooked && leg.hotel?.trim());
   const flights = activities.filter(
     (a) =>
@@ -114,33 +119,70 @@ export function TripBookingsPanel({
             }}
             className="rounded-[10px] bg-[#F5F7FF] px-3 py-1.5 text-xs font-semibold text-[#0400FF] transition hover:bg-[#E8ECFF]"
           >
-            {showPaste ? "Hide upload" : "Add booking"}
+            {showPaste ? "Hide paste" : "Paste confirmation"}
           </button>
         ) : null}
       </div>
 
-      {showPaste && linkedFutureTripId ? (
-        <PasteDropZone
-          preferredFutureTripId={linkedFutureTripId}
-          compact
-          onDone={(result) => {
-            setShowPaste(false);
-            const booking = result.booking as DreamerBooking | undefined;
-            if (tripId && booking) {
-              applyBookingToOfflineTrip(tripId, booking);
-            }
-            if (tripId && linkedFutureTripId) {
-              updateFutureTrip(linkedFutureTripId, {
-                convertedTripId: tripId,
-                status: "planning",
-              });
-            }
-            onBookingAdded?.();
-          }}
-        />
+      {isDemo ? (
+        <div className="rounded-[12px] border border-dashed border-[#C5CBE8] bg-[#FAFBFF] px-3 py-2.5">
+          <p className="text-xs leading-relaxed text-[#4B5563]">
+            Email forwarding is not wired up yet. To try booking confirmations
+            on this Paris demo, paste email text here — or use a sample
+            template below.
+          </p>
+          {!showPaste && canUpload ? (
+            <button
+              type="button"
+              onClick={openUpload}
+              className="mt-2 text-xs font-semibold text-[#0400FF] hover:underline"
+            >
+              Open paste area
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
-      {!showPaste && canUpload && !bookedHotels.length && !flights.length ? (
+      {showPaste && linkedFutureTripId ? (
+        <div className="space-y-3">
+          {isDemo ? (
+            <DemoEmailPastePanel
+              onInsert={(text) => {
+                ensureFutureTripId();
+                setInsertText(text);
+                setInsertRevision((n) => n + 1);
+              }}
+            />
+          ) : null}
+          <PasteDropZone
+            preferredFutureTripId={linkedFutureTripId}
+            compact
+            insertText={insertText}
+            insertRevision={insertRevision}
+            hint={
+              isDemo
+                ? "Paste works offline in demo — no inbox required. Edit a template above, insert it, then save."
+                : undefined
+            }
+            onDone={(result) => {
+              setShowPaste(false);
+              const booking = result.booking as DreamerBooking | undefined;
+              if (tripId && booking) {
+                applyBookingToOfflineTrip(tripId, booking);
+              }
+              if (tripId && linkedFutureTripId) {
+                updateFutureTrip(linkedFutureTripId, {
+                  convertedTripId: tripId,
+                  status: "planning",
+                });
+              }
+              onBookingAdded?.();
+            }}
+          />
+        </div>
+      ) : null}
+
+      {!showPaste && canUpload && !bookedHotels.length && !flights.length && !isDemo ? (
         <button
           type="button"
           onClick={openUpload}
@@ -174,7 +216,9 @@ export function TripBookingsPanel({
             </ul>
           ) : (
             <p className="text-xs leading-relaxed text-[#6B7280]">
-              No hotel yet — upload a confirmation or add one on the calendar.
+              {legs.find((l) => l.hotel?.trim())?.hotel
+                ? `Suggested stay: ${legs.find((l) => l.hotel?.trim())!.hotel} — paste a hotel confirmation to mark it booked.`
+                : "No hotel yet — upload a confirmation or add one on the calendar."}
             </p>
           )}
         </div>
@@ -209,7 +253,8 @@ export function TripBookingsPanel({
             </ul>
           ) : !flightNumber && !onApplyDelay ? (
             <p className="text-xs leading-relaxed text-[#6B7280]">
-              No flight or transit blocks yet.
+              No flight or transit blocks yet
+              {isDemo ? " — paste a flight confirmation to add one." : "."}
             </p>
           ) : null}
         </div>

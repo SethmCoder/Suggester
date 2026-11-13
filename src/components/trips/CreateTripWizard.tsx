@@ -205,6 +205,15 @@ export function CreateTripWizard({
   const futureTripId = searchParams.get("future");
   const destinationParam = searchParams.get("destination");
   const daysParam = searchParams.get("days");
+  const startDateParam = searchParams.get("startDate");
+  const endDateParam = searchParams.get("endDate");
+  const interestsParam = searchParams.get("interests");
+  const mustSeeParam = searchParams.get("mustSee");
+  const idealTripParam = searchParams.get("idealTrip");
+  const intensityParam = searchParams.get("intensity");
+  const travelersParam = searchParams.get("travelers");
+  const legsParam = searchParams.get("legs");
+  const confirmationPasteParam = searchParams.get("confirmationPaste");
   const [wishlistSuggestions, setWishlistSuggestions] = useState<WishlistItem[]>(
     [],
   );
@@ -272,6 +281,7 @@ export function CreateTripWizard({
   const [flightSummary, setFlightSummary] = useState<string | null>(null);
   const futureLoaded = useRef(false);
   const wizardTracked = useRef(false);
+  const confirmationPasteApplied = useRef(false);
 
   useEffect(() => {
     if (previewMode || wizardTracked.current) return;
@@ -283,30 +293,124 @@ export function CreateTripWizard({
   }, [previewMode, futureTripId, destinationParam]);
 
   useEffect(() => {
-    if (destinationParam && !futureTripId && !futureLoaded.current) {
-      futureLoaded.current = true;
+    if (futureTripId || futureLoaded.current) return;
+    if (
+      !destinationParam &&
+      !legsParam &&
+      !idealTripParam &&
+      !mustSeeParam
+    ) {
+      return;
+    }
+    futureLoaded.current = true;
+
+    const start =
+      sanitizeTripDate(startDateParam) || defaultTripStart(30);
+    let parsedLegs: { city: string; nights?: number; days?: number }[] = [];
+    try {
+      if (legsParam) {
+        const raw = JSON.parse(legsParam) as unknown;
+        if (Array.isArray(raw)) {
+          parsedLegs = raw
+            .map((row) => {
+              const r = row as { city?: string; nights?: number; days?: number };
+              return {
+                city: String(r.city || "").trim(),
+                nights: r.nights,
+                days: r.days,
+              };
+            })
+            .filter((r) => r.city);
+        }
+      }
+    } catch {
+      parsedLegs = [];
+    }
+
+    if (!parsedLegs.length && destinationParam) {
       const days = Math.max(1, Number(daysParam) || 5);
-      const start = defaultTripStart(30);
-      const end = defaultTripEnd(start, Math.max(1, days - 1));
-      setLegs([
-        legWithDates(
-          emptyLeg({
-            city: destinationParam,
-            days,
-          }),
-          start,
-          end,
+      parsedLegs = destinationParam
+        .split(/\s*→\s*|\s*>\s*|\s*,\s*/)
+        .map((city) => city.trim())
+        .filter(Boolean)
+        .map((city) => ({ city, days }));
+      if (parsedLegs.length === 1) {
+        parsedLegs[0].days = Math.max(1, Number(daysParam) || 5);
+        parsedLegs[0].nights = Math.max(1, (parsedLegs[0].days || 5) - 1);
+      }
+    }
+
+    const end =
+      sanitizeTripDate(endDateParam) ||
+      defaultTripEnd(
+        start,
+        Math.max(
+          1,
+          parsedLegs.reduce(
+            (sum, leg) => sum + Math.max(1, leg.nights ?? (leg.days || 1) - 1),
+            0,
+          ) || Number(daysParam) || 4,
         ),
-      ]);
-      setForm((current) => ({
-        ...current,
-        startDate: current.startDate || start,
-        endDate: current.endDate || end,
-      }));
-      // Deep-link destination: resolve the best city match so the sheet unlocks.
-      void fetch(
-        `/api/cities/search?q=${encodeURIComponent(destinationParam)}`,
-      )
+      );
+
+    if (parsedLegs.length > 1) setMultiCity(true);
+
+    let cursor = start;
+    const nextLegs = parsedLegs.map((leg, index) => {
+      const nights = Math.max(1, leg.nights ?? Math.max(1, (leg.days || 2) - 1));
+      const arrival = cursor;
+      const departure =
+        index === parsedLegs.length - 1
+          ? end
+          : addCalendarDays(arrival, nights);
+      cursor = departure;
+      return legWithDates(
+        emptyLeg({
+          city: leg.city,
+          days: nights + 1,
+          nights,
+        }),
+        arrival,
+        departure,
+      );
+    });
+    if (nextLegs.length) setLegs(nextLegs);
+
+    const interestList = (interestsParam || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const mustSeeList = (mustSeeParam || "")
+      .split("|")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    setForm((current) => ({
+      ...current,
+      startDate: current.startDate || start,
+      endDate: current.endDate || end,
+      travelers: Number(travelersParam) || current.travelers,
+      intensity:
+        intensityParam === "relaxed" ||
+        intensityParam === "balanced" ||
+        intensityParam === "packed"
+          ? intensityParam
+          : current.intensity,
+      interests: interestList.length ? interestList : current.interests,
+      mustSee: mustSeeList.length
+        ? mustSeeList.join("\n")
+        : current.mustSee,
+      idealTrip: idealTripParam?.trim() || current.idealTrip,
+    }));
+
+    if (confirmationPasteParam?.trim()) {
+      setConfirmationPaste(confirmationPasteParam.trim().slice(0, 4000));
+    }
+
+    // Resolve first city so the sheet unlocks.
+    const firstCity = parsedLegs[0]?.city || destinationParam;
+    if (firstCity) {
+      void fetch(`/api/cities/search?q=${encodeURIComponent(firstCity)}`)
         .then((res) => res.json())
         .then((data: { cities?: CitySuggestion[] }) => {
           const hit = data.cities?.[0];
@@ -314,7 +418,20 @@ export function CreateTripWizard({
         })
         .catch(() => null);
     }
-  }, [destinationParam, daysParam, futureTripId]);
+  }, [
+    destinationParam,
+    daysParam,
+    futureTripId,
+    startDateParam,
+    endDateParam,
+    interestsParam,
+    mustSeeParam,
+    idealTripParam,
+    intensityParam,
+    travelersParam,
+    legsParam,
+    confirmationPasteParam,
+  ]);
 
   useEffect(() => {
     if (!futureTripId || futureLoaded.current) return;
@@ -442,6 +559,23 @@ export function CreateTripWizard({
       text,
     );
   }
+
+  // Trip Architect handoff: apply confirmationPaste from the URL once on mount.
+  useEffect(() => {
+    if (confirmationPasteApplied.current) return;
+    const text = confirmationPasteParam?.trim();
+    if (!text || text.length < 8) return;
+    confirmationPasteApplied.current = true;
+    const clipped = text.slice(0, 4000);
+    setConfirmationPaste(clipped);
+    applyParsedConfirmation(
+      parseBookingFromEmailText({
+        subject: "Pasted booking",
+        text: clipped,
+      }),
+      clipped,
+    );
+  }, [confirmationPasteParam]);
 
   async function applyConfirmationScreenshot(file: File | Blob) {
     const { prepareScreenshotDataUrl } = await import(

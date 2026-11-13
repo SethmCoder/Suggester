@@ -11,10 +11,15 @@ export function DestinationCard({
   destination,
   selected,
   onToggleCompare,
+  selectLabel = "Compare",
+  selectedLabel = "Selected",
 }: {
   destination: DestinationRecommendation;
   selected?: boolean;
   onToggleCompare?: (id: string) => void;
+  /** Architect multi-select uses “Add to trip” instead of Compare. */
+  selectLabel?: string;
+  selectedLabel?: string;
 }) {
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -140,7 +145,7 @@ export function DestinationCard({
               variant={selected ? "primary" : "secondary"}
               onClick={() => onToggleCompare(destination.id)}
             >
-              {selected ? "Selected" : "Compare"}
+              {selected ? selectedLabel : selectLabel}
             </Button>
           ) : null}
           <Button type="button" variant="secondary" disabled={busy} onClick={() => void createFuture()}>

@@ -17,6 +17,8 @@ const en: Dict = {
   "nav.settings": "Settings",
   "nav.planTrip": "Already have dates?",
   "nav.haveDates": "Already have a date and time?",
+  "nav.tripArchitect": "Plan a trip",
+  "nav.haveBookings": "Already have bookings?",
   "nav.account": "Account",
   "calendar.title": "Week calendar",
   "calendar.hint":

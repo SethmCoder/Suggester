@@ -20,6 +20,7 @@ function seedDemoOffline() {
       trip: { ...payload.trip, day_count: payload.days.length },
       days: payload.days,
       activities: payload.activities,
+      legs: payload.legs,
       updatedAt: new Date().toISOString(),
       contentVersion: DEMO_CONTENT_VERSION,
     });
@@ -51,7 +52,7 @@ export function TryDemoButton({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Could not start demo");
     } catch {
-      // Offline demo: local copies are enough to browse Paris + Dubai
+      // Offline demo: local copies are enough to browse Paris
     }
 
     // Clear any leftover personal session from browser storage.
